@@ -1,97 +1,68 @@
-# CoC-AI: Learning Deep Reinforcement Learning with Clash of Clans
+# CoC-AI
 
-[![Focus: Personal Educational Project](https://img.shields.io/badge/Project-Personal%20AI%20Curriculum-blue?style=flat-square)](python/labs/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-Deep%20RL-EE4C2C?logo=pytorch&logoColor=white&style=flat-square)](https://pytorch.org/)
-[![Rust Engine](https://img.shields.io/badge/Rust-Fast%20Simulation-DEA584?logo=rust&logoColor=white&style=flat-square)](https://www.rust-lang.org/)
-[![Vite + React](https://img.shields.io/badge/Frontend-Interactive%20Sandbox-61DAFB?logo=react&logoColor=black&style=flat-square)](https://react.dev/)
+A personal project where I'm learning PyTorch and Deep Reinforcement Learning (RL) by building an AI that attacks bases in Clash of Clans.
 
-A personal, hands-on educational project using **Clash of Clans** as a fun, visual playground to learn and experiment with modern **Artificial Intelligence**, **PyTorch**, and **Deep Reinforcement Learning (RL)** from first principles.
+## Why this project?
 
----
+Standard beginner ML tutorials usually start with MNIST digits or CartPole. They work, but they get boring fast.
 
-## 💡 Why This Project?
+I wanted something more complex to sink my teeth into: a real game with a 2D map, unit pathfinding, cooldowns, and tactical choices (like funneling troops, timing spells, and sequencing hero abilities). Clash of Clans fits really well because every attack is essentially a planning puzzle:
+* What troop or spell should I drop?
+* Where on the 50x50 map should I put it?
+* When is the right time to trigger an ability?
 
-Instead of studying machine learning through dry math or toy datasets (like MNIST or CartPole), this repository uses a well-known strategy game as a **pretext to learn real-world AI concepts**:
+I'm also treating this as an experiment in learning *with* AI. I use coding assistants as tutors to bounce ideas off of, help write verification tests, and debug PyTorch tensor issues when shapes don't match up.
 
-* **Learning by doing**: Building neural networks, training loops, and reinforcement learning algorithms from scratch.
-* **Learning AI *with* AI**: Using modern AI coding assistants as interactive mentors and pair-programmers, supported by automated verification scripts to validate ideas and code along the way.
-* **A rich playground**: Clash of Clans offers fascinating challenges for an AI — spatial map awareness, timing troop drops, managing hero abilities, and optimizing for 3-star attacks.
+## What I'm learning here
 
----
+* **PyTorch basics**: Writing tensor operations, autograd loops, and running models on my GPU.
+* **Spatial encoders (CNNs)**: Turning the 50x50 village grid into feature maps so the network can "see" wall compartments, defensive threat zones, and open deployment areas.
+* **Actor-Critic & PPO**: Using Proximal Policy Optimization to update the model based on attack results (damage percentage, Town Hall takedowns, and star count).
+* **Action masking**: Forcing the policy to only pick legal actions, like keeping ground troops outside the red zone and blocking already-used hero equipment.
+* **Fast simulation**: RL needs a lot of rollouts to learn anything useful. The combat simulator is written in Rust so it can run thousands of battle ticks per second before sending state into Python.
 
-## 🧠 High-Level AI Concepts Explored
+## Structure
 
-Without getting bogged down in complex equations, the project covers fundamental building blocks of modern AI:
+* `python/pytorch_bootcamp/`: Small warmup exercises covering pure PyTorch (tensors, linear layers, conv nets, autograd).
+* `python/labs/`: Guided labs building up the actual RL pipeline:
+  1. `student_lab.py`: CNN backbone, actor-critic heads, reward shaping, and the PPO training step.
+  2. `reference_solution.py`: Reference code to check against when stuck.
+  3. `verify_labs.py`: Test script checking tensor shapes and gradient flow on CUDA.
+* `crates/`: The game simulator written in Rust (`coc-engine`) with Python bindings (`coc-py`) and WebAssembly export (`coc-wasm`).
+* `web/`: A small Vite/React canvas app to inspect village layouts and watch battles visually.
 
-1. **PyTorch & GPU Fundamentals**:
-   * Understanding tensors, computation graphs, and autograd.
-   * Leveraging CUDA GPU acceleration for training neural networks.
-2. **Spatial Perception with CNNs**:
-   * Treating the 50×50 village grid like an image (representing defenses, walls, and troops across spatial layers).
-   * Using Convolutional Neural Networks (CNNs) so the AI can "read the base" and spot vulnerable compartments.
-3. **Decision Making via Actor-Critic & PPO**:
-   * **The Actor (Policy)**: Decides *what* action to take (deploy a troop, use a hero ability, drop a spell) and *where* on the map to target.
-   * **The Critic (Value)**: Evaluates how well an attack is currently going.
-   * **PPO (Proximal Policy Optimization)**: A popular, stable reinforcement learning algorithm that updates the AI's strategy based on attack outcomes and star ratings.
-4. **Action Masking**:
-   * Preventing the AI from making illegal moves (like dropping ground troops inside the defender's red zone or using an ability twice).
-5. **Simulation & Systems**:
-   * Why fast simulation matters: training an RL agent requires thousands of attacks. A lightweight, deterministic simulator in Rust lets the AI learn rapidly before visualizing attacks in the browser.
+## Quickstart
 
----
-
-## 📚 Hands-on Learning Path
-
-The repository is organized into simple, self-contained stages:
-
-* **Level 1 — PyTorch Warmup** (`python/pytorch_bootcamp/`):
-  Short, zero-complexity exercises covering pure PyTorch basics (tensors, layers, loss functions, and action sampling).
-  ```bash
-  python python/pytorch_bootcamp/verify_bootcamp.py
-  ```
-
-* **Level 2 — Guided Deep RL Labs** (`python/labs/`):
-  A 4-step hands-on workbook where you build the AI attacker step by step (CNN map encoder, actor-critic policy, reward calculations, and PPO update loop).
-  ```bash
-  python python/verify_labs.py
-  ```
-
-* **Level 3 — Visual Web Sandbox** (`web/`):
-  An interactive React and Canvas interface to inspect village layouts, test attack strategies, and watch simulations unfold.
-
----
-
-## 🚀 Quickstart
-
-### 1. Run the Python Labs & Verifiers
+### 1. Verify the PyTorch exercises
 
 ```bash
-# Verify the PyTorch basics
+# Test the basic PyTorch exercises
 python python/pytorch_bootcamp/verify_bootcamp.py
 
-# Verify the Deep RL exercises
+# Check the RL lab implementations
 python python/verify_labs.py
+```
 
-# Run a quick training experiment
+### 2. Run a short training loop
+
+```bash
 python python/train_ai.py --train-ppo --episodes 20
 ```
 
-### 2. Run the Interactive Web Sandbox
+### 3. Run the visual sandbox
 
 ```bash
-# Start the simulation backend
+# Start the Python API
 python python/server.py
 
-# In another terminal, run the web UI
+# In another terminal, start the UI
 cd web
 npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` in your browser to view the interactive village sandbox.
+Then open `http://localhost:5173`.
 
----
+## Disclaimer
 
-## 📜 Note
-
-This is an educational, non-commercial learning project. Clash of Clans and its game assets are trademarks of Supercell Oy.
+This is an independent educational project. Clash of Clans and its game assets belong to Supercell.
