@@ -1,26 +1,88 @@
-# CoC-AI: Town Hall 18 Deep RL Combat Simulator & Village Optimizer
+# CoC-AI: Deep Reinforcement Learning Sandbox & Educational AI Curriculum
 
-[![Rust Engine](https://img.shields.io/badge/Rust-2021%20Edition-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![WebAssembly](https://img.shields.io/badge/WebAssembly-wasm--pack-654FF0?logo=webassembly&logoColor=white)](https://webassembly.org/)
-[![PyTorch CUDA](https://img.shields.io/badge/PyTorch-2.1%2B%20cu130-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
-[![Frontend](https://img.shields.io/badge/Frontend-React%2018%20%7C%20Vite%20%7C%20TypeScript-61DAFB?logo=react&logoColor=black)](https://react.dev/)
-[![Gymnasium](https://img.shields.io/badge/RL%20Env-Gymnasium-008080)](https://gymnasium.farama.org/)
+[![Educational AI Project](https://img.shields.io/badge/Focus-Educational%20AI%20Curriculum-success?style=flat-square)](python/labs/)
+[![Rust Engine](https://img.shields.io/badge/Rust-2021%20Edition-DEA584?logo=rust&logoColor=white&style=flat-square)](https://www.rust-lang.org/)
+[![WebAssembly](https://img.shields.io/badge/WebAssembly-wasm--pack-654FF0?logo=webassembly&logoColor=white&style=flat-square)](https://webassembly.org/)
+[![PyTorch CUDA](https://img.shields.io/badge/PyTorch-2.1%2B%20cu130-EE4C2C?logo=pytorch&logoColor=white&style=flat-square)](https://pytorch.org/)
+[![Gymnasium](https://img.shields.io/badge/RL%20Env-Gymnasium-008080?style=flat-square)](https://gymnasium.farama.org/)
+[![Frontend](https://img.shields.io/badge/Frontend-React%2018%20%7C%20Vite%20%7C%20TS-61DAFB?logo=react&logoColor=black&style=flat-square)](https://react.dev/)
 
-An end-to-end research sandbox, deterministic combat simulation engine, and **Deep Reinforcement Learning (Deep RL)** framework designed to train AI agents to autonomously plan and execute attacks on max-level **Town Hall 18** villages in **Clash of Clans**.
+An educational playground and hands-on curriculum that uses the rich, combinatorial world of **Clash of Clans** as a compelling **pretext to learn core AI and Deep Reinforcement Learning (Deep RL) concepts from scratch** — while actively leveraging modern AI coding tools and automated verifiers to accelerate the learning journey.
 
 ---
 
-## 🎯 Project Goals
+## 🎓 The Educational Mission: Learning AI Concepts Using AI
 
-1. **Autonomous Tactical Combat via Deep RL**:
-   Train AI agents to master the deep combinatorial complexity of Clash of Clans attacks: funneling, phase-separated troop deployments, tank-and-spank mechanics, spell drop timing, hero equipment ability activation, and pathfinding routing toward a guaranteed 3-star victory.
-2. **High-Throughput Deterministic Simulation**:
+While Clash of Clans is a beloved, globally recognized tactical strategy game, it is used here as an **ideal sandbox for studying modern AI systems engineering**: an environment with imperfect information, continuous time (10 Hz ticks), discrete spatial grid deployment (50 × 50), line-of-sight pathfinding, and complex combinatorial action spaces.
+
+**The primary purpose of this repository is not merely to build a game bot, but to serve as a hands-on learning vehicle for mastering Deep RL from first principles:**
+
+1. **Learning AI by Building It Hands-On**:
+   Instead of studying reinforcement learning math purely in the abstract, learners construct the entire pipeline: from fundamental tensor operations and CUDA acceleration up to spatial convolutional backbones, factorized multi-discrete policy heads, advantage estimation, and clipped surrogate loss updates.
+2. **Learning AI *Using* AI**:
+   This project is explicitly structured to be explored in tandem with AI coding assistants (such as Gemini, Claude, or ChatGPT) acting as interactive tutors and pair programmers. Each lab module includes automated test harnesses (`verify_bootcamp.py`, `verify_labs.py`) with strict shape checks and gradient verifiers, creating a tight feedback loop: read the concept, implement the layer, ask your AI mentor to critique or explain edge cases, and verify results instantly on your GPU.
+3. **End-to-End Systems & Software Architecture**:
+   Real-world AI goes far beyond isolated Python scripts. Learners see how high-throughput systems code (written in **Rust** for deterministic combat simulation) connects to Python via **PyO3/ABI3**, executes parallel rollouts across CPU threads with **Rayon**, and compiles to **WebAssembly** for instant in-browser interactive visualization.
+
+---
+
+## 📚 The Guided Curriculum
+
+The repository includes a two-stage hands-on educational curriculum located in `python/`:
+
+```text
+ ┌─────────────────────────────────────────────────────────────┐
+ │        STAGE 1: Pure PyTorch Bootcamp (6 Modules)           │
+ │   Tensors, Shapes, Convolutions, Categorical Distributions  │
+ └──────────────────────────────┬──────────────────────────────┘
+                                │
+                                ▼
+ ┌─────────────────────────────────────────────────────────────┐
+ │        STAGE 2: The 4-Stage Deep RL Lab Workbook            │
+ │   Spatial CNN ➔ Factorized Policy ➔ GAE ➔ GPU PPO Update    │
+ └──────────────────────────────┬──────────────────────────────┘
+                                │
+                                ▼
+ ┌─────────────────────────────────────────────────────────────┐
+ │        STAGE 3: Co-Evolution & Interactive Simulation       │
+ │   Defender Base Evolution ➔ Real-Time Web Telemetry Studio  │
+ └─────────────────────────────────────────────────────────────┘
+```
+
+### 1. Pure PyTorch Bootcamp (`python/pytorch_bootcamp/`)
+*Zero game complexity required!* A gentle, self-contained ramp from beginner to proficient with PyTorch and CUDA:
+* **Module 1**: Tensors, shapes, dimension slicing, and CUDA device transfers.
+* **Module 2**: Autograd computation graphs, forward passes, MSE loss, and `loss.backward()`.
+* **Module 3**: Linear layers, non-linear activations (ReLU, SiLU), and multi-layer perceptrons.
+* **Module 4**: Spatial 2D convolutions (`Conv2d`), padding, receptive fields, and feature pooling.
+* **Module 5**: Multi-head outputs and joint loss backpropagation.
+* **Module 6**: Discrete action sampling using `torch.distributions.Categorical` and log-probabilities.
+* *Run Verifier*: `.venv/bin/python python/pytorch_bootcamp/verify_bootcamp.py`
+
+### 2. Guided Hands-On Deep RL Workbook (`python/labs/student_lab.py`)
+A guided 4-stage laboratory where learners implement the neural policy for Town Hall 18 combat:
+* **Lab 1: Spatial CNN Backbone (`CoCSpatialEncoder`)** — Transforming an `(8, 50, 50)` grid into a high-resolution feature map and a 256-D global tactical embedding.
+* **Lab 2: Factorized Policy & Invalid-Action Masking (`CoCActorCritic`)** — Coordinating action type, loadout slot, and a 1x1 spatial pointer head while dynamically suppressing illegal drops with `-∞` logit masks.
+* **Lab 3: Reward Shaping & Generalized Advantage Estimation (GAE)** — Designing dense milestone rewards and computing temporal-difference advantages.
+* **Lab 4: GPU PPO Update Loop (`ppo_update_step`)** — Coding the clipped surrogate objective, value loss, entropy bonus, gradient clipping, and optimizer step on GPU.
+* *Run Verifier*: `.venv/bin/python python/verify_labs.py`
+* *Reference Implementation*: A fully documented reference solution is provided in `python/labs/reference_solution.py`.
+
+---
+
+## 🎯 High-Level Project Goals
+
+1. **Educational AI Sandbox**:
+   Provide an intuitive, visual, and highly rewarding framework for learning modern Deep RL, PyTorch, and game AI architecture.
+2. **Autonomous Tactical Combat via Deep RL**:
+   Train AI agents to master the deep combinatorial complexity of attacks: funneling, phase-separated deployments, tanking, spell drop timing, and hero ability sequencing.
+3. **High-Throughput Deterministic Simulation**:
    A deterministic, tick-based combat engine written in **Rust** running at thousands of ticks per second, compiled to **PyO3/Rayon** for parallel GPU training rollouts and to **WebAssembly** for client-side browser execution.
-3. **Data-Grounded Town Hall 18 Mechanics**:
-   Directly incorporates extracted, decoded game logic tables (`coc_dumps/logic/*.csv`) covering stats, speeds, ranges, projectiles, hero equipment, pets, crafted seasonal defenses (e.g., Inferno Candle / Hot Candle), and TH18 signature defenses.
-4. **Co-Evolutionary Village Layout Defense**:
+4. **Data-Grounded Town Hall 18 Mechanics**:
+   Directly incorporates extracted, decoded game logic tables (`coc_dumps/logic/*.csv`) covering stats, speeds, ranges, projectiles, hero equipment, pets, and crafted defenses.
+5. **Co-Evolutionary Village Layout Defense**:
    Pair the attacker RL policy with an evolutionary genetic layout mutator (`CoCDefenderEvolution`) to generate anti-3-star base designs optimized against learned AI attacking strategies.
-5. **Interactive Visual Studio**:
+6. **Interactive Visual Studio**:
    A modern React + TypeScript browser interface featuring both 2.5D isometric and 2D tactical canvas views, army composition editors, live battle replays, and a dedicated AI Training Studio console for real-time tensor inspection and GPU monitoring.
 
 ---
