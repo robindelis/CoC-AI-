@@ -1,0 +1,62 @@
+"Name","TID","InfoTID","DescriptionTID","IconSWF","IconExportName","LargeIconSWF","LargeIconExportName","CardType","CardNumber","SortOrder","GemCost"
+"String","String","String","String","String","String","String","String","int","int","int","int"
+"Barbarian","TID_BARBARIAN",,"TID_CHARACTER_INFO_BARBARIAN","sc/ui.sc","icon_unit_barbarian","sc/info_barbarian.sc","card_barbarian_big",0,1,1,50
+"Archer","TID_ARCHER",,"TID_CHARACTER_INFO_ARCHER","sc/ui.sc","icon_unit_archer","sc/info_archer.sc","card_archer_big",0,2,2,50
+"Giant","TID_GIANT",,"TID_CHARACTER_INFO_GIANT","sc/ui.sc","icon_unit_giant","sc/info_giant.sc","card_giant_big",0,3,3,50
+"Goblin","TID_GOBLIN",,"TID_CHARACTER_INFO_GOBLIN","sc/ui.sc","icon_unit_goblin","sc/info_goblin.sc","card_goblin_big",0,4,4,50
+"Wall Breaker","TID_WALL_BREAKER",,"TID_CHARACTER_INFO_WALLBREAKER","sc/ui.sc","icon_unit_wallbreaker","sc/info_wallbreaker.sc","card_skeleton_big",0,5,5,50
+"Balloon","TID_GOBLIN_BALLOON",,"TID_CHARACTER_INFO_BALLOON","sc/ui.sc","icon_unit_balloon","sc/info_balloon.sc","card_balloon_big",0,6,6,50
+"Wizard","TID_WIZARD",,"TID_CHARACTER_INFO_WIZARD","sc/ui.sc","icon_unit_wizard","sc/info_wizard.sc","card_wizard_big",0,7,7,50
+"Healer","TID_HEALER",,"TID_CHARACTER_INFO_HEALER","sc/ui.sc","icon_unit_healer","sc/info_healer.sc","card_healer_big",0,8,8,50
+"Dragon","TID_DRAGON",,"TID_CHARACTER_INFO_DRAGON","sc/ui.sc","icon_unit_dragon","sc/info_dragon.sc","card_dragon_big",0,9,9,50
+"PEKKA","TID_PEKKA",,"TID_CHARACTER_INFO_PEKKA","sc/ui.sc","icon_unit_pekka","sc/info_pekka.sc","card_pekka_big",0,10,10,50
+"Baby Dragon","TID_BABY_DRAGON",,"TID_BABY_DRAGON_INFO","sc/ui.sc","icon_unit_babydragon","sc/info_babydragon.sc","unit_babydragon_big",0,11,11,50
+"Miner","TID_MINER",,"TID_MINER_INFO","sc/ui.sc","icon_unit_miner","sc/info_miner.sc","card_miner_big",0,12,12,50
+"Electro Dragon","TID_LIGHTNINGDRAGON",,"TID_CHARACTER_INFO_LIGHTNINGDRAGON","sc/ui.sc","icon_unit_lightningDragon","sc/info_electro_dragon.sc","card_electro_dragon_big",0,13,13,50
+"Yeti","TID_CHARACTER_YETI",,"TID_CHARACTER_INFO_YETI","sc/ui.sc","icon_unit_yeti","sc/info_yeti.sc","card_yeti_big",0,14,14,50
+"Dragon Rider","TID_CHARACTER_MECHA_DRAGON",,"TID_CHARACTER_MECHA_DRAGON_INFO","sc/ui.sc","icon_unit_dragon_rider","sc/info_dragon_rider.sc","card_dragon_rider_big",0,15,15,50
+"Electro Titan","TID_CHARACTER_ELECTRO_TITAN",,"TID_CHARACTER_ELECTRO_TITAN_INFO","sc/ui.sc","icon_unit_electrotitan","sc/info_electro_titan.sc","card_electro_titan_big",0,16,16,50
+"Root Rider","TID_CHARACTER_TREANT",,"TID_CHARACTER_INFO_TREANT","sc/ui.sc","icon_unit_root_rider","sc/info_root_rider.sc","card_root_rider_big",0,17,17,50
+"Thrower","TID_CHARACTER_THROWER",,"TID_CHARACTER_INFO_THROWER","sc/ui.sc","icon_unit_thrower","sc/info_thrower.sc","card_thrower_big",0,18,18,50
+"Meteor Golem","TID_METEOR_GOLEM",,"TID_METEOR_GOLEM_INFO","sc/ui.sc","icon_unit_splitgolem","sc/info_meteor_golem.sc","card_meteorgolem_big",0,19,19,50
+"Minion","TID_GARGOYLE",,"TID_CHARACTER_INFO_MINION","sc/ui.sc","icon_unit_gargoyle","sc/info_minion.sc","unit_flyingF_big",1,1,20,70
+"Hog Rider","TID_BOARRIDER",,"TID_CHARACTER_INFO_RIDER","sc/ui.sc","icon_unit_boarRider","sc/info_hogrider.sc","unit_boarRider_big",1,2,21,70
+"Valkyrie","TID_WARRIORGIRL",,"TID_CHARACTER_INFO_VALKYRIE","sc/ui.sc","icon_unit_warriorGirl","sc/info_valkyrie.sc","card_warriorGirl_big",1,3,22,70
+"Golem","TID_GOLEM",,"TID_CHARACTER_INFO_GOLEM","sc/ui.sc","icon_unit_golem","sc/info_golem.sc","card_golem_big",1,4,23,70
+"Witch","TID_WARLOCK",,"TID_CHARACTER_INFO_WARLOCK","sc/ui.sc","icon_unit_witch","sc/info_witch.sc","card_witch_big",1,5,24,70
+"Lava Hound","TID_AD_SEEKER",,"TID_CHARACTER_INFO_AD_SEEKER_WITH_EXPLOSION","sc/ui.sc","icon_unit_tiny","sc/info_tiny.sc","unit_tiny_big",1,6,25,70
+"Bowler","TID_BOWLER",,"TID_CHARACTER_INFO_BOWLER","sc/ui.sc","icon_unit_troll","sc/info_troll.sc","card_troll_big",1,7,26,70
+"Ice Golem","TID_ICEGOLEM",,"TID_CHARACTER_INFO_ICEGOLEM","sc/ui.sc","icon_unit_iceGolem","sc/info_ice_golem.sc","card_ice_golem_big",1,8,27,70
+"Headhunter","TID_CHARACTER_HEADHUNTER",,"TID_CHARACTER_INFO_HEADHUNTER","sc/ui.sc","icon_unit_headhunter","sc/info_headhunter.sc","card_head_hunter_big",1,9,28,70
+"Apprentice Warden","TID_CHARACTER_APPRENTICE_WARDEN",,"TID_CHARACTER_APPRENTICE_WARDEN_INFO","sc/ui.sc","icon_unit_apprentice","sc/info_apprentice.sc","card_apprentice_big",1,10,29,70
+"Druid","TID_CHARACTER_SHAPESHIFTER_DRUID",,"TID_CHARACTER_SHAPESHIFTER_DRUID_INFO","sc/ui.sc","icon_unit_druid_bear","sc/info_druid_bear.sc","card_druid_big",1,11,30,70
+"Furnace","TID_CHARACTER_FURNACE",,"TID_CHARACTER_INFO_FURNACE","sc/ui.sc","icon_unit_furnace","sc/info_furnace.sc","card_furnace_big",1,12,31,70
+"Rubble Witch","TID_CHARACTER_RUIN_WITCH",,"TID_CHARACTER_RUIN_WITCH_CARD_COLLECTION_INFO","sc/ui.sc","icon_unit_ruinwitch","sc/info_ruin_witch.sc","card_ruin_witch_big",1,13,32,70
+"Super Barbarian","TID_CHARACTER_ELITE_BARBARIAN",,"TID_CHARACTER_INFO_ELITE_BARBARIAN","sc/ui.sc","icon_unit_elite_barbarian","sc/info_elite_barbarian.sc","card_elite_barbarian_big",2,1,44,110
+"Super Archer","TID_CHARACTER_MAGIC_ARCHER",,"TID_CHARACTER_INFO_MAGIC_ARCHER","sc/ui.sc","icon_unit_elite_archer","sc/info_elite_archer.sc","card_elite_archer_big",2,2,45,110
+"Super Giant","TID_CHARACTER_ELITE_GIANT",,"TID_CHARACTER_INFO_ELITE_GIANT","sc/ui.sc","icon_unit_elite_giant","sc/info_giant_elite.sc","card_giant_elite_big",2,2,46,110
+"Sneaky Goblin","TID_CHARACTER_ELITE_GOBLIN",,"TID_CHARACTER_INFO_ELITE_GOBLIN","sc/ui.sc","icon_unit_elite_goblin","sc/info_goblin_elite.sc","card_goblin_elite_big",2,3,47,110
+"Super Wall Breaker","TID_CHARACTER_ELITE_WALLBREAKER",,"TID_CHARACTER_INFO_ELITE_WALLBREAKER","sc/ui.sc","icon_unit_elite_wallbreaker","sc/info_wallbreaker_elite.sc","card_skeleton_elite_big",2,4,48,110
+"Rocket Balloon","TID_CHARACTER_HASTY_BALLOON",,"TID_CHARACTER_INFO_HASTY_BALLOON","sc/ui.sc","icon_unit_elite_balloon","sc/info_rocket_balloon.sc","card_rocketBalloon_big",2,5,49,110
+"Super Wizard","TID_SUPER_WIZARD",,"TID_SUPER_WIZARD_INFO","sc/ui.sc","icon_unit_elite_wizard","sc/info_elite_wizard.sc","card_elite_wizard_big",2,6,50,110
+"Super Dragon","TID_SUPER_DRAGON",,"TID_SUPER_DRAGON_INFO","sc/ui.sc","icon_unit_elite_dragon","sc/info_super_dragon.sc","card_superdragon_big",2,13,51,110
+"Inferno Dragon","TID_CHARACTER_INFERNO_DRAGON",,"TID_CHARACTER_INFERNO_DRAGON_INFO","sc/ui.sc","icon_unit_elite_infernodragon","sc/info_elite_infernodragon.sc","card_elite_infernodragon_big",2,7,52,110
+"Super Miner","TID_SUPER_MINER",,"TID_SUPER_MINER_INFO","sc/ui.sc","icon_unit_elite_miner","sc/info_elite_miner.sc","card_elite_miner_big",2,15,53,110
+"Super Yeti","TID_CHARACTER_SUPER_YETI",,"TID_CHARACTER_INFO_SUPER_YETI","sc/ui.sc","icon_unit_elite_yeti","sc/info_super_yeti.sc","card_super_yeti_big",2,15,54,110
+"Super Minion","TID_SUPER_MINION",,"TID_CHARACTER_INFO_SUPER_MINION","sc/ui.sc","icon_unit_elite_minion","sc/info_elite_minion.sc","unit_elite_minion_big",2,8,55,110
+"Super Hog Rider","TID_CHARACTER_SUPER_HOG_RIDER",,"TID_CHARACTER_SUPER_HOG_RIDER_INFO","sc/ui.sc","icon_unit_elite_hogrider","sc/info_elite_hogrider.sc","card_elite_hogrider_big",2,14,56,110
+"Super Valkyrie","TID_CHARACTER_SUPER_VALKYRIE",,"TID_CHARACTER_SUPER_VALKYRIE_INFO","sc/ui.sc","icon_unit_elite_valkyrie","sc/info_elite_valkyrie.sc","card_elite_valkyrie_big",2,9,57,110
+"Super Witch","TID_CHARACTER_SUPER_WITCH",,"TID_CHARACTER_SUPER_WITCH_INFO","sc/ui.sc","icon_unit_elite_witch","sc/info_elite_witch.sc","card_elite_witch_big",2,10,58,110
+"Ice Hound","TID_ICE_HOUND",,"TID_ICE_HOUND_INFO","sc/ui.sc","icon_unit_elite_icehound","sc/info_elite_icehound.sc","card_elite_icehound_big",2,11,59,110
+"Super Bowler","TID_SUPER_BOWLER",,"TID_SUPER_BOWLER_INFO","sc/ui.sc","icon_unit_elite_bowler","sc/info_elite_bowler.sc","card_elite_bowler_big",2,12,60,110
+"Raged Barbarian","TID_RAGED_BARBARIAN",,"TID_CHARACTER_INFO_RAGED_BARBARIAN","sc/ui.sc","icon_unit_raged_barbarian","sc/info_raged_barbarian.sc","card_raged_barbarian_big",3,1,33,90
+"Sneaky Archer","TID_SNEAKY_ARCHER",,"TID_CHARACTER_INFO_SNEAKY_ARCHER","sc/ui.sc","icon_unit_stealthy_archer","sc/info_sneaky_archer.sc","card_sneaky_archer_big",3,2,34,90
+"Boxer Giant","TID_IRONFIST_GIANT",,"TID_CHARACTER_INFO_IRONFIST_GIANT","sc/ui.sc","icon_unit_boxergiant","sc/info_ironfist_giant.sc","card_boxer_giant_big",3,3,35,90
+"Beta Minion","TID_TOXIC_MINION",,"TID_CHARACTER_INFO_TOXIC_MINION","sc/ui.sc","icon_unit_glowing_minion","sc/info_glowing_minion.sc","unit_glow_minion_big",3,4,36,90
+"Bomber","TID_BOMBER",,"TID_CHARACTER_INFO_BOMBER","sc/ui.sc","icon_unit_bomber","sc/info_bomber.sc","card_bomber_big",3,5,37,90
+"BB Baby Dragon","TID_BABY_DRAGON2",,"TID_CHARACTER_INFO_BABY_DRAGON2","sc/ui.sc","icon_unit_babydragon","sc/info_babydragon.sc","unit_babydragon_big",3,6,38,90
+"Cannon Cart","TID_MOVING_CANNON",,"TID_CHARACTER_INFO_MOVING_CANNON","sc/ui.sc","icon_unit_moving_cannon_mortar_a","sc/info_moving_cannon.sc","card_movingCannon_big",3,7,39,90
+"Night Witch","TID_DARK_WITCH",,"TID_CHARACTER_INFO_DARK_WITCH","sc/ui.sc","icon_unit_nightwitch","sc/info_nightwitch.sc","card_nightwitch_big",3,8,40,90
+"Drop Ship","TID_BALLOON_CARRIER",,"TID_INFO_BALLOON_CARRIER","sc/ui.sc","icon_unit_skeletonBalloon","sc/info_witch.sc","card_skeletonCarrier_big",3,9,41,90
+"Power PEKKA","TID_SUPER_CHARGED_PEKKA",,"TID_CHARACTER_INFO_SUPER_CHARGED_PEKKA","sc/ui.sc","icon_unit_electric_pekka","sc/info_super_charged_pekka.sc","card_charged_pekka_big",3,10,42,90
+"Hog Glider","TID_HOG_GLIDER",,"TID_CHARACTER_INFO_HOG_GLIDER","sc/ui.sc","icon_unit_hog_glider","sc/info_hog_glider.sc","unit_hog_glider_big",3,11,43,90

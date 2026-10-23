@@ -1,0 +1,3 @@
+"Name","PanelMinWidthPercent","PanelMaxWidthPercent","HudPaddingBottom"
+"String","int","int","int"
+"BM_Default",27,42,-10

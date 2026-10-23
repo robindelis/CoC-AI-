@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/coc-data",
+    "crates/coc-engine",
+    "crates/coc-wasm",
+    "crates/coc-py",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rayon = "1.10"

@@ -1,0 +1,9 @@
+[package]
+name = "coc-engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+coc-data = { path = "../coc-data" }
+serde.workspace = true
+serde_json.workspace = true

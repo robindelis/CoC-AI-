@@ -1,0 +1,16 @@
+[package]
+name = "coc-py"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "coc_py"
+crate-type = ["cdylib"]
+
+[dependencies]
+coc-data = { path = "../coc-data" }
+coc-engine = { path = "../coc-engine" }
+serde.workspace = true
+serde_json.workspace = true
+rayon.workspace = true
+pyo3 = { version = "0.23", features = ["extension-module", "abi3-py39"] }

@@ -1,0 +1,18 @@
+"Name","IconSWF","IconExportName","TID","Attacker","Defender","BuildingClass","Spells","Heroes","Guardians","DamageMultiplier","HPMultiplier","CommonEquipmentMinusLevels","EpicEquipmentMinusLevels"
+"String","String","String","String","boolean","boolean","String","boolean","boolean","boolean","int","int","int","int"
+"Hard Mode",,,"TID_CHALLENGE_TITLE_HARD_MODE",,"TRUE","Any Building","TRUE",,,125,,3,6
+,,,,"TRUE",,,,"TRUE",,80,80,,
+,,,,,"TRUE",,,"TRUE",,125,125,,
+,,,,,"TRUE",,,,"TRUE",120,120,,
+"Minus One",,,"TID_MODE_TITLE_MINUS_ONE",,"TRUE","Any Building","TRUE",,,120,,,
+,,,,"TRUE",,,,"TRUE",,80,80,,
+,,,,,"TRUE",,,"TRUE",,120,120,,
+,,,,,"TRUE",,,,"TRUE",120,120,,
+"Minus Two",,,"TID_MODE_TITLE_MINUS_TWO",,"TRUE","Any Building","TRUE",,,115,,,
+,,,,"TRUE",,,,"TRUE",,90,90,,
+,,,,,"TRUE",,,"TRUE",,115,115,,
+,,,,,"TRUE",,,,"TRUE",110,110,,
+"Minus Three",,,"TID_MODE_TITLE_MINUS_THREE",,"TRUE","Any Building","TRUE",,,110,,,
+,,,,"TRUE",,,,"TRUE",,95,95,,
+,,,,,"TRUE",,,"TRUE",,110,110,,
+,,,,,"TRUE",,,,"TRUE",105,105,,

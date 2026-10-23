@@ -1,0 +1,9 @@
+"Name","SWF","ExportName","AnimationMode","Anchor","OffsetX","OffsetY"
+"String","String","String","String","String","int","int"
+"NewNotification","sc/hud.sc","hud_notification_new","PLAY_ASSET","TOP_RIGHT",-5,20
+"NewNotificationEditLayouts","sc/hud.sc","hud_notification_new","PLAY_ASSET","TOP",0,0
+"NewNotificationInventory","sc/hud.sc","hud_notification_new","PLAY_ASSET","TOP_LEFT",5,10
+"NewNotificationProfile","sc/hud.sc","hud_notification_new","PLAY_ASSET","BOTTOM_LEFT",100,-20
+"NewNotificationTop","sc/hud.sc","hud_notification_new","PLAY_ASSET","TOP",0,0
+"NewNotificationRight","sc/hud.sc","hud_notification_new","PLAY_ASSET","RIGHT",0,0
+"NewNotificationArmy","sc/hud.sc","hud_notification_new","PLAY_ASSET","TOP",0,-5

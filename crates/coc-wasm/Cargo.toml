@@ -1,0 +1,14 @@
+[package]
+name = "coc-wasm"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+coc-data = { path = "../coc-data" }
+coc-engine = { path = "../coc-engine" }
+serde.workspace = true
+serde_json.workspace = true
+wasm-bindgen = "0.2"
