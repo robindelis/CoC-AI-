@@ -79,22 +79,22 @@ The agent receives a multi-channel spatial state representation preserving exact
 
 * **Spatial CNN Backbone (`CoCSpatialEncoder`)**:
   * **Local Geometric Stem**: 2-layer convolution with `GroupNorm` and `SiLU` keeping full 50x50 resolution without batch-normalization drift.
-  * **Dilated Residual Block**: Dilated $3 \times 3$ convolutions expand the receptive field across multi-tile wall compartments and dead zones without downsampling.
+  * **Dilated Residual Block**: Dilated 3 × 3 convolutions expand the receptive field across multi-tile wall compartments and dead zones without downsampling.
   * **Global Tactical Pyramid**: Strided convolutions with adaptive average pooling generate a compact 256-dimensional global tactical state embedding.
 * **Factorized Multi-Discrete Control Heads**:
   * **`slot_type_head` (7 logits)**: Selects action category (`NoOp`, `DeployTroop`, `DeployHero`, `HeroAbility`, `DeploySiege`, `PopSiege`, `CastSpell`).
   * **`slot_idx_head` (10 logits)**: Selects which loadout slot to deploy, conditioned on the chosen slot category.
   * **Spatial Pointer Head (2,500 logits)**: Conditions the 50x50 spatial feature map on the global embedding and selected action type, outputting deployment target logits for every tile on the map.
 * **Invalid-Action Masking**:
-  * Dynamically sets logits of illegal actions to $-\infty$ prior to softmax sampling (e.g. preventing troop drops inside red zones, using exhausted slots, or triggering already-activated hero equipment).
+  * Dynamically sets logits of illegal actions to `-∞` prior to softmax sampling (e.g. preventing troop drops inside red zones, using exhausted slots, or triggering already-activated hero equipment).
 * **Critic Head**:
-  * Linear-SiLU MLP mapping the 256-D tactical embedding to a scalar state-value estimate $V(s)$.
+  * Linear-SiLU MLP mapping the 256-D tactical embedding to a scalar state-value estimate `V(s)`.
 
 ### 3. Reward Shaping & Optimization
 
-* **Destruction Reward**: Step-by-step differential reward for base damage percentage ($R_{\Delta \%} = \Delta \text{damage} \times 1.0$).
+* **Destruction Reward**: Step-by-step differential reward for base damage percentage (`R_dmg = Δdamage × 1.0`).
 * **Milestone Bonuses**: Substantial bonuses for key tactical achievements (+20 for 1st star, +30 for Town Hall kill, +50 for 100% 3-star wipeout).
-* **PPO Training**: Clipped surrogate objective with Generalized Advantage Estimation ($\lambda = 0.95$, $\gamma = 0.99$), entropy regularization, and gradient clipping.
+* **PPO Training**: Clipped surrogate objective with Generalized Advantage Estimation (λ = 0.95, γ = 0.99), entropy regularization, and gradient clipping.
 
 ---
 
