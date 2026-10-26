@@ -92,7 +92,7 @@ const SUB_UNIT_BODY_FALLBACKS: Record<string, string> = {
   Golemite: '/assets/unit/Golem.png',
   LavaPup: '/assets/unit/Minion.png',
   Yetimite: '/assets/unit/Yeti.png',
-  Firemite: '/assets/unit/Furnace.png',
+  Firemite: '/assets/unit/Firemite.png',
   Frostmite: '/assets/unit/pets/Frosty.png',
   Henchman: '/assets/unit/Minion.png',
   Booger: '/assets/unit/pets/Sneezy.png',
@@ -102,8 +102,8 @@ const SUB_UNIT_BODY_FALLBACKS: Record<string, string> = {
   GiantGiant: '/assets/unit/SuperGiant.png',
   Lavaloon: '/assets/troops/lavaloon.webp',
   Snake: '/assets/equipment/snake_bracelet.webp',
-  Skeleton: '/assets/troops/skeleton.webp',
-  ArmoredSkeleton: '/assets/troops/armored_skeleton.webp',
+  Skeleton: '/assets/unit/Skeleton.png',
+  ArmoredSkeleton: '/assets/unit/ArmoredSkeleton.png',
   Bat: '/assets/troops/bat.webp',
 };
 

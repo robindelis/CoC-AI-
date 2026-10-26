@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Automated Lab Verifier for `python/labs/student_lab.py`.
+Automated Lab Verifier for `learning/rl_labs/student_lab.py`.
 Checks tensor shapes, action masking correctness, GAE math, and GPU PPO gradient updates.
-Can be run from the CLI (`python python/verify_labs.py`) or called by the Web Studio API.
+Can be run from the CLI (`python learning/rl_labs/verify_labs.py`).
 """
 
 import importlib
@@ -13,8 +13,8 @@ from typing import Any, Dict, List
 
 import torch
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from labs import student_lab
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from rl_labs import student_lab
 
 
 def run_all_verifications(verbose: bool = False) -> Dict[str, Any]:

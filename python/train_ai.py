@@ -13,8 +13,14 @@ import numpy as np
 import torch
 
 import coc_py
-from coc_rl import CoCAttackerEnv, CoCDefenderEvolution
-from labs import reference_solution, student_lab
+from coc_rl import (
+    CoCActorCritic,
+    CoCAttackerEnv,
+    CoCDefenderEvolution,
+    compute_custom_reward,
+    compute_gae,
+    ppo_update_step,
+)
 
 CHECKPOINT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "checkpoints")
 DEFAULT_CKPT_PATH = os.path.join(CHECKPOINT_DIR, "latest_attacker.pt")
@@ -55,7 +61,6 @@ def train_pytorch_ppo(
     on_episode_callback: Optional[Callable[[Dict[str, Any]], bool]] = None,
 ) -> Dict[str, Any]:
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
-    lab_mod = reference_solution if use_reference else student_lab
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     env = CoCAttackerEnv(
@@ -63,7 +68,7 @@ def train_pytorch_ppo(
         army_json=army_json,
         ticks_per_step=ticks_per_step,
     )
-    model = lab_mod.CoCActorCritic(in_channels=8).to(device)
+    model = CoCActorCritic(in_channels=8).to(device)
     if os.path.exists(DEFAULT_CKPT_PATH):
         try:
             ckpt = torch.load(DEFAULT_CKPT_PATH, map_location=device, weights_only=False)
@@ -111,7 +116,7 @@ def train_pytorch_ppo(
             next_obs_np, _engine_rew, terminated, truncated, next_info = env.step(action_np)
             done = bool(terminated or truncated)
 
-            custom_r = lab_mod.compute_custom_reward(next_info)
+            custom_r = compute_custom_reward(next_info)
             ep_custom_reward += custom_r
             steps_run += 1
 
@@ -138,7 +143,7 @@ def train_pytorch_ppo(
         values_t = torch.stack(values_list)
         dones_t = torch.tensor(dones_list, dtype=torch.float32, device=device)
 
-        advantages_t, returns_t = lab_mod.compute_gae(
+        advantages_t, returns_t = compute_gae(
             rewards=rewards_t,
             values=values_t,
             dones=dones_t,
@@ -164,7 +169,7 @@ def train_pytorch_ppo(
             "clip_fraction": 0.0,
         }
         for _ in range(ppo_epochs):
-            last_metrics = lab_mod.ppo_update_step(
+            last_metrics = ppo_update_step(
                 model=model,
                 optimizer=optimizer,
                 obs_b=obs_b,

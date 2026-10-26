@@ -781,7 +781,7 @@ pub static TROOPS: &[TroopSpec] = &[
         preferred_target: PreferredTarget::Any,
         special: TroopSpecial::FurnaceSpawner {
             lifetime_sec: 60.0,
-            interval_sec: 0.8,
+            interval_sec: 2.7,
         },
     },
     TroopSpec {
@@ -1237,10 +1237,10 @@ pub static TROOPS: &[TroopSpec] = &[
         damage_per_hit: 690.0,
         attack_speed_sec: 3.0,
         move_speed: 5.0,
-        // CSV AttackRange is 1.0 (engages at contact); this value is the LOG's
-        // roll reach (~11 tiles in game) which our engine derives from range.
-        range: 11.0,
-        splash_radius: 1.5,
+        // CSV AttackRange is 100 (1.0t contact) + PenetratingExtraRange 1900 (19.0t) = 20.0t roll reach,
+        // PenetratingRadius 120 (1.2t), PreferedTargetDamageMod = 4 vs Wall.
+        range: 20.0,
+        splash_radius: 1.2,
         movement: MovementMode::Ground,
         target_domain: TargetDomain::Ground,
         preferred_target: PreferredTarget::TownHall,
@@ -1448,16 +1448,16 @@ pub static TROOPS: &[TroopSpec] = &[
     },
     TroopSpec {
         id: TroopId::Firemite,
-        name: "Firemite",
+        name: "Fire Spirit",
         category: TroopCategory::Spawned,
         max_level: 4,
         housing_space: 1,
         max_hp: 325.0,
-        dps: 150.0,
-        damage_per_hit: 230.0,
+        dps: 80.0,
+        damage_per_hit: 80.0,
         attack_speed_sec: 1.0,
         move_speed: 32.0,
-        range: 1.5,
+        range: 2.0,
         splash_radius: 0.8,
         movement: MovementMode::JumpWalls,
         target_domain: TargetDomain::GroundAndAir,

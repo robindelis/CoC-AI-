@@ -177,6 +177,8 @@ pub struct ActiveSpellZone {
     pub spawn_remaining: u8,
     #[serde(default, skip_serializing)]
     pub spawn_timer: f32,
+    #[serde(default, skip_serializing)]
+    pub fire_dps: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -226,6 +228,18 @@ pub enum ProjectilePayload {
     ElectroFangs,
     WallBreakerMult {
         wall_mult: f32,
+    },
+    FireSpiritBurn {
+        burn_dps: f32,
+        duration_sec: f32,
+        radius: f32,
+    },
+    RollingLog {
+        wall_mult: f32,
+        pierce_radius: f32,
+        hit_building_indices: Vec<usize>,
+        hit_wall_indices: Vec<usize>,
+        hit_unit_ids: Vec<u32>,
     },
     CastDefenderSpell {
         spell_id: SpellId,
@@ -1198,6 +1212,7 @@ impl BattleEngine {
                     processed_unit_ids: Vec::new(),
                     spawn_remaining: 0,
                     spawn_timer: 0.0,
+                    fire_dps: 0.0,
                 });
             }
             EquipmentId::Fireball => {
@@ -1795,6 +1810,7 @@ impl BattleEngine {
                         processed_unit_ids: Vec::new(),
                         spawn_remaining: rem,
                         spawn_timer: 0.8,
+                        fire_dps: 0.0,
                     });
                 }
                 self.visual_events.push(VisualEvent::Explosion {
@@ -1829,6 +1845,7 @@ impl BattleEngine {
                         processed_unit_ids: Vec::new(),
                         spawn_remaining: rem,
                         spawn_timer: 0.6,
+                        fire_dps: 0.0,
                     });
                 }
                 self.visual_events.push(VisualEvent::Explosion {
@@ -1850,6 +1867,7 @@ impl BattleEngine {
                     processed_unit_ids: Vec::new(),
                     spawn_remaining: 0,
                     spawn_timer: 0.0,
+                    fire_dps: 0.0,
                 });
             }
             _ => {
@@ -1874,6 +1892,7 @@ impl BattleEngine {
                     processed_unit_ids: Vec::new(),
                     spawn_remaining: 0,
                     spawn_timer: 0.0,
+                    fire_dps: 0.0,
                 });
                 if spell_id == SpellId::Jump {
                     self.invalidate_pathing();
@@ -1937,9 +1956,38 @@ impl BattleEngine {
     fn update_spells(&mut self) {
         let mut newly_cloned: Vec<(TroopId, f32, f32, f32)> = Vec::new();
         let mut wave_spawns: Vec<(TroopId, Team, f32, f32)> = Vec::new();
+        let mut fire_building_hits: Vec<(usize, f32)> = Vec::new();
+        let mut fire_unit_hits: Vec<(usize, f32)> = Vec::new();
 
         for zone in &mut self.spells {
             zone.remaining_sec -= DT;
+            if zone.fire_dps > 0.0 {
+                // FireSpiritBurn (spells.csv L4): 150 DPS, 0.8t radius, 10s duration, ImmunityWalls = TRUE
+                let mut any_burning_target = false;
+                for (bi, b) in self.buildings.iter().enumerate() {
+                    if !b.destroyed
+                        && b.overgrowth_timer <= 0.0
+                        && building_edge_dist(b, zone.x, zone.y) <= zone.radius
+                    {
+                        fire_building_hits.push((bi, zone.fire_dps * DT));
+                        any_burning_target = true;
+                    }
+                }
+                for (ui, u) in self.units.iter().enumerate() {
+                    if u.alive
+                        && u.team != zone.team
+                        && !u.is_burrowed
+                        && dist(zone.x, zone.y, u.x, u.y) <= zone.radius
+                    {
+                        fire_unit_hits.push((ui, zone.fire_dps * DT));
+                        any_burning_target = true;
+                    }
+                }
+                if !any_burning_target {
+                    zone.remaining_sec = 0.0;
+                }
+                continue;
+            }
             let spec = get_spell_spec(zone.spell_id);
             match &spec.effect {
                 SpellEffect::HealOverTime {
@@ -2179,6 +2227,13 @@ impl BattleEngine {
                     ));
                 }
             }
+        }
+
+        for (bi, dmg) in fire_building_hits {
+            self.damage_building(bi, dmg);
+        }
+        for (ui, dmg) in fire_unit_hits {
+            self.damage_unit(ui, dmg);
         }
 
         self.spells.retain(|z| z.remaining_sec > 0.0);
@@ -3305,18 +3360,32 @@ impl BattleEngine {
             }
 
             // Lifetime decay (Clones, Totems, Siege Barracks, Furnace, Druid evolution)
+            if self.units[u_idx].kind == UnitKind::Totem {
+                // characters.csv Totem: LoseHpPerTick=167, LoseHpInterval=500 -> 334.0 HP/s
+                self.units[u_idx].hp -= 334.0 * DT;
+                if self.units[u_idx].hp <= 0.0 {
+                    let dead_id = self.units[u_idx].id;
+                    self.units[u_idx].hp = 0.0;
+                    self.units[u_idx].alive = false;
+                    self.clear_references_to_dead_unit(dead_id);
+                    continue;
+                }
+            }
             if let Some(rem) = self.units[u_idx].lifetime_remaining {
                 let next_rem = rem - DT;
                 self.units[u_idx].lifetime_remaining = Some(next_rem);
                 if next_rem <= 0.0 {
+                    let dead_id = self.units[u_idx].id;
                     let kind = self.units[u_idx].kind;
                     let ux = self.units[u_idx].x;
                     let uy = self.units[u_idx].y;
                     let team = self.units[u_idx].team;
+                    self.units[u_idx].hp = 0.0;
                     self.units[u_idx].alive = false;
+                    self.clear_references_to_dead_unit(dead_id);
                     if kind == UnitKind::Troop(TroopId::Druid) {
                         pending_spawns.push((TroopId::DruidBear, team, ux, uy));
-                    } else if self.active_siege_unit_id == Some(self.units[u_idx].id) {
+                    } else if self.active_siege_unit_id == Some(dead_id) {
                         self.release_attacker_cc(ux, uy);
                     }
                     continue;
@@ -3552,8 +3621,14 @@ impl BattleEngine {
                         }
                     }
                     TroopSpecial::FurnaceSpawner { interval_sec, .. } => {
-                        if self.units[u_idx].special_timer >= interval_sec {
+                        // Furnace L4: 1800 HP, 60s lifetime, spawns up to 22 Firemites (BunkerTroopCount1=22)
+                        // Decays ~27 HP/s so untouched it finishes with ~10% HP buffer before expiring at 60s.
+                        self.units[u_idx].hp = (self.units[u_idx].hp - 27.0 * DT).max(1.0);
+                        if self.units[u_idx].special_timer >= interval_sec
+                            && self.units[u_idx].spawned_children_count < 22
+                        {
                             self.units[u_idx].special_timer = 0.0;
+                            self.units[u_idx].spawned_children_count += 1;
                             pending_spawns.push((TroopId::Firemite, team, ux, uy));
                         }
                     }
@@ -3577,8 +3652,11 @@ impl BattleEngine {
                         if hp_decay_per_sec > 0.0 {
                             self.units[u_idx].hp -= hp_decay_per_sec * DT;
                             if self.units[u_idx].hp <= 0.0 {
+                                let dead_id = self.units[u_idx].id;
+                                self.units[u_idx].hp = 0.0;
                                 self.units[u_idx].alive = false;
-                                if self.active_siege_unit_id == Some(self.units[u_idx].id) {
+                                self.clear_references_to_dead_unit(dead_id);
+                                if self.active_siege_unit_id == Some(dead_id) {
                                     self.release_attacker_cc(ux, uy);
                                 }
                                 continue;
@@ -3590,11 +3668,20 @@ impl BattleEngine {
             }
 
             // Siege Machine Town Hall contact auto-pop & flight bombs
-            if matches!(kind, UnitKind::Troop(TroopId::WallWrecker | TroopId::BattleBlimp)) {
-                if let Some(th_idx) = self.buildings.iter().position(|b| !b.destroyed && b.building_id == BuildingId::TownHall) {
+            if matches!(
+                kind,
+                UnitKind::Troop(TroopId::WallWrecker | TroopId::BattleBlimp | TroopId::LogLauncher)
+            ) {
+                if let Some(th_idx) = self
+                    .buildings
+                    .iter()
+                    .position(|b| !b.destroyed && b.building_id == BuildingId::TownHall)
+                {
                     if building_edge_dist(&self.buildings[th_idx], ux, uy) <= 1.5 {
+                        let dead_id = self.units[u_idx].id;
                         self.units[u_idx].hp = 0.0;
                         self.units[u_idx].alive = false;
+                        self.clear_references_to_dead_unit(dead_id);
                         self.release_attacker_cc(ux, uy);
                         if kind == UnitKind::Troop(TroopId::BattleBlimp) {
                             self.damage_building(th_idx, 1200.0);
@@ -3608,6 +3695,87 @@ impl BattleEngine {
                         continue;
                     }
                 }
+            }
+            // Log Launcher (characters.csv):
+            // - PreferredMovementTarget = Town Hall, CanAttackWhileMoving = TRUE
+            // - Moves straight toward the Town Hall while launching RollingLog every 3.0s
+            // - Point-blank contact (<= 1.2t) deals Damage2 = 3600 (4x vs Wall) to clear path
+            if kind == UnitKind::Troop(TroopId::LogLauncher) {
+                let th_opt = self
+                    .buildings
+                    .iter()
+                    .enumerate()
+                    .find(|(_, b)| b.building_id == BuildingId::TownHall)
+                    .map(|(bi, b)| (bi, b.center_x, b.center_y, b.destroyed));
+                let (th_x, th_y) = match th_opt {
+                    Some((bi, cx, cy, destroyed)) => {
+                        if !destroyed {
+                            self.units[u_idx].target = TargetRef::Building(bi);
+                        }
+                        (cx, cy)
+                    }
+                    None => (25.0, 25.0),
+                };
+
+                let slow_mult = if self.units[u_idx].poison_timer > 0.0
+                    || self.units[u_idx].slow_timer > 0.0
+                {
+                    0.55
+                } else {
+                    1.0
+                };
+
+                let dx = th_x - ux;
+                let dy = th_y - uy;
+                let dist_to_th = (dx * dx + dy * dy).sqrt();
+                if dist_to_th > 1.2 {
+                    let eff_speed = self.units[u_idx].move_speed * 0.125 * slow_mult;
+                    let step_dist = eff_speed * DT;
+                    let nx = (ux + (dx / dist_to_th) * step_dist).clamp(0.5, 49.5);
+                    let ny = (uy + (dy / dist_to_th) * step_dist).clamp(0.5, 49.5);
+                    self.units[u_idx].x = nx;
+                    self.units[u_idx].y = ny;
+
+                    // Point-blank crushing damage (Damage2 = 3600, PreferedTargetDamageMod = 4 vs Wall)
+                    let mut wall_broken = false;
+                    for (wi, w) in self.walls.iter_mut().enumerate() {
+                        if !w.destroyed
+                            && dist(nx, ny, w.tile_x as f32 + 0.5, w.tile_y as f32 + 0.5) <= 1.2
+                        {
+                            w.hp -= 3600.0 * 4.0 * DT;
+                            if w.hp <= 0.0 {
+                                w.hp = 0.0;
+                                w.destroyed = true;
+                                wall_grid[w.tile_y as usize][w.tile_x as usize] = 0.0;
+                                wall_idx_grid[w.tile_y as usize][w.tile_x as usize] = None;
+                                wall_broken = true;
+                            } else if wall_idx_grid[w.tile_y as usize][w.tile_x as usize]
+                                == Some(wi)
+                            {
+                                wall_grid[w.tile_y as usize][w.tile_x as usize] =
+                                    (w.hp / w.max_hp).max(0.05);
+                            }
+                        }
+                    }
+                    if wall_broken {
+                        self.invalidate_pathing();
+                    }
+                    for bi in 0..self.buildings.len() {
+                        if !self.buildings[bi].destroyed
+                            && building_edge_dist(&self.buildings[bi], nx, ny) <= 1.0
+                        {
+                            self.damage_building(bi, 3600.0 * DT);
+                        }
+                    }
+                }
+
+                self.units[u_idx].attack_cooldown -=
+                    DT * slow_mult * self.units[u_idx].attack_speed_mult;
+                if self.units[u_idx].attack_cooldown <= 0.0 {
+                    self.units[u_idx].attack_cooldown = self.units[u_idx].attack_speed_sec;
+                    self.execute_unit_attack(u_idx, th_x, th_y);
+                }
+                continue;
             }
             if kind == UnitKind::Troop(TroopId::BattleBlimp) {
                 self.units[u_idx].special_timer += DT;
@@ -3915,7 +4083,7 @@ impl BattleEngine {
                 if pref == PreferredTarget::AlliedGround && o.is_air {
                     continue;
                 }
-                if matches!(o.kind, UnitKind::Totem) {
+                if matches!(o.kind, UnitKind::Totem | UnitKind::Troop(TroopId::Furnace)) {
                     continue;
                 }
                 let d = dist(ux, uy, o.x, o.y);
@@ -4629,6 +4797,75 @@ impl BattleEngine {
         let team = self.units[u_idx].team;
         let domain = self.units[u_idx].target_domain;
 
+        // Firemite / Fire Spirit (characters.csv Firemite Spawn L4 + projectiles.csv FireSpiritJump4 + spells.csv FireSpiritBurn L4):
+        // Jumps onto its target from 2.0t range, suicides on launch (AttackCount = 1), deals 80 initial splash damage
+        // in 0.8t radius, and ignites a 10.0s FireSpiritBurn zone (150 DPS).
+        if kind == UnitKind::Troop(TroopId::Firemite) {
+            let dead_id = self.units[u_idx].id;
+            self.units[u_idx].hp = 0.0;
+            self.units[u_idx].alive = false;
+            self.clear_references_to_dead_unit(dead_id);
+            self.spawn_projectile(
+                ProjectileKind::FlameSpirit,
+                team,
+                ux,
+                uy,
+                tx,
+                ty,
+                target,
+                false,
+                5.0,
+                1.2,
+                dph,
+                0.8,
+                TargetDomain::GroundAndAir,
+                "#f97316",
+                ProjectilePayload::FireSpiritBurn {
+                    burn_dps: 150.0,
+                    duration_sec: 10.0,
+                    radius: 0.8,
+                },
+            );
+            return;
+        }
+
+        // Log Launcher (characters.csv L6 + projectiles.csv RollingLog):
+        // Throws a RollingLog 20.0 tiles toward the Town Hall (AttackRange 100 + PenetratingExtraRange 1900 = 2000),
+        // Speed 420 (5.25 t/s), PenetratingRadius 120 (1.2t), hitting every building and wall in its path (4x wall mult).
+        if kind == UnitKind::Troop(TroopId::LogLauncher) {
+            let dx = tx - ux;
+            let dy = ty - uy;
+            let dist_len = (dx * dx + dy * dy).sqrt().max(0.01);
+            let dir_x = dx / dist_len;
+            let dir_y = dy / dist_len;
+            let end_x = (ux + dir_x * 20.0).clamp(0.5, 49.5);
+            let end_y = (uy + dir_y * 20.0).clamp(0.5, 49.5);
+            self.spawn_projectile(
+                ProjectileKind::Log,
+                team,
+                ux,
+                uy,
+                end_x,
+                end_y,
+                target,
+                false,
+                5.25,
+                0.0,
+                dph,
+                1.2,
+                TargetDomain::Ground,
+                "#a16207",
+                ProjectilePayload::RollingLog {
+                    wall_mult: 4.0,
+                    pierce_radius: 1.2,
+                    hit_building_indices: Vec::new(),
+                    hit_wall_indices: Vec::new(),
+                    hit_unit_ids: Vec::new(),
+                },
+            );
+            return;
+        }
+
         // Ranged units & heroes spawn real projectiles with travel speed, arc & impact AoE
         // (excluding melee siege rams and kamikaze mites whose range > 1.25 is contact/leap reach).
         let is_ranged_projectile_unit = self.units[u_idx].range > 1.25
@@ -4977,6 +5214,68 @@ impl BattleEngine {
             p.x = p.from_x + (p.target_x - p.from_x) * t;
             p.y = p.from_y + (p.target_y - p.from_y) * t;
 
+            // Continuous line-piercing collision for Log Launcher's RollingLog:
+            // Damages every building, wall (4x multiplier), and defending ground unit in its 1.2t path as it rolls!
+            if let ProjectilePayload::RollingLog {
+                wall_mult,
+                pierce_radius,
+                ref mut hit_building_indices,
+                ref mut hit_wall_indices,
+                ref mut hit_unit_ids,
+            } = p.payload
+            {
+                let mut wall_broken = false;
+                for (wi, w) in self.walls.iter_mut().enumerate() {
+                    if !w.destroyed
+                        && !hit_wall_indices.contains(&wi)
+                        && dist(p.x, p.y, w.tile_x as f32 + 0.5, w.tile_y as f32 + 0.5)
+                            <= pierce_radius
+                    {
+                        hit_wall_indices.push(wi);
+                        w.hp -= p.damage * wall_mult;
+                        if w.hp <= 0.0 {
+                            w.hp = 0.0;
+                            w.destroyed = true;
+                            wall_broken = true;
+                        }
+                    }
+                }
+                if wall_broken {
+                    self.invalidate_pathing();
+                }
+
+                for bi in 0..self.buildings.len() {
+                    if !self.buildings[bi].destroyed
+                        && !hit_building_indices.contains(&bi)
+                        && building_edge_dist(&self.buildings[bi], p.x, p.y) <= pierce_radius
+                    {
+                        hit_building_indices.push(bi);
+                        self.damage_building(bi, p.damage);
+                        self.visual_events.push(VisualEvent::Explosion {
+                            x: p.x,
+                            y: p.y,
+                            radius: 1.0,
+                            color: "#a16207",
+                        });
+                    }
+                }
+
+                for ui in 0..self.units.len() {
+                    if self.units[ui].alive
+                        && self.units[ui].team != p.team
+                        && !self.units[ui].is_air
+                        && !self.units[ui].is_burrowed
+                        && !hit_unit_ids.contains(&self.units[ui].id)
+                        && dist(p.x, p.y, self.units[ui].x, self.units[ui].y) <= pierce_radius
+                    {
+                        hit_unit_ids.push(self.units[ui].id);
+                        self.damage_unit(ui, p.damage);
+                    }
+                }
+
+                continue;
+            }
+
             if p.progress < 1.0 {
                 continue;
             }
@@ -4987,6 +5286,61 @@ impl BattleEngine {
 
             if let ProjectilePayload::CastDefenderSpell { spell_id, .. } = p.payload {
                 deferred_spells.push((spell_id, Team::Defender, ix, iy));
+                continue;
+            }
+
+            if let ProjectilePayload::FireSpiritBurn {
+                burn_dps,
+                duration_sec,
+                radius,
+            } = p.payload
+            {
+                // Firemite jump impact: 80 initial splash damage + 10s FireSpiritBurn (150 DPS, 0.8t radius)
+                for bi in 0..self.buildings.len() {
+                    if !self.buildings[bi].destroyed
+                        && building_edge_dist(&self.buildings[bi], ix, iy) <= radius
+                    {
+                        self.damage_building(bi, p.damage);
+                    }
+                }
+                if let TargetRef::Wall(wi) = p.target {
+                    if wi < self.walls.len() && !self.walls[wi].destroyed {
+                        self.walls[wi].hp -= p.damage;
+                        if self.walls[wi].hp <= 0.0 {
+                            self.walls[wi].hp = 0.0;
+                            self.walls[wi].destroyed = true;
+                            self.invalidate_pathing();
+                        }
+                    }
+                }
+                for ui in 0..self.units.len() {
+                    if self.units[ui].alive
+                        && self.units[ui].team != p.team
+                        && !self.units[ui].is_burrowed
+                        && dist(ix, iy, self.units[ui].x, self.units[ui].y) <= radius
+                    {
+                        self.damage_unit(ui, p.damage);
+                    }
+                }
+                self.visual_events.push(VisualEvent::Explosion {
+                    x: ix,
+                    y: iy,
+                    radius,
+                    color: "#f97316",
+                });
+                self.spells.push(ActiveSpellZone {
+                    spell_id: SpellId::Poison,
+                    team: p.team,
+                    x: ix,
+                    y: iy,
+                    radius,
+                    remaining_sec: duration_sec,
+                    clone_budget_remaining: 0,
+                    processed_unit_ids: Vec::new(),
+                    spawn_remaining: 0,
+                    spawn_timer: 0.0,
+                    fire_dps: burn_dps,
+                });
                 continue;
             }
 
@@ -5428,6 +5782,23 @@ impl BattleEngine {
         }
     }
 
+    fn clear_references_to_dead_unit(&mut self, dead_uid: u32) {
+        for b in &mut self.buildings {
+            if b.current_target == Some(dead_uid) {
+                b.current_target = None;
+                b.inferno_ramp_sec = 0.0;
+            }
+        }
+        for u in &mut self.units {
+            if u.target == TargetRef::Unit(dead_uid) {
+                u.target = TargetRef::None;
+                u.repath_timer = 0.0;
+            }
+        }
+        self.projectiles
+            .retain(|p| !(p.homing && p.target == TargetRef::Unit(dead_uid)));
+    }
+
     pub fn damage_unit(&mut self, u_idx: usize, dmg: f32) {
         if !self.units[u_idx].alive || self.units[u_idx].invincibility_timer > 0.0 {
             return;
@@ -5499,14 +5870,16 @@ impl BattleEngine {
                 return;
             }
 
+            let dead_uid = self.units[u_idx].id;
             self.units[u_idx].hp = 0.0;
             self.units[u_idx].alive = false;
+            self.clear_references_to_dead_unit(dead_uid);
             let ux = self.units[u_idx].x;
             let uy = self.units[u_idx].y;
             let team = self.units[u_idx].team;
             let kind = self.units[u_idx].kind;
 
-            if self.active_siege_unit_id == Some(self.units[u_idx].id) {
+            if self.active_siege_unit_id == Some(dead_uid) {
                 self.release_attacker_cc(ux, uy);
             }
 

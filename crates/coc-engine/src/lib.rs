@@ -892,4 +892,172 @@ mod tests {
         assert_eq!(rc_unit.limited_special_attacks, 10);
         assert_eq!(rc_unit.range, 10.0, "Rocket Spear grants 10.0 tiles range for first 10 attacks");
     }
+
+    #[test]
+    fn test_furnace_fire_spirit_jump_suicide_and_burn() {
+        let catalog = get_full_catalog();
+        let mut layout = catalog.preset_layouts[0].clone();
+        layout.buildings = vec![PlacedBuilding {
+            instance_id: 1,
+            building_id: BuildingId::GoldStorage,
+            tile_x: 15,
+            tile_y: 15,
+            mode: DefenseMode::Default,
+            direction_deg: 0.0,
+        }];
+        layout.walls.clear();
+        layout.traps.clear();
+        layout.defending_heroes.clear();
+        layout.defending_cc_troops.clear();
+        let army = catalog.preset_armies[0].clone();
+        let mut engine = BattleEngine::new(&layout, &army);
+
+        // Spawn a Furnace at (10, 15) and verify it spawns a Fire Spirit after 2.7s
+        let _furnace = engine.spawn_troop_unit(TroopId::Furnace, Team::Attacker, 10.0, 15.0, Some(60.0));
+        for _ in 0..28 {
+            engine.step(BattleAction::NoOp);
+        }
+        let fm_id = engine
+            .units
+            .iter()
+            .find(|u| u.kind == UnitKind::Troop(TroopId::Firemite) && u.alive)
+            .map(|u| u.id)
+            .expect("Furnace must spawn a Fire Spirit (Firemite)");
+
+        let initial_storage_hp = engine.buildings[0].hp;
+        // Step until the Fire Spirit reaches 2.0t range, leaps, suicides, and sets the storage on fire
+        for _ in 0..30 {
+            engine.step(BattleAction::NoOp);
+        }
+        let fm_unit = engine.units.iter().find(|u| u.id == fm_id).unwrap();
+        assert!(
+            !fm_unit.alive,
+            "Fire Spirit must suicide upon leaping onto its target"
+        );
+        let hp_after_impact = engine.buildings[0].hp;
+        assert!(
+            hp_after_impact < initial_storage_hp,
+            "Fire Spirit jump must deal initial impact damage"
+        );
+        assert!(
+            engine.spells.iter().any(|z| z.fire_dps > 0.0),
+            "Fire Spirit jump must ignite a FireSpiritBurn zone on the target"
+        );
+
+        // Advance 20 ticks (2.0s) and verify the fire pool deals 150 DPS (300 damage over 2s)
+        for _ in 0..20 {
+            engine.step(BattleAction::NoOp);
+        }
+        assert!(
+            engine.buildings[0].hp <= hp_after_impact - 280.0,
+            "FireSpiritBurn must burn the target building at 150 DPS"
+        );
+    }
+
+    #[test]
+    fn test_log_launcher_rolling_log_pierces_walls_and_buildings() {
+        let catalog = get_full_catalog();
+        let mut layout = catalog.preset_layouts[0].clone();
+        // Line up a Wall at (12, 25), a Gold Storage at (16, 24), and the Town Hall at (24, 24)
+        layout.buildings = vec![
+            PlacedBuilding {
+                instance_id: 1,
+                building_id: BuildingId::GoldStorage,
+                tile_x: 16,
+                tile_y: 24,
+                mode: DefenseMode::Default,
+                direction_deg: 0.0,
+            },
+            PlacedBuilding {
+                instance_id: 2,
+                building_id: BuildingId::TownHall,
+                tile_x: 24,
+                tile_y: 24,
+                mode: DefenseMode::GuardianLogger,
+                direction_deg: 0.0,
+            },
+        ];
+        layout.walls = vec![(12, 25)];
+        layout.traps.clear();
+        layout.defending_heroes.clear();
+        layout.defending_cc_troops.clear();
+        let army = catalog.preset_armies[0].clone();
+        let mut engine = BattleEngine::new(&layout, &army);
+
+        let initial_wall_hp = engine.walls[0].hp;
+        let initial_storage_hp = engine.buildings[0].hp;
+        let initial_th_hp = engine.buildings[1].hp;
+
+        // Deploy Log Launcher at (8.0, 25.5) -> distance to TH is ~16 tiles (within 20t log range!)
+        let _ll = engine.spawn_troop_unit(TroopId::LogLauncher, Team::Attacker, 8.0, 25.5, None);
+        // Step 32 ticks (3.2s): 1st RollingLog rolls across the wall, storage, and TH
+        for _ in 0..32 {
+            engine.step(BattleAction::NoOp);
+        }
+
+        // Wall must take 690 * 4.0 = 2760 damage from the first log
+        assert_eq!(
+            (initial_wall_hp - engine.walls[0].hp).round(),
+            2760.0,
+            "RollingLog must deal 4x damage (2760) to walls in its path"
+        );
+        // Gold Storage and Town Hall along the path must both be hit by the rolling log (690 damage)
+        assert!(
+            engine.buildings[0].hp <= initial_storage_hp - 690.0,
+            "RollingLog must hit buildings in its way"
+        );
+        assert!(
+            engine.buildings[1].hp <= initial_th_hp - 690.0,
+            "RollingLog must roll up to 20 tiles and hit the Town Hall"
+        );
+    }
+
+    #[test]
+    fn test_totem_death_clears_all_targets_and_projectiles() {
+        let catalog = get_full_catalog();
+        let mut layout = catalog.preset_layouts[0].clone();
+        layout.buildings = vec![PlacedBuilding {
+            instance_id: 1,
+            building_id: BuildingId::InfernoTower,
+            tile_x: 20,
+            tile_y: 20,
+            mode: DefenseMode::InfernoSingle,
+            direction_deg: 0.0,
+        }];
+        layout.walls.clear();
+        layout.traps.clear();
+        layout.defending_heroes.clear();
+        layout.defending_cc_troops.clear();
+        let mut army = catalog.preset_armies[0].clone();
+        army.spells = vec![(SpellId::Totem, 1)];
+        let mut engine = BattleEngine::new(&layout, &army);
+
+        engine.apply_action(BattleAction::CastSpell {
+            spell_id: SpellId::Totem,
+            x: 22.0,
+            y: 20.0,
+        });
+        for _ in 0..5 {
+            engine.step(BattleAction::NoOp);
+        }
+        let totem_idx = engine
+            .units
+            .iter()
+            .position(|u| u.kind == UnitKind::Totem && u.alive)
+            .expect("Totem must be alive");
+        let totem_id = engine.units[totem_idx].id;
+        assert_eq!(engine.buildings[0].current_target, Some(totem_id));
+
+        // Kill the Totem and verify building target & visual events clear cleanly
+        engine.damage_unit(totem_idx, 20000.0);
+        assert!(
+            engine.buildings[0].current_target.is_none(),
+            "Defenses must immediately clear current_target when Totem dies"
+        );
+        engine.step(BattleAction::NoOp);
+        assert!(
+            engine.visual_events.is_empty(),
+            "No residual beams or explosions may remain after Totem dies"
+        );
+    }
 }

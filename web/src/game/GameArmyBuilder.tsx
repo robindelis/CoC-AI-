@@ -34,7 +34,7 @@ type CatalogTab =
 
 const SAVED_RECIPES_KEY = 'coc_th18_saved_army_recipes_v2';
 
-export const ArmyRecipeBuilder: React.FC<Props> = ({
+export const GameArmyBuilder: React.FC<Props> = ({
   catalog,
   army,
   onChangeArmy,

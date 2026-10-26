@@ -1785,3 +1785,110 @@ body {
   line-height: 1.15;
 }
 
+/* DEDICATED AI STUDIO SECTION */
+.ai-tab-btn {
+  margin-left: 10px;
+  border-color: #6366f1;
+}
+
+.ai-studio-workspace {
+  display: grid;
+  grid-template-columns: 1fr 370px;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.ai-sandbox-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.ai-studio-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: rgba(15, 23, 42, 0.96);
+  border-left: 2px solid #334155;
+  overflow-y: auto;
+}
+
+.ai-card {
+  background: #141f33;
+  border: 2px solid #293b59;
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ai-card-header h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #fde047;
+}
+
+.ai-tensor-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-tensor-canvas {
+  width: 124px;
+  height: 124px;
+  border-radius: 8px;
+  border: 2px solid #334155;
+  background: #0f172a;
+  image-rendering: pixelated;
+  flex-shrink: 0;
+}
+
+.ai-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.ai-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: #cbd5e1;
+}
+
+.ai-btn-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.75rem;
+}
+
+.ai-history-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: rgba(15, 23, 42, 0.7);
+  border-radius: 6px;
+  color: #e2e8f0;
+}
+
+

@@ -1190,51 +1190,6 @@ export const BattlefieldCanvas: React.FC<Props> = ({
         ctx.stroke();
       }
 
-      for (const ev of battleState.visual_events) {
-        if ('Beam' in ev) {
-          const b = ev.Beam;
-          const [fx, fy] = vs(b.from_x, b.from_y);
-          const [tx, ty] = vs(b.to_x, b.to_y);
-          ctx.strokeStyle = b.color;
-          ctx.lineWidth = b.width;
-          ctx.beginPath();
-          ctx.moveTo(fx, fy);
-          ctx.lineTo(tx, ty);
-          ctx.stroke();
-        } else if ('Projectile' in ev) {
-          const p = ev.Projectile;
-          const [fx, fy] = vs(p.from_x, p.from_y);
-          const [tx, ty] = vs(p.to_x, p.to_y);
-          ctx.strokeStyle = p.color;
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.moveTo(fx, fy);
-          ctx.lineTo(tx, ty);
-          ctx.stroke();
-        } else if ('Explosion' in ev) {
-          const ex = ev.Explosion;
-          const [cx, cy] = vs(ex.x, ex.y);
-          const rPx = ex.radius * 10;
-          const grad = ctx.createRadialGradient(cx, cy, 2, cx, cy, rPx);
-          grad.addColorStop(0, 'rgba(254, 240, 138, 0.85)');
-          grad.addColorStop(0.5, 'rgba(249, 115, 22, 0.55)');
-          grad.addColorStop(1, 'rgba(239, 68, 68, 0.0)');
-          ctx.fillStyle = grad;
-          ctx.beginPath();
-          ctx.arc(cx, cy, rPx, 0, Math.PI * 2);
-          ctx.fill();
-        } else if ('HealPulse' in ev) {
-          const hp = ev.HealPulse;
-          const [cx, cy] = vs(hp.x, hp.y);
-          const rPx = hp.radius * 9;
-          ctx.strokeStyle = 'rgba(250, 204, 21, 0.85)';
-          ctx.lineWidth = 2.4;
-          ctx.beginPath();
-          ctx.arc(cx, cy, rPx, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-      }
-
       // Live units: real full-body sprites with shadows, facing & HP bars
       const sortedUnits = [...battleState.units]
         .filter((u) => u.alive)
@@ -1266,13 +1221,13 @@ export const BattlefieldCanvas: React.FC<Props> = ({
           let targetPos: [number, number] | null = null;
           if (targetRef.Building !== undefined) {
             const tb = battleState.buildings[targetRef.Building];
-            if (tb) targetPos = vs(tb.center_x, tb.center_y);
+            if (tb && !tb.destroyed) targetPos = vs(tb.center_x, tb.center_y);
           } else if (targetRef.Wall !== undefined) {
             const tw = battleState.walls[targetRef.Wall];
-            if (tw) targetPos = vs(tw.tile_x + 0.5, tw.tile_y + 0.5);
+            if (tw && !tw.destroyed) targetPos = vs(tw.tile_x + 0.5, tw.tile_y + 0.5);
           } else if (targetRef.Unit !== undefined) {
             const targetUnitId = targetRef.Unit;
-            const tu = battleState.units.find((uu) => uu.id === targetUnitId);
+            const tu = battleState.units.find((uu) => uu.id === targetUnitId && uu.alive);
             if (tu) targetPos = vs(tu.x, tu.y);
           }
           if (targetPos) {
@@ -1379,123 +1334,6 @@ export const BattlefieldCanvas: React.FC<Props> = ({
               : '#ef4444';
           ctx.fillRect(gxS - bw / 2, by, bw * ratio, bh);
         }
-      }
-
-      // In-flight Projectiles (with travel speed, parabolic arc height & ground AoE indicator)
-      for (const p of battleState.projectiles ?? []) {
-        const [px, py] = vs(p.x, p.y);
-        const [fx, fy] = vs(p.from_x, p.from_y);
-        const [tx, ty] = vs(p.target_x, p.target_y);
-        const t = Math.max(0, Math.min(1, p.progress));
-        const zLift =
-          4 * t * (1 - t) * p.arc_height * (overlays.isometric ? 14 : 16);
-
-        // Ballistic AoE ground target ring (Mortar, Scattershot, Bomb Tower, Flame Flinger, Spell Vial)
-        if (!p.homing && p.splash_radius > 0) {
-          const rPx = p.splash_radius * (overlays.isometric ? 11.2 : 15.6);
-          ctx.save();
-          ctx.strokeStyle = p.color;
-          ctx.globalAlpha = 0.42;
-          ctx.lineWidth = 1.4;
-          ctx.setLineDash([4, 3]);
-          ctx.beginPath();
-          ctx.ellipse(
-            tx,
-            ty,
-            rPx,
-            overlays.isometric ? rPx * 0.67 : rPx,
-            0,
-            0,
-            Math.PI * 2
-          );
-          ctx.stroke();
-          ctx.restore();
-        }
-
-        // Ground shadow under projectile
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
-        ctx.beginPath();
-        ctx.ellipse(px, py + 2, 4.2, 2.2, 0, 0, Math.PI * 2);
-        ctx.fill();
-
-        const drawY = py - zLift;
-        const angle = Math.atan2(ty - fy, tx - fx);
-
-        ctx.save();
-        ctx.translate(px, drawY);
-        ctx.rotate(angle);
-
-        if (p.kind === 'Spear' || p.kind === 'Arrow') {
-          const len = p.kind === 'Spear' ? 14 : 10;
-          ctx.strokeStyle = p.color;
-          ctx.lineWidth = p.kind === 'Spear' ? 2.4 : 1.8;
-          ctx.beginPath();
-          ctx.moveTo(-len * 0.6, 0);
-          ctx.lineTo(len * 0.5, 0);
-          ctx.stroke();
-          ctx.fillStyle = '#ffffff';
-          ctx.beginPath();
-          ctx.moveTo(len * 0.6, 0);
-          ctx.lineTo(len * 0.2, -2.5);
-          ctx.lineTo(len * 0.2, 2.5);
-          ctx.closePath();
-          ctx.fill();
-        } else if (
-          p.kind === 'MortarShell' ||
-          p.kind === 'Boulder' ||
-          p.kind === 'ScatterBundle' ||
-          p.kind === 'Cannonball'
-        ) {
-          const rad =
-            p.kind === 'MortarShell' || p.kind === 'Boulder'
-              ? 5.2
-              : p.kind === 'ScatterBundle'
-              ? 4.6
-              : 3.6;
-          // Smoke/ember trail
-          ctx.strokeStyle = p.color;
-          ctx.globalAlpha = 0.45;
-          ctx.lineWidth = rad * 1.1;
-          ctx.beginPath();
-          ctx.moveTo(-rad * 2.2, 0);
-          ctx.lineTo(0, 0);
-          ctx.stroke();
-          ctx.globalAlpha = 1;
-
-          ctx.fillStyle = '#1e293b';
-          ctx.beginPath();
-          ctx.arc(0, 0, rad, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = p.color;
-          ctx.lineWidth = 1.8;
-          ctx.stroke();
-        } else if (p.kind === 'Log') {
-          ctx.fillStyle = '#78350f';
-          ctx.strokeStyle = '#f59e0b';
-          ctx.lineWidth = 1.6;
-          ctx.fillRect(-5, -9, 10, 18);
-          ctx.strokeRect(-5, -9, 10, 18);
-        } else if (p.kind === 'SpellVial') {
-          ctx.fillStyle = p.color;
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 1.8;
-          ctx.beginPath();
-          ctx.arc(0, 0, 5.2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
-        } else {
-          // CandleFlame, WizardFireball, FlameSpirit, Rocket, EnergyBolt
-          ctx.fillStyle = p.color;
-          ctx.beginPath();
-          ctx.ellipse(0, 0, 5.5, 3.2, 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = '#fef08a';
-          ctx.beginPath();
-          ctx.arc(1.2, 0, 2.1, 0, Math.PI * 2);
-          ctx.fill();
-        }
-
-        ctx.restore();
       }
     }
 

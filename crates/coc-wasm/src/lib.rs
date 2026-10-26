@@ -1,5 +1,5 @@
 use coc_data::{get_full_catalog, ArmyLoadout, VillageLayout};
-use coc_engine::{compute_no_deploy_mask, validate_layout, BattleAction, BattleEngine};
+use coc_engine::{compute_no_deploy_mask, validate_layout, BattleAction, BattleEngine, VisualEvent};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -39,6 +39,7 @@ pub fn wasm_compute_no_deploy_json(layout_json: &str) -> String {
 #[wasm_bindgen]
 pub struct WasmBattleSession {
     engine: BattleEngine,
+    pending_action_events: Vec<VisualEvent>,
 }
 
 #[wasm_bindgen]
@@ -51,6 +52,7 @@ impl WasmBattleSession {
             .map_err(|e| JsValue::from_str(&format!("Army parse error: {}", e)))?;
         Ok(WasmBattleSession {
             engine: BattleEngine::new(&layout, &army),
+            pending_action_events: Vec::new(),
         })
     }
 
@@ -58,11 +60,22 @@ impl WasmBattleSession {
         serde_json::to_string(&self.engine).unwrap()
     }
 
+    pub fn extract_spatial_observation_json(&self) -> String {
+        serde_json::to_string(&self.engine.extract_spatial_observation()).unwrap()
+    }
+
     pub fn apply_action_json(&mut self, action_json: &str) -> bool {
         let Ok(action) = serde_json::from_str::<BattleAction>(action_json) else {
             return false;
         };
-        self.engine.apply_action(action)
+        self.engine.visual_events.clear();
+        let ok = self.engine.apply_action(action);
+        if ok {
+            self.pending_action_events
+                .extend(self.engine.visual_events.iter().cloned());
+            self.engine.visual_events = self.pending_action_events.clone();
+        }
+        ok
     }
 
     /// Activates a hero's signature ability. `hero_id_json` is the serialized
@@ -71,12 +84,21 @@ impl WasmBattleSession {
         let Ok(hero_id) = serde_json::from_str::<coc_data::HeroId>(hero_id_json) else {
             return false;
         };
-        self.engine
-            .apply_action(BattleAction::ActivateHeroAbility { hero_id })
+        self.engine.visual_events.clear();
+        let ok = self
+            .engine
+            .apply_action(BattleAction::ActivateHeroAbility { hero_id });
+        if ok {
+            self.pending_action_events
+                .extend(self.engine.visual_events.iter().cloned());
+            self.engine.visual_events = self.pending_action_events.clone();
+        }
+        ok
     }
 
     pub fn step_ticks(&mut self, num_ticks: u32) -> String {
-        let mut accumulated_events = std::mem::take(&mut self.engine.visual_events);
+        let mut accumulated_events = std::mem::take(&mut self.pending_action_events);
+        self.engine.visual_events.clear();
         for _ in 0..num_ticks.max(1) {
             if self.engine.is_finished {
                 break;
@@ -93,6 +115,7 @@ impl WasmBattleSession {
         // Phase 1 (t == 0 or no attackers deployed): Funnel & Tank wave along West breach line + Siege Machine
         // Phase 2 (t >= 10): Main Army core wave + all Heroes & Pets
         // Phase 3 (t % 35 == 0): Dynamic Rage, Healing, Overgrowth, Freeze spells + Hero Equipment Abilities
+        self.engine.visual_events.clear();
         let t = self.engine.tick;
         let has_attackers = self
             .engine
@@ -192,7 +215,10 @@ impl WasmBattleSession {
             }
         }
 
+        let mut action_events = std::mem::take(&mut self.engine.visual_events);
         self.engine.step(BattleAction::NoOp);
+        action_events.append(&mut self.engine.visual_events);
+        self.engine.visual_events = action_events;
         serde_json::to_string(&self.engine).unwrap()
     }
 }

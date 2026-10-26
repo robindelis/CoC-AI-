@@ -47,17 +47,23 @@ A Clash of Clans Town Hall 18 combat simulator, village layout editor, and reinf
 │       ├── Cargo.toml
 │       ├── pyproject.toml
 │       └── src/lib.rs                # PyBattleEnv class, action masks, and parallel layout evaluation
-├── python/                           # Python RL curriculum, GPU trainer, and FastAPI bridge
+├── learning/                         # Isolated educational curriculum (PyTorch warmup & Deep RL labs)
+│   ├── pytorch_bootcamp/
+│   │   ├── bootcamp_exercises.py
+│   │   ├── bootcamp_solutions.py
+│   │   └── verify_bootcamp.py
+│   └── rl_labs/
+│       ├── student_lab.py            # Guided 4-stage hands-on PyTorch Deep RL workbook (CNN, Actor-Critic, GAE, PPO)
+│       ├── reference_solution.py     # Complete reference PyTorch implementation for Labs 1–4
+│       └── verify_labs.py            # Automated CUDA unit & shape verifier for student_lab.py
+├── python/                           # Production AI / RL runtime, GPU trainer, and FastAPI AI bridge
 │   ├── coc_rl/
 │   │   ├── __init__.py
-│   │   └── envs.py                   # Gymnasium environment (CoCAttackerEnv) and layout mutator (CoCDefenderEvolution)
-│   ├── labs/
-│   │   ├── __init__.py
-│   │   ├── student_lab.py            # Guided 4-stage hands-on PyTorch Deep RL workbook (CNN, Actor-Critic, GAE, PPO)
-│   │   └── reference_solution.py     # Complete reference PyTorch implementation for Labs 1–4
-│   ├── verify_labs.py                # Automated CUDA unit & shape verifier for student_lab.py
+│   │   ├── envs.py                   # Gymnasium environment (CoCAttackerEnv) and layout mutator (CoCDefenderEvolution)
+│   │   ├── networks.py               # Standalone CoCSpatialEncoder & CoCActorCritic neural networks
+│   │   └── ppo.py                    # Standalone reward shaping, GAE, and PPO update step
 │   ├── train_ai.py                   # CLI PyTorch GPU PPO trainer & Rayon base evolution benchmark
-│   └── server.py                     # FastAPI bridge server for the Web AI Training Studio
+│   └── ai_server.py                  # FastAPI bridge server for the Web AI Studio
 ├── scripts/
 │   └── fetch_assets.py               # Utility script to download sprite and font assets into web/public/assets/
 └── web/                              # React + TypeScript + Vite web application
@@ -66,17 +72,24 @@ A Clash of Clans Town Hall 18 combat simulator, village layout editor, and reinf
     ├── public/assets/                # Static sprites (.webp/.png) and fonts
     └── src/
         ├── main.tsx                  # React root entry point
-        ├── App.tsx                   # Main application state, battle HUD, deployment dock, editor, and AI studio tab
+        ├── App.tsx                   # Top-level shell routing between Game views and AI Studio
         ├── types.ts                  # TypeScript interfaces mirroring Rust structs
         ├── assetsManifest.ts         # Sprite asset path mappings
         ├── styles.css                # Application styling
         ├── wasm-pkg/                 # Generated wasm-pack output consumed by the frontend
         ├── canvas/
         │   ├── BattlefieldCanvas.tsx # HTML5 Canvas renderer (2.5D isometric & 2D top-down views, pan/zoom, pointer input)
+        │   ├── fx.ts                 # 60fps combat FX overlay layer
         │   └── spriteLoader.ts       # Image preloader, cache, and sprite sizing helpers
-        └── components/
-            ├── ArmyRecipeBuilder.tsx # Army composition, hero equipment, and pet selection UI
-            └── AITrainingConsole.tsx # Dedicated PyTorch AI Building, Tensor Inspector & GPU Training Console
+        ├── game/                     # Pure Game UI components (no AI dependencies)
+        │   ├── GameBattleHud.tsx     # Manual Battle Arena HUD, timer, playback controls, and deployment dock
+        │   ├── GameVillageEditor.tsx # 44x44 Village Editor palette, tools, and building inspector
+        │   ├── GameArmyBuilder.tsx   # Army composition, hero equipment, and pet selection UI
+        │   └── GameTacticalDrawer.tsx# Tactical overlays and live entity telemetry drawer
+        └── ai/                       # Dedicated AI Studio UI, client, and types
+            ├── AIStudioView.tsx      # AI Attack Sandbox, Spatial Tensor Inspector, GPU PPO Trainer & Base Evolution
+            ├── aiClient.ts           # FastAPI AI server client
+            └── aiTypes.ts            # AI telemetry and tensor interfaces
 ```
 
 ## Build & Development Commands
@@ -91,10 +104,11 @@ A Clash of Clans Town Hall 18 combat simulator, village layout editor, and reinf
 # 3. Build Python extension into the local CUDA PyTorch .venv
 . "$HOME/.cargo/env" && env -u CONDA_PREFIX VIRTUAL_ENV="$PWD/.venv" .venv/bin/maturin develop --release -m crates/coc-py/Cargo.toml
 
-# 4. Verify the 4 PyTorch RL Labs on GPU or run CLI PPO training
-.venv/bin/python python/verify_labs.py
+# 4. Verify the Educational Labs on GPU or run CLI PPO training
+.venv/bin/python learning/rl_labs/verify_labs.py
+.venv/bin/python learning/pytorch_bootcamp/verify_bootcamp.py
 .venv/bin/python python/train_ai.py --train-ppo --episodes 20
 
-# 5. Launch both the Python GPU AI Studio Server (port 8000) and Web UI (port 5173)
-./start_ai_studio.sh
+# 5. Launch the Python GPU AI Studio Server (port 8000)
+.venv/bin/python python/ai_server.py
 ```

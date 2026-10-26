@@ -1,6 +1,6 @@
 # CoC-AI: Learning Deep Reinforcement Learning with Clash of Clans
 
-[![Focus: Personal Educational Project](https://img.shields.io/badge/Project-Personal%20AI%20Curriculum-blue?style=flat-square)](python/labs/)
+[![Focus: Personal Educational Project](https://img.shields.io/badge/Project-Personal%20AI%20Curriculum-blue?style=flat-square)](learning/rl_labs/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-Deep%20RL-EE4C2C?logo=pytorch&logoColor=white&style=flat-square)](https://pytorch.org/)
 [![Rust Engine](https://img.shields.io/badge/Rust-Fast%20Simulation-DEA584?logo=rust&logoColor=white&style=flat-square)](https://www.rust-lang.org/)
 [![Vite + React](https://img.shields.io/badge/Frontend-Interactive%20Sandbox-61DAFB?logo=react&logoColor=black&style=flat-square)](https://react.dev/)
@@ -44,20 +44,20 @@ Without getting bogged down in complex equations, the project covers fundamental
 
 The repository is organized into simple, self-contained stages:
 
-* **Level 1 — PyTorch Warmup** (`python/pytorch_bootcamp/`):
+* **Level 1 — PyTorch Warmup** (`learning/pytorch_bootcamp/`):
   Short, zero-complexity exercises covering pure PyTorch basics (tensors, layers, loss functions, and action sampling).
   ```bash
-  python python/pytorch_bootcamp/verify_bootcamp.py
+  python learning/pytorch_bootcamp/verify_bootcamp.py
   ```
 
-* **Level 2 — Guided Deep RL Labs** (`python/labs/`):
+* **Level 2 — Guided Deep RL Labs** (`learning/rl_labs/`):
   A 4-step hands-on workbook where you build the AI attacker step by step (CNN map encoder, actor-critic policy, reward calculations, and PPO update loop).
   ```bash
-  python python/verify_labs.py
+  python learning/rl_labs/verify_labs.py
   ```
 
-* **Level 3 — Visual Web Sandbox** (`web/`):
-  An interactive React and Canvas interface to inspect village layouts, test attack strategies, and watch simulations unfold.
+* **Level 3 — Visual Web Sandbox & AI Studio** (`web/`, `python/`):
+  An interactive React and Canvas interface with separated **Game** (`web/src/game/`) and **AI Studio** (`web/src/ai/`) workspaces.
 
 ---
 
@@ -67,20 +67,20 @@ The repository is organized into simple, self-contained stages:
 
 ```bash
 # Verify the PyTorch basics
-python python/pytorch_bootcamp/verify_bootcamp.py
+python learning/pytorch_bootcamp/verify_bootcamp.py
 
 # Verify the Deep RL exercises
-python python/verify_labs.py
+python learning/rl_labs/verify_labs.py
 
 # Run a quick training experiment
 python python/train_ai.py --train-ppo --episodes 20
 ```
 
-### 2. Run the Interactive Web Sandbox
+### 2. Run the Interactive Web Sandbox & AI Studio
 
 ```bash
-# Start the simulation backend
-python python/server.py
+# Start the AI backend server
+python python/ai_server.py
 
 # In another terminal, run the web UI
 cd web

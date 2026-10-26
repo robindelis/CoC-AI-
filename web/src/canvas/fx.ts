@@ -913,16 +913,23 @@ function seedZoneAmbient(z: ActiveSpellZone, now: number, initial: boolean): voi
       1
     );
   } else if (z.spell_id === 'Poison') {
+    const isFirePool = z.radius <= 1.2;
     burst(
       z.x + (Math.random() - 0.5) * z.radius * 1.2,
       z.y + (Math.random() - 0.5) * z.radius * 0.8,
       false,
       now,
-      Math.random() < 0.5 ? '#4ade80' : '#a3e635',
-      1,
-      0.1,
-      'bubble',
-      0.2,
+      isFirePool
+        ? Math.random() < 0.5
+          ? '#f97316'
+          : '#fbbf24'
+        : Math.random() < 0.5
+        ? '#4ade80'
+        : '#a3e635',
+      isFirePool ? 2 : 1,
+      0.14,
+      isFirePool ? 'ember' : 'bubble',
+      isFirePool ? 0.45 : 0.2,
       1
     );
   }
@@ -1246,8 +1253,8 @@ export function drawFxFrame(
       tr.progress + (Math.max(0, tr.rate) * Math.max(0, now - tr.syncWall)) / 1000
     );
 
-    // Ballistic AoE ground marker at the target point
-    if (!tr.homing && tr.splash > 0) {
+    // Ballistic AoE ground marker at the target point (excluding line-rolling Logs)
+    if (!tr.homing && tr.splash > 0 && tr.kind !== 'Log') {
       const [txg, tyg] = projectTile(tr.toX, tr.toY, iso);
       const rPx = tr.splash * (iso ? 11.2 : 15.6);
       ctx.save();
@@ -1432,11 +1439,16 @@ function drawProjectileBody(
     ctx.fill();
     ctx.globalAlpha = 1;
   } else if (tr.kind === 'Log') {
+    // Wide spiked wooden log rolling perpendicular to its trajectory
     ctx.fillStyle = '#78350f';
-    ctx.strokeStyle = '#f59e0b';
+    ctx.strokeStyle = '#d97706';
     ctx.lineWidth = 1.6;
-    ctx.fillRect(-5, -9, 10, 18);
-    ctx.strokeRect(-5, -9, 10, 18);
+    ctx.fillRect(-4.5, -13, 9, 26);
+    ctx.strokeRect(-4.5, -13, 9, 26);
+    ctx.fillStyle = '#94a3b8';
+    for (const sy of [-9, -3, 3, 9]) {
+      ctx.fillRect(-5.5, sy - 1, 11, 2);
+    }
   } else if (tr.kind === 'SpellVial') {
     ctx.fillStyle = tr.color;
     ctx.strokeStyle = '#ffffff';
