@@ -1,0 +1,65 @@
+{
+  "model_class": "CoCActorCritic",
+  "architecture_hash": "dde4e8df8255553a3b2f9ca3fb3021c1d3afe2f198365c047007bba4994805b7",
+  "input_shape": [
+    1,
+    8,
+    50,
+    50
+  ],
+  "total_params": 891379,
+  "trainable_params": 891379,
+  "submodules": [
+    {
+      "name": "encoder.spatial_stem",
+      "type": "Sequential",
+      "params": 20928
+    },
+    {
+      "name": "encoder.context_res",
+      "type": "Sequential",
+      "params": 73984
+    },
+    {
+      "name": "encoder.global_tower",
+      "type": "Sequential",
+      "params": 691168
+    },
+    {
+      "name": "slot_type_head",
+      "type": "Linear",
+      "params": 1799
+    },
+    {
+      "name": "slot_idx_head",
+      "type": "Sequential",
+      "params": 35082
+    },
+    {
+      "name": "tile_cond_proj",
+      "type": "Linear",
+      "params": 16896
+    },
+    {
+      "name": "tile_conv_head",
+      "type": "Sequential",
+      "params": 18497
+    },
+    {
+      "name": "critic_head",
+      "type": "Sequential",
+      "params": 33025
+    }
+  ],
+  "files": {
+    "overview": {
+      "svg": "docs/architecture/coc_actor_critic_overview.svg",
+      "png": "docs/architecture/coc_actor_critic_overview.png"
+    },
+    "detailed": {
+      "svg": "docs/architecture/coc_actor_critic_detailed.svg",
+      "png": "docs/architecture/coc_actor_critic_detailed.png"
+    }
+  },
+  "updated_at": "2026-10-26 16:03:09 UTC"
+}

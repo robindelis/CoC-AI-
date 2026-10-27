@@ -19,6 +19,7 @@ from coc_rl import (
     CoCDefenderEvolution,
     compute_custom_reward,
     compute_gae,
+    ensure_architecture_diagrams,
     ppo_update_step,
 )
 
@@ -69,6 +70,7 @@ def train_pytorch_ppo(
         ticks_per_step=ticks_per_step,
     )
     model = CoCActorCritic(in_channels=8).to(device)
+    ensure_architecture_diagrams(model)
     if os.path.exists(DEFAULT_CKPT_PATH):
         try:
             ckpt = torch.load(DEFAULT_CKPT_PATH, map_location=device, weights_only=False)

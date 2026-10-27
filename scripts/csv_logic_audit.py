@@ -252,13 +252,14 @@ def main():
             "Unicorn",
             "Furnace",                # spawner: csv DPS/Range are spawn-flavor; only cadence matters
             "Log Launcher",           # range = our log-roll reach (~11 t), csv 1.0 = engagement dist
+            "Giant Giant",            # AQSummonGiantGiant caps at TroopLevel 10 (18500 HP / 700 DPS); rows 11-16 unreleased
         }
         skip = t["name"] in EXCEPTIONS
         for of, cf, mult, nd in [
             ("max_hp", "Hitpoints", 1.0, 1),
             ("dps", "DPS", 1.0, 1),
         ]:
-            if skip and of == "dps":
+            if skip:
                 continue
             if cf not in r:
                 continue

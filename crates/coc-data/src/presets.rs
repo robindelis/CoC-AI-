@@ -250,7 +250,7 @@ fn th18_defenses() -> Vec<(BuildingId, DefenseMode)> {
     push(WizardTower, Default, 2);
     push(Mortar, Default, 4);
     push(Cannon, Default, 1);
-    push(ArcherTower, Default, 2);
+    push(ArcherTower, Default, 3);
     push(HiddenTesla, Default, 5);
     push(BuildersHut, Default, 5);
     v

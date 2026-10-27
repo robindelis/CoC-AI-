@@ -206,7 +206,7 @@ pub static BUILDINGS: &[BuildingSpec] = &[
         name: "Archer Tower",
         category: BuildingCategory::Defense,
         max_level: 21,
-        max_count: 2,
+        max_count: 3,
         footprint: 3,
         max_hp: 1800.0,
         dps: 145.0,

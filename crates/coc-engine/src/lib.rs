@@ -79,7 +79,7 @@ mod tests {
         }
         assert!(engine.apply_action(BattleAction::DeploySiege { x: 1.5, y: 24.5 }));
 
-        for t in 0..600 {
+        for t in 0..1800 {
             if t == 80 {
                 for &(hid, _) in &armies[0].heroes {
                     engine.apply_action(BattleAction::ActivateHeroAbility { hero_id: hid });
@@ -96,6 +96,14 @@ mod tests {
             }
         }
 
+        println!(
+            "Battle finished at tick {} ({:.1}s): {} stars, {}% destruction, TH destroyed={}",
+            engine.tick,
+            engine.time_elapsed_sec,
+            engine.stars,
+            engine.destruction_pct,
+            engine.town_hall_destroyed
+        );
         assert!(engine.damage_dealt_total > 5000.0);
         assert!(engine.destruction_pct > 10);
     }

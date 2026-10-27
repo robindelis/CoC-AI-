@@ -1,0 +1,476 @@
+{
+  "nodes": [
+    {
+      "id": "group-env",
+      "type": "group",
+      "x": -40,
+      "y": -60,
+      "width": 680,
+      "height": 1120,
+      "color": "5",
+      "label": "1. Environment & Inputs (Rust PyO3 -> Gymnasium)"
+    },
+    {
+      "id": "env-sim",
+      "type": "text",
+      "x": 0,
+      "y": 0,
+      "width": 600,
+      "height": 220,
+      "color": "5",
+      "text": "### Rust Simulation Core & Gym Wrapper\n- **Files**: `crates/coc-engine/src/sim.rs`, `crates/coc-py/src/lib.rs`, `python/coc_rl/envs.py`\n- **Classes**: `BattleEngine` -> `PyBattleEnv` -> `CoCAttackerEnv`\n- **Step Resolution**: `ticks_per_step = 8` (`0.8s` simulated combat per RL decision; `0.1s` per tick, max `1800` ticks = `3m00s`)\n- **Episode Length**: Up to `max_steps_per_ep = 120` steps (or until 100% destruction / army wiped)"
+    },
+    {
+      "id": "obs-tensor",
+      "type": "text",
+      "x": 0,
+      "y": 260,
+      "width": 600,
+      "height": 380,
+      "color": "5",
+      "text": "### Input: Spatial Observation Tensor `(B, 8, 50, 50)`\nExtracted in `BattleEngine::extract_spatial_observation()` (`float32` in `[0.0, 1.0]`):\n\n| Ch | Feature | Normalization |\n| :- | :--- | :--- |\n| `0` | **Live Building HP** | `hp / 11000.0` across footprint |\n| `1` | **Defense DPS Threat** | `dps / 750.0` across footprint |\n| `2` | **Town Hall 18 Mask** | `1.0` on TH18 tiles, `0.0` elsewhere |\n| `3` | **Live Wall HP** | `hp / max_hp` on `1x1` wall tiles |\n| `4` | **No-Deploy Red Zone** | `1.0` = blocked red zone, `0.0` = valid green tile |\n| `5` | **Ground Attacker HP** | Cumulative ground unit `hp / 5000.0` per tile |\n| `6` | **Air Attacker HP** | Cumulative air unit `hp / 5000.0` per tile |\n| `7` | **Active Spell Zones** | `1.0` at active spell centers |"
+    },
+    {
+      "id": "action-masks",
+      "type": "text",
+      "x": 0,
+      "y": 680,
+      "width": 600,
+      "height": 340,
+      "color": "3",
+      "text": "### Input: Dynamic Action Masks (`get_action_masks`)\nBoolean masks emitted every step by `PyBattleEnv`:\n\n1. **`slot_type` `(B, 7)`**:\n   - `0`: `NoOp` (always `True`, except during early curriculum steps `0..44`)\n   - `1`: `DeployTroop` (`any(remaining_troops > 0)`)\n   - `2`: `DeployHero` (`any(remaining_heroes)`)\n   - `3`: `ActivateHeroAbility` (hero deployed, alive & ability unused)\n   - `4`: `DeploySiege` (siege or unpopped CC available)\n   - `5`: `PopSiegeMachine` (active siege alive & unpopped)\n   - `6`: `CastSpell` (`any(remaining_spells > 0)`)\n2. **`slot_idx` `(B, 7, 10)`**: Per-category valid loadout slot mask (`0..9`)\n3. **`tile` `(B, 2500)`**: Flattened `50x50` valid green deployment tiles (`!no_deploy_mask`)"
+    },
+    {
+      "id": "group-backbone",
+      "type": "group",
+      "x": 740,
+      "y": -60,
+      "width": 680,
+      "height": 1120,
+      "color": "4",
+      "label": "2. Dual-Pathway Spatial CNN Backbone (CoCSpatialEncoder)"
+    },
+    {
+      "id": "spatial-stem",
+      "type": "text",
+      "x": 780,
+      "y": 40,
+      "width": 600,
+      "height": 250,
+      "color": "4",
+      "text": "### 2A. Spatial Stem (`self.spatial_stem`)\n**File**: `python/coc_rl/networks.py` (`CoCSpatialEncoder`)\nPreserves full `50x50` grid coordinates for tile-accurate targeting:\n\n```text\nInput: (B, 8, 50, 50)\n  -> Conv2d(8 -> 32, k=3, pad=1, bias=False)\n  -> GroupNorm(4, 32) + SiLU()\n  -> Conv2d(32 -> 64, k=3, pad=1, bias=False)\n  -> GroupNorm(8, 64) + SiLU()\nOutput h: (B, 64, 50, 50)\n```"
+    },
+    {
+      "id": "context-res",
+      "type": "text",
+      "x": 780,
+      "y": 340,
+      "width": 600,
+      "height": 290,
+      "color": "4",
+      "text": "### 2B. Dilated Context Residual (`self.context_res`)\nExpands receptive field to perceive defense ranges & compartments without losing spatial resolution:\n\n```text\nh: (B, 64, 50, 50)\n  -> Conv2d(64 -> 64, k=3, pad=2, dilation=2, bias=False)\n  -> GroupNorm(8, 64) + SiLU()\n  -> Conv2d(64 -> 64, k=3, pad=1, bias=False)\n  -> GroupNorm(8, 64)\n  -> SiLU(h + context_res(h))\n```\n**Output 1 (`spatial_features`)**: **`(B, 64, 50, 50)`**"
+    },
+    {
+      "id": "global-tower",
+      "type": "text",
+      "x": 780,
+      "y": 680,
+      "width": 600,
+      "height": 340,
+      "color": "4",
+      "text": "### 2C. Global Compression Tower (`self.global_tower`)\nDownsamples the battlefield into a compact tactical vector:\n\n```text\nspatial_features: (B, 64, 50, 50)\n  -> Conv2d(64 -> 96, k=3, stride=2, pad=1) + SiLU()   # (B, 96, 25, 25)\n  -> Conv2d(96 -> 128, k=3, stride=2, pad=1) + SiLU()  # (B, 128, 13, 13)\n  -> AdaptiveAvgPool2d((4, 4))                         # (B, 128, 4, 4)\n  -> Flatten()                                         # (B, 2048)\n  -> Linear(2048 -> 256) + LayerNorm(256) + SiLU()\n```\n**Output 2 (`global_embedding`)**: **`(B, 256)`**"
+    },
+    {
+      "id": "group-actor-critic",
+      "type": "group",
+      "x": 1520,
+      "y": -60,
+      "width": 960,
+      "height": 1460,
+      "color": "6",
+      "label": "3. Autoregressive Factorized Actor-Critic (CoCActorCritic)"
+    },
+    {
+      "id": "head-slot-type",
+      "type": "text",
+      "x": 1560,
+      "y": 0,
+      "width": 880,
+      "height": 260,
+      "color": "6",
+      "text": "### Step 1: Action Category Head (`slot_type_head`)\nDecides **what kind of action** to perform before choosing a slot or tile:\n- **Layer**: `Linear(256 -> 7)` applied to `global_embedding`\n- **Logit Masking**: `type_logits.masked_fill(~masks['slot_type'], -1e8)` (with `NoOp` fallback safety)\n- **Distribution**: `type_dist = Categorical(logits=type_logits)`\n- **Sampled / Chosen Action**: `chosen_type` $\\in \\{0..6\\}$ (`0=NoOp, 1=Troop, 2=Hero, 3=HeroAbility, 4=Siege, 5=PopSiege, 6=Spell`)"
+    },
+    {
+      "id": "cond-fusion",
+      "type": "text",
+      "x": 1560,
+      "y": 300,
+      "width": 880,
+      "height": 190,
+      "color": "6",
+      "text": "### Autoregressive Conditioning (`cond_emb`)\nDownstream heads are explicitly conditioned on the chosen `slot_type` so slot & tile selection adapt to the action category:\n```python\ntype_onehot = F.one_hot(chosen_type, num_classes=7).float()  # (B, 7)\ncond_emb = torch.cat([global_emb, type_onehot], dim=-1)      # (B, 263)\n```"
+    },
+    {
+      "id": "head-slot-idx",
+      "type": "text",
+      "x": 1560,
+      "y": 530,
+      "width": 420,
+      "height": 310,
+      "color": "6",
+      "text": "### Step 2: Loadout Slot Head (`slot_idx_head`)\nSelects **which army/hero/spell slot** (`0..9`) to use:\n- **MLP**: `Linear(263 -> 128) -> SiLU -> Linear(128 -> 10)`\n- **Conditional Masking**: Indexes `masks['slot_idx'][b, chosen_type]` so only slots valid for `chosen_type` remain active\n- **Distribution**: `idx_dist = Categorical(logits=idx_logits)`\n- **Output**: `chosen_idx` $\\in \\{0..9\\}$"
+    },
+    {
+      "id": "head-tile",
+      "type": "text",
+      "x": 2020,
+      "y": 530,
+      "width": 420,
+      "height": 310,
+      "color": "6",
+      "text": "### Step 3: Spatial Tile Head (`tile_conv_head`)\nSelects **where on the `50x50` map** to deploy or cast:\n1. `cond_spatial = Linear(263 -> 64)(cond_emb).view(B, 64, 1, 1)`\n2. `fused = SiLU(spatial_features + cond_spatial)` `(B, 64, 50, 50)`\n3. `Conv2d(64 -> 32, k=3, p=1) -> SiLU -> Conv2d(32 -> 1, k=1)` -> reshape `(B, 2500)`\n4. **Smart Masking**:\n   - If `chosen_type in {1, 2, 4}` (Troop/Hero/Siege): mask out red-zone tiles (`~masks['tile'] -> -1e8`)\n   - If `chosen_type == 6` (Spell): **all 2500 tiles valid** (can cast inside core)"
+    },
+    {
+      "id": "head-critic",
+      "type": "text",
+      "x": 1560,
+      "y": 880,
+      "width": 420,
+      "height": 220,
+      "color": "6",
+      "text": "### Critic / State-Value Head (`critic_head`)\nEstimates expected discounted return $V(s_t)$ from `global_embedding`:\n- **MLP**: `Linear(256 -> 128) -> SiLU -> Linear(128 -> 1)`\n- **Output**: Scalar `value` `(B,)`"
+    },
+    {
+      "id": "actor-output",
+      "type": "text",
+      "x": 2020,
+      "y": 880,
+      "width": 420,
+      "height": 480,
+      "color": "6",
+      "text": "### Factorized Output & Conditional Log-Prob\n**1. Action Tensor `(B, 4)`**:\n`[chosen_type, chosen_idx, tile_x, tile_y]`\nwhere `tile_x = chosen_tile % 50`, `tile_y = chosen_tile // 50`.\n\n**2. Relevance Masks (prevents unused-head gradient noise)**:\n- `uses_idx = chosen_type in {1, 2, 3, 6}`\n- `uses_tile = chosen_type in {1, 2, 4, 6}`\n\n**3. Joint Log-Prob & Entropy**:\n```python\nlog_prob = (\n    type_dist.log_prob(chosen_type)\n    + uses_idx * idx_dist.log_prob(chosen_idx)\n    + uses_tile * tile_dist.log_prob(chosen_tile)\n)\nentropy = (\n    type_dist.entropy()\n    + uses_idx * idx_dist.entropy()\n    + uses_tile * tile_dist.entropy()\n)\n```"
+    },
+    {
+      "id": "group-ppo",
+      "type": "group",
+      "x": 2580,
+      "y": -60,
+      "width": 760,
+      "height": 1460,
+      "color": "2",
+      "label": "4. PPO Training Loop, Reward Shaping & GAE"
+    },
+    {
+      "id": "rollout-step",
+      "type": "text",
+      "x": 2620,
+      "y": 0,
+      "width": 680,
+      "height": 280,
+      "color": "2",
+      "text": "### 4A. Trajectory Rollout (`train_pytorch_ppo`)\n**File**: `python/train_ai.py`\n- Runs up to `max_steps_per_ep = 120` steps (`ticks_per_step = 8`)\n- **Early Deployment Curriculum**: For `step_i < 45`, if any deployable units/spells remain (`slot_type[1:].any()`), `NoOp` (`slot_type[0]`) is masked out so the agent actively deploys its army instead of stalling\n- Stores `(obs, action, old_logprob, value, reward, done, masks)` per step"
+    },
+    {
+      "id": "reward-shaping",
+      "type": "text",
+      "x": 2620,
+      "y": 320,
+      "width": 680,
+      "height": 310,
+      "color": "2",
+      "text": "### 4B. Dense & Milestone Reward Shaping (`compute_custom_reward`)\n**File**: `python/coc_rl/ppo.py`\nCombines continuous HP damage feedback with tactical star milestones:\n\n$$r_t = 2.5 \\cdot \\Delta\\text{dmg\\_ratio} + 0.12 \\cdot \\Delta\\text{pct} + 3.5 \\cdot \\Delta\\text{stars}$$\n\n- **Town Hall 18 Destroyed Bonus**: `+2.5` (one-time when TH falls)\n- **3-Star Victory & Speed Bonus**: `+5.0 + 3.0 * time_remaining_ratio`\n- **Invalid Action Penalty**: `-0.05` safety penalty"
+    },
+    {
+      "id": "gae-calc",
+      "type": "text",
+      "x": 2620,
+      "y": 670,
+      "width": 680,
+      "height": 290,
+      "color": "2",
+      "text": "### 4C. Generalized Advantage Estimation (`compute_gae`)\n**File**: `python/coc_rl/ppo.py`\nBootstraps from terminal/next value $V(s_{T})$ in reverse time ($t = T-1 \\dots 0$) with $\\gamma = 0.99, \\lambda = 0.95$:\n\n$$\\delta_t = r_t + \\gamma V(s_{t+1})(1 - d_t) - V(s_t)$$\n$$\\hat{A}_t = \\delta_t + \\gamma \\lambda (1 - d_t) \\hat{A}_{t+1}$$\n$$R_t = \\hat{A}_t + V(s_t)$$"
+    },
+    {
+      "id": "ppo-update",
+      "type": "text",
+      "x": 2620,
+      "y": 1000,
+      "width": 680,
+      "height": 360,
+      "color": "2",
+      "text": "### 4D. Clipped PPO Update (`ppo_update_step`)\n**File**: `python/coc_rl/ppo.py`\nRuns `ppo_epochs = 4` gradient updates (`Adam`, `lr = 3e-4`, `max_grad_norm = 0.5`):\n\n1. Re-evaluate `new_logprob, entropy, new_value` on stored `(obs_b, actions_b, masks_b)`\n2. Normalize advantages: $\\tilde{A} = (\\hat{A} - \\mu_{\\hat{A}}) / (\\sigma_{\\hat{A}} + 10^{-8})$\n3. Probability ratio: $r_t(\\theta) = \\exp(\\log \\pi_\\theta - \\log \\pi_{\\theta_\\text{old}})$\n4. **Clipped Surrogate Loss** ($\\epsilon = 0.2, c_1 = 0.5, c_2 = 0.01$):\n   $$\\mathcal{L}_\\text{total} = \\mathcal{L}_{\\text{CLIP}}(\\theta) + 0.5 \\cdot \\frac{1}{2}\\text{MSE}(V_\\theta, R) - 0.01 \\cdot \\mathcal{H}(\\pi_\\theta)$$\n5. Saves checkpoint to `python/checkpoints/latest_attacker.pt`"
+    },
+    {
+      "id": "group-defender",
+      "type": "group",
+      "x": -40,
+      "y": 1120,
+      "width": 1460,
+      "height": 280,
+      "color": "1",
+      "label": "5. Defender AI: Parallel Evolutionary Base Optimizer (CoCDefenderEvolution)"
+    },
+    {
+      "id": "defender-evo",
+      "type": "text",
+      "x": 0,
+      "y": 1160,
+      "width": 1380,
+      "height": 210,
+      "color": "1",
+      "text": "### Evolutionary Base Layout Mutator & Rayon Multi-Core Evaluator\n- **Files**: `python/coc_rl/envs.py` (`CoCDefenderEvolution`), `crates/coc-py/src/lib.rs` (`evaluate_layouts_parallel`)\n- **Constraint-Preserving Mutation**: Swaps coordinates of same-footprint buildings (`3x3 <-> 3x3`, `4x4 <-> 4x4`) so non-overlap & TH18 building counts are 100% preserved, plus mutates configurable defense modes (`Inferno Single/Multi`, `X-Bow Ground/Air`, `Spell Tower`, `TH18 Guardian`)\n- **Rayon Parallel Fitness**: Evaluates entire population across all CPU cores against preset meta armies; ranks by `defender_score = 100.0 - avg_pct - 20.0 * avg_stars` and breeds top `elite_k = 4` layouts"
+    },
+    {
+      "id": "group-torchview",
+      "type": "group",
+      "x": 1520,
+      "y": 1460,
+      "width": 1820,
+      "height": 1180,
+      "color": "4",
+      "label": "6. Auto-Synced Torchview Computation Graphs (docs/architecture/)"
+    },
+    {
+      "id": "torchview-summary",
+      "type": "text",
+      "x": 1560,
+      "y": 1520,
+      "width": 520,
+      "height": 420,
+      "color": "4",
+      "text": "### Live Network Telemetry & Torchview Sync\n- **Architecture Hash**: `dde4e8df8255`\n- **Total Parameters**: **`891,379`** (`input_shape = (1, 8, 50, 50)`)\n- **Last Auto-Synced**: `2026-10-26 16:03:09 UTC`\n\n| Submodule | Layer Type | Params |\n| :--- | :--- | ---: |\n| `encoder.spatial_stem` | `Sequential` | `20,928` |\n| `encoder.context_res` | `Sequential` | `73,984` |\n| `encoder.global_tower` | `Sequential` | `691,168` |\n| `slot_type_head` | `Linear` | `1,799` |\n| `slot_idx_head` | `Sequential` | `35,082` |\n| `tile_cond_proj` | `Linear` | `16,896` |\n| `tile_conv_head` | `Sequential` | `18,497` |\n| `critic_head` | `Sequential` | `33,025` |"
+    },
+    {
+      "id": "torchview-overview-img",
+      "type": "file",
+      "file": "docs/architecture/coc_actor_critic_overview.png",
+      "x": 2120,
+      "y": 1520,
+      "width": 560,
+      "height": 1080,
+      "color": "4"
+    },
+    {
+      "id": "torchview-detailed-img",
+      "type": "file",
+      "file": "docs/architecture/coc_actor_critic_detailed.png",
+      "x": 2720,
+      "y": 1520,
+      "width": 580,
+      "height": 1080,
+      "color": "4"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-sim-obs",
+      "fromNode": "env-sim",
+      "fromSide": "bottom",
+      "toNode": "obs-tensor",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "color": "5",
+      "label": "extract_spatial_observation()"
+    },
+    {
+      "id": "e-obs-stem",
+      "fromNode": "obs-tensor",
+      "fromSide": "right",
+      "toNode": "spatial-stem",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "color": "4",
+      "label": "obs (B, 8, 50, 50)"
+    },
+    {
+      "id": "e-stem-res",
+      "fromNode": "spatial-stem",
+      "fromSide": "bottom",
+      "toNode": "context-res",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "color": "4",
+      "label": "h (B, 64, 50, 50)"
+    },
+    {
+      "id": "e-res-global",
+      "fromNode": "context-res",
+      "fromSide": "bottom",
+      "toNode": "global-tower",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "color": "4",
+      "label": "spatial_features (B, 64, 50, 50)"
+    },
+    {
+      "id": "e-res-tile",
+      "fromNode": "context-res",
+      "fromSide": "right",
+      "toNode": "head-tile",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "color": "4",
+      "label": "spatial_features (B, 64, 50, 50)"
+    },
+    {
+      "id": "e-global-type",
+      "fromNode": "global-tower",
+      "fromSide": "right",
+      "toNode": "head-slot-type",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "color": "6",
+      "label": "global_embedding (B, 256)"
+    },
+    {
+      "id": "e-global-critic",
+      "fromNode": "global-tower",
+      "fromSide": "right",
+      "toNode": "head-critic",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "color": "6",
+      "label": "global_embedding (B, 256)"
+    },
+    {
+      "id": "e-masks-type",
+      "fromNode": "action-masks",
+      "fromSide": "right",
+      "toNode": "head-slot-type",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "color": "3",
+      "label": "masks['slot_type']"
+    },
+    {
+      "id": "e-masks-idx",
+      "fromNode": "action-masks",
+      "fromSide": "right",
+      "toNode": "head-slot-idx",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "color": "3",
+      "label": "masks['slot_idx']"
+    },
+    {
+      "id": "e-masks-tile",
+      "fromNode": "action-masks",
+      "fromSide": "right",
+      "toNode": "head-tile",
+      "toSide": "bottom",
+      "toEnd": "arrow",
+      "color": "3",
+      "label": "masks['tile']"
+    },
+    {
+      "id": "e-type-cond",
+      "fromNode": "head-slot-type",
+      "fromSide": "bottom",
+      "toNode": "cond-fusion",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "color": "6",
+      "label": "chosen_type (0..6)"
+    },
+    {
+      "id": "e-cond-idx",
+      "fromNode": "cond-fusion",
+      "fromSide": "bottom",
+      "toNode": "head-slot-idx",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "color": "6",
+      "label": "cond_emb (B, 263)"
+    },
+    {
+      "id": "e-cond-tile",
+      "fromNode": "cond-fusion",
+      "fromSide": "bottom",
+      "toNode": "head-tile",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "color": "6",
+      "label": "cond_emb (B, 263)"
+    },
+    {
+      "id": "e-idx-out",
+      "fromNode": "head-slot-idx",
+      "fromSide": "bottom",
+      "toNode": "actor-output",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "color": "6",
+      "label": "chosen_idx + log_prob"
+    },
+    {
+      "id": "e-tile-out",
+      "fromNode": "head-tile",
+      "fromSide": "bottom",
+      "toNode": "actor-output",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "color": "6",
+      "label": "chosen_tile (x,y) + log_prob"
+    },
+    {
+      "id": "e-out-rollout",
+      "fromNode": "actor-output",
+      "fromSide": "right",
+      "toNode": "rollout-step",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "color": "2",
+      "label": "action [type, idx, x, y]"
+    },
+    {
+      "id": "e-critic-gae",
+      "fromNode": "head-critic",
+      "fromSide": "bottom",
+      "toNode": "gae-calc",
+      "toSide": "left",
+      "toEnd": "arrow",
+      "color": "6",
+      "label": "V(s_t)"
+    },
+    {
+      "id": "e-rollout-reward",
+      "fromNode": "rollout-step",
+      "fromSide": "bottom",
+      "toNode": "reward-shaping",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "color": "2",
+      "label": "step_info telemetry"
+    },
+    {
+      "id": "e-reward-gae",
+      "fromNode": "reward-shaping",
+      "fromSide": "bottom",
+      "toNode": "gae-calc",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "color": "2",
+      "label": "rewards r_t"
+    },
+    {
+      "id": "e-gae-ppo",
+      "fromNode": "gae-calc",
+      "fromSide": "bottom",
+      "toNode": "ppo-update",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "color": "2",
+      "label": "advantages A_t & returns R_t"
+    },
+    {
+      "id": "e-actor-torchview",
+      "fromNode": "actor-output",
+      "fromSide": "bottom",
+      "toNode": "torchview-summary",
+      "toSide": "top",
+      "toEnd": "arrow",
+      "color": "4",
+      "label": "torchview auto-sync"
+    }
+  ]
+}

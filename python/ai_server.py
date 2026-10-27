@@ -15,10 +15,16 @@ import torch
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 import coc_py
-from coc_rl import CoCActorCritic, CoCAttackerEnv, CoCDefenderEvolution
+from coc_rl import (
+    CoCActorCritic,
+    CoCAttackerEnv,
+    CoCDefenderEvolution,
+    ensure_architecture_diagrams,
+)
 from train_ai import DEFAULT_CKPT_PATH, masks_np_to_torch, train_pytorch_ppo
 
 app = FastAPI(title="CoC TH18 AI Studio Server")
@@ -81,6 +87,7 @@ class EvolveRequest(BaseModel):
 @app.get("/api/ai/status")
 def get_ai_status() -> Dict[str, Any]:
     model = _load_model()
+    arch_manifest = ensure_architecture_diagrams(model)
     param_count = sum(p.numel() for p in model.parameters())
     ckpt_meta: Dict[str, Any] = {}
     if os.path.exists(DEFAULT_CKPT_PATH):
@@ -100,9 +107,20 @@ def get_ai_status() -> Dict[str, Any]:
         "device": str(DEVICE),
         "device_name": DEVICE_NAME,
         "param_count": param_count,
+        "architecture_hash": arch_manifest.get("architecture_hash"),
+        "architecture_files": arch_manifest.get("files"),
         "checkpoint": ckpt_meta,
         "training": _training_state,
     }
+
+
+@app.get("/api/ai/architecture.svg")
+def get_architecture_svg(detail: str = "overview") -> FileResponse:
+    manifest = ensure_architecture_diagrams()
+    key = "detailed" if detail == "detailed" else "overview"
+    rel_path = manifest["files"][key]["svg"]
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    return FileResponse(os.path.join(repo_root, rel_path), media_type="image/svg+xml")
 
 
 @app.post("/api/ai/inspect")

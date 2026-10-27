@@ -96,6 +96,30 @@ class CoCActorCritic(nn.Module):
             nn.Linear(128, 1),
         )
 
+    def forward(self, obs: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """
+        Deterministic architectural forward pass returning all raw head outputs:
+        `type_logits (B, 7)`, `idx_logits (B, 10)`, `tile_logits (B, 2500)`, `value (B,)`.
+        Used by `torchview` / ONNX / graph inspection tools.
+        """
+        B = obs.shape[0]
+        spatial_feat, global_emb = self.encoder(obs)
+        type_logits = self.slot_type_head(global_emb)
+        chosen_type = type_logits.argmax(dim=-1)
+        type_onehot = F.one_hot(chosen_type.clamp(0, 6), num_classes=7).float()
+        cond_emb = torch.cat([global_emb, type_onehot], dim=-1)
+        idx_logits = self.slot_idx_head(cond_emb)
+        cond_spatial = self.tile_cond_proj(cond_emb).unsqueeze(-1).unsqueeze(-1)
+        fused_spatial = F.silu(spatial_feat + cond_spatial)
+        tile_logits = self.tile_conv_head(fused_spatial).reshape(B, 2500)
+        value = self.critic_head(global_emb).squeeze(-1)
+        return {
+            "type_logits": type_logits,
+            "idx_logits": idx_logits,
+            "tile_logits": tile_logits,
+            "value": value,
+        }
+
     def get_action_and_value(
         self,
         obs: torch.Tensor,

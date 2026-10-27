@@ -162,6 +162,21 @@ pub struct SimUnit {
     pub alive: bool,
 }
 
+impl SimUnit {
+    #[inline]
+    pub fn is_siege_machine(&self) -> bool {
+        match self.kind {
+            UnitKind::Troop(tid) => matches!(get_troop_spec(tid).category, TroopCategory::SiegeMachine),
+            _ => false,
+        }
+    }
+
+    #[inline]
+    pub fn is_immune_to_healing(&self) -> bool {
+        self.is_siege_machine() || matches!(self.kind, UnitKind::Totem)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActiveSpellZone {
     pub spell_id: SpellId,
@@ -510,10 +525,10 @@ impl BattleEngine {
                 team: Team::Defender,
                 x: ax,
                 y: ay,
-                hp: hspec.max_hp * 0.65,
-                max_hp: hspec.max_hp * 0.65,
-                base_dps: hspec.dps * 0.65,
-                damage_per_hit: hspec.damage_per_hit * 0.65,
+                hp: hspec.base_hp,
+                max_hp: hspec.base_hp,
+                base_dps: hspec.base_dps,
+                damage_per_hit: hspec.damage_per_hit,
                 attack_speed_sec: hspec.attack_speed_sec,
                 move_speed: hspec.move_speed,
                 range: hspec.range,
@@ -1177,11 +1192,62 @@ impl BattleEngine {
             EquipmentId::MagicMirror => {
                 self.units[idx].invisibility_timer = 1.0; // AQCloningCloak: 1000ms
                 for dy in [-1.2f32, 1.2] {
-                    let uid = self.spawn_hero_unit(HeroId::ArcherQueen, Team::Attacker, hx + 0.8, hy + dy);
-                    if let Some(c) = self.units.iter_mut().find(|u| u.id == uid) {
-                        c.ability_used = true;
-                        c.lifetime_remaining = Some(30.0);
-                    }
+                    let uid = self.alloc_unit_id();
+                    // ClonedArcherQueenAbility L10: HP 3216, DPS 765, 30s lifetime, no equipment
+                    self.units.push(SimUnit {
+                        id: uid,
+                        kind: UnitKind::Hero(HeroId::ArcherQueen),
+                        name: "Archer Queen (Clone)",
+                        team: Team::Attacker,
+                        x: (hx + 0.8).clamp(0.5, 49.5),
+                        y: (hy + dy).clamp(0.5, 49.5),
+                        hp: 3216.0,
+                        max_hp: 3216.0,
+                        base_dps: 765.0,
+                        damage_per_hit: 765.0 * 0.75,
+                        attack_speed_sec: 0.75,
+                        move_speed: 24.0,
+                        range: 5.0,
+                        splash_radius: 0.0,
+                        housing_space: 25,
+                        is_air: false,
+                        movement: MovementMode::Ground,
+                        target_domain: TargetDomain::GroundAndAir,
+                        preferred_target: PreferredTarget::Any,
+                        target: TargetRef::None,
+                        waypoints: Vec::new(),
+                        repath_timer: 0.0,
+                        attack_cooldown: 0.0,
+                        is_burrowed: false,
+                        freeze_timer: 0.0,
+                        stun_timer: 0.0,
+                        invisibility_timer: 0.0,
+                        invincibility_timer: 0.0,
+                        rage_timer: 0.0,
+                        rage_boost_mult: 0.0,
+                        rage_speed_bonus: 0.0,
+                        haste_timer: 0.0,
+                        attack_speed_mult: 1.0,
+                        bonus_flat_damage: 0.0,
+                        damage_shield_timer: 0.0,
+                        damage_shield_protection: 0.0,
+                        poison_timer: 0.0,
+                        slow_timer: 0.0,
+                        ability_used: true,
+                        ability_active_timer: 0.0,
+                        equipped_items: None,
+                        paired_hero_id: None,
+                        phoenix_revive_available: false,
+                        special_timer: 0.0,
+                        spawned_children_count: 0,
+                        yeti_hp_milestone: 0.0,
+                        lifetime_remaining: Some(30.0),
+                        anchor_pos: None,
+                        inferno_ramp_sec: 0.0,
+                        limited_special_attacks: 0,
+                        life_aura_timer: 0.0,
+                        alive: true,
+                    });
                 }
             }
             EquipmentId::ActionFigure => {
@@ -1190,7 +1256,11 @@ impl BattleEngine {
             }
             EquipmentId::EternalTome => {
                 for u in &mut self.units {
-                    if u.alive && u.team == Team::Attacker && dist(hx, hy, u.x, u.y) <= 9.0 {
+                    if u.alive
+                        && u.team == Team::Attacker
+                        && !u.is_siege_machine()
+                        && dist(hx, hy, u.x, u.y) <= 9.0
+                    {
                         u.invincibility_timer = 8.2;
                     }
                 }
@@ -1314,7 +1384,7 @@ impl BattleEngine {
             }
             EquipmentId::RocketSpear => {
                 self.units[idx].range = 10.0;
-                self.units[idx].damage_per_hit += 980.0;
+                self.units[idx].limited_special_attacks = 10;
             }
             EquipmentId::FrostFlake => {
                 let mut candidates: Vec<(usize, f32)> = self
@@ -2031,6 +2101,8 @@ impl BattleEngine {
                                 && dist(zone.x, zone.y, u.x, u.y) <= zone.radius
                             {
                                 u.rage_timer = u.rage_timer.max(1.0);
+                                u.rage_boost_mult = 2.90;
+                                u.rage_speed_bonus = 4.0;
                             }
                         }
                     } else {
@@ -2047,6 +2119,8 @@ impl BattleEngine {
                                 && dist(zone.x, zone.y, u.x, u.y) <= zone.radius
                             {
                                 u.rage_timer = u.rage_timer.max(1.0);
+                                u.rage_boost_mult = 2.90;
+                                u.rage_speed_bonus = 4.0;
                             }
                         }
                     }
@@ -2839,7 +2913,7 @@ impl BattleEngine {
                         && u.team == Team::Attacker
                         && !u.is_burrowed
                         && u.invisibility_timer <= 0.0
-                        && domain.can_hit(u.is_air)
+                        && (domain.can_hit(u.is_air) || matches!(u.kind, UnitKind::Totem))
                 })
                 .filter_map(|(ui, u)| {
                     let d = dist(bx, by, u.x, u.y);
@@ -3467,9 +3541,16 @@ impl BattleEngine {
                         if o_idx != u_idx
                             && self.units[o_idx].alive
                             && self.units[o_idx].team == Team::Attacker
+                            && !self.units[o_idx].is_siege_machine()
+                            && self.units[o_idx].kind != UnitKind::Totem
                             && dist(ux, uy, self.units[o_idx].x, self.units[o_idx].y) <= 9.0
                         {
-                            self.units[o_idx].rage_timer = self.units[o_idx].rage_timer.max(0.3);
+                            // Rage Gem Aura (spells.csv): +50% damage boost, 0 speed boost. Does not override full Rage spell (mult 2.90).
+                            if self.units[o_idx].rage_timer <= 0.0 || self.units[o_idx].rage_boost_mult <= 1.50 {
+                                self.units[o_idx].rage_timer = self.units[o_idx].rage_timer.max(0.3);
+                                self.units[o_idx].rage_boost_mult = 1.50;
+                                self.units[o_idx].rage_speed_bonus = 0.0;
+                            }
                         }
                     }
                 }
@@ -3735,38 +3816,6 @@ impl BattleEngine {
                     let ny = (uy + (dy / dist_to_th) * step_dist).clamp(0.5, 49.5);
                     self.units[u_idx].x = nx;
                     self.units[u_idx].y = ny;
-
-                    // Point-blank crushing damage (Damage2 = 3600, PreferedTargetDamageMod = 4 vs Wall)
-                    let mut wall_broken = false;
-                    for (wi, w) in self.walls.iter_mut().enumerate() {
-                        if !w.destroyed
-                            && dist(nx, ny, w.tile_x as f32 + 0.5, w.tile_y as f32 + 0.5) <= 1.2
-                        {
-                            w.hp -= 3600.0 * 4.0 * DT;
-                            if w.hp <= 0.0 {
-                                w.hp = 0.0;
-                                w.destroyed = true;
-                                wall_grid[w.tile_y as usize][w.tile_x as usize] = 0.0;
-                                wall_idx_grid[w.tile_y as usize][w.tile_x as usize] = None;
-                                wall_broken = true;
-                            } else if wall_idx_grid[w.tile_y as usize][w.tile_x as usize]
-                                == Some(wi)
-                            {
-                                wall_grid[w.tile_y as usize][w.tile_x as usize] =
-                                    (w.hp / w.max_hp).max(0.05);
-                            }
-                        }
-                    }
-                    if wall_broken {
-                        self.invalidate_pathing();
-                    }
-                    for bi in 0..self.buildings.len() {
-                        if !self.buildings[bi].destroyed
-                            && building_edge_dist(&self.buildings[bi], nx, ny) <= 1.0
-                        {
-                            self.damage_building(bi, 3600.0 * DT);
-                        }
-                    }
                 }
 
                 self.units[u_idx].attack_cooldown -=
@@ -3900,8 +3949,11 @@ impl BattleEngine {
                 if self.units[u_idx].rage_timer > 0.0 {
                     // Rage spell: SpeedBoost 32 raw units = +4.0 tiles/s
                     // (equipment rage may raise it, e.g. Rage Vial +4.8).
+                    // Rage Gem aura provides +0 speed boost.
                     let equip_bonus = self.units[u_idx].rage_speed_bonus;
-                    eff_speed += if equip_bonus > 0.0 { equip_bonus } else { 4.0 };
+                    if !(self.units[u_idx].rage_boost_mult == 1.50 && equip_bonus == 0.0) {
+                        eff_speed += if equip_bonus > 0.0 { equip_bonus } else { 4.0 };
+                    }
                 }
                 if self.units[u_idx].haste_timer > 0.0 {
                     eff_speed += 7.0; // Haste/Healing-Tome speed family: SpeedBoost 56 = +7 tiles/s
@@ -4083,7 +4135,7 @@ impl BattleEngine {
                 if pref == PreferredTarget::AlliedGround && o.is_air {
                     continue;
                 }
-                if matches!(o.kind, UnitKind::Totem | UnitKind::Troop(TroopId::Furnace)) {
+                if matches!(o.kind, UnitKind::Totem | UnitKind::Troop(TroopId::Furnace)) || o.is_immune_to_healing() {
                     continue;
                 }
                 let d = dist(ux, uy, o.x, o.y);
@@ -4584,7 +4636,7 @@ impl BattleEngine {
                     self.units[u_idx].waypoints.clear();
                 }
             } else if matches!(kind, UnitKind::Hero(HeroId::RoyalChampion)) {
-                dph += 770.0;
+                dph += 980.0;
                 if self.units[u_idx].limited_special_attacks == 0 {
                     self.units[u_idx].range = 3.0;
                     self.units[u_idx].target = TargetRef::None;
@@ -4627,12 +4679,33 @@ impl BattleEngine {
         ) {
             if let TargetRef::Unit(aid) = target {
                 if let Some(ai) = self.units.iter().position(|o| o.id == aid && o.alive) {
+                    if self.units[ai].is_immune_to_healing() {
+                        return;
+                    }
+                    let healer_count = if kind == UnitKind::Troop(TroopId::Healer) {
+                        self.units.iter().filter(|u| {
+                            u.alive && u.team == self.units[u_idx].team
+                                && u.kind == UnitKind::Troop(TroopId::Healer)
+                                && u.target == TargetRef::Unit(aid)
+                        }).count()
+                    } else {
+                        1
+                    };
+                    let stack_mult = match healer_count {
+                        0 | 1 | 2 => 1.0,
+                        3 => 0.90,
+                        4 => 0.85,
+                        5 => 0.70,
+                        6 => 0.50,
+                        7 => 0.30,
+                        _ => 0.15,
+                    };
                     let target_is_hero = matches!(self.units[ai].kind, UnitKind::Hero(_));
-                    let primary_mult = if target_is_hero {
+                    let primary_mult = (if target_is_hero {
                         if kind == UnitKind::Troop(TroopId::Druid) { 1.05 } else { 0.55 }
                     } else {
                         1.0
-                    };
+                    }) * stack_mult;
                     self.units[ai].hp = (self.units[ai].hp + dph * primary_mult).min(self.units[ai].max_hp);
                     self.visual_events.push(VisualEvent::HealPulse {
                         x: tx,
@@ -4648,10 +4721,11 @@ impl BattleEngine {
                                 && self.units[oi].alive
                                 && self.units[oi].team == self.units[u_idx].team
                                 && !self.units[oi].is_air
+                                && !self.units[oi].is_immune_to_healing()
                                 && dist(tx, ty, self.units[oi].x, self.units[oi].y) <= h_splash
                             {
                                 let is_hero = matches!(self.units[oi].kind, UnitKind::Hero(_));
-                                let m = if is_hero { 0.55 } else { 1.0 };
+                                let m = (if is_hero { 0.55 } else { 1.0 }) * stack_mult * 0.5;
                                 self.units[oi].hp = (self.units[oi].hp + dph * m).min(self.units[oi].max_hp);
                             }
                         }
@@ -4666,6 +4740,7 @@ impl BattleEngine {
                             let next_ally = self.units.iter().enumerate().find(|(_oi, o)| {
                                 o.alive
                                     && o.team == self.units[u_idx].team
+                                    && !o.is_immune_to_healing()
                                     && !healed_ids.contains(&o.id)
                                     && o.hp < o.max_hp
                                     && dist(cur_x, cur_y, o.x, o.y) <= 3.5
@@ -4863,6 +4938,32 @@ impl BattleEngine {
                     hit_unit_ids: Vec::new(),
                 },
             );
+
+            // Point-blank secondary contact strike (characters.csv Damage2 = 3600, 4x vs Wall):
+            // Only triggered on attack (every 3.0s) to clear walls / obstacles right in front of the machine (<= 1.2t).
+            let mut wall_broken = false;
+            for w in &mut self.walls {
+                if !w.destroyed
+                    && dist(ux, uy, w.tile_x as f32 + 0.5, w.tile_y as f32 + 0.5) <= 1.2
+                {
+                    w.hp -= 3600.0 * 4.0;
+                    if w.hp <= 0.0 {
+                        w.hp = 0.0;
+                        w.destroyed = true;
+                        wall_broken = true;
+                    }
+                }
+            }
+            if wall_broken {
+                self.invalidate_pathing();
+            }
+            for bi in 0..self.buildings.len() {
+                if !self.buildings[bi].destroyed
+                    && building_edge_dist(&self.buildings[bi], ux, uy) <= 1.0
+                {
+                    self.damage_building(bi, 3600.0);
+                }
+            }
             return;
         }
 
@@ -5257,6 +5358,11 @@ impl BattleEngine {
                             radius: 1.0,
                             color: "#a16207",
                         });
+                        // MaxHitBuildings = 4 (projectiles.csv RollingLog)
+                        if hit_building_indices.len() >= 4 {
+                            p.progress = 1.0;
+                            break;
+                        }
                     }
                 }
 
