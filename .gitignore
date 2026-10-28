@@ -58,6 +58,7 @@ checkpoints/
 *.pth
 *.onnx
 *.bin
+last_training_state.json
 /runs/
 python/runs/
 wandb/

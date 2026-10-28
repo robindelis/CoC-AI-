@@ -449,26 +449,223 @@ def generate_training_curves_chart(
 
 
 # ---------------------------------------------------------------------------
-# Architecture Diagrams Generation
+# Architecture Diagrams Generation (3D Isometric Stacked CNN)
 # ---------------------------------------------------------------------------
 
+def generate_stacked_cnn_svg(
+    in_channels: int = 10,
+    has_deploy_fraction: bool = True,
+    out_svg_path: Optional[str] = None,
+    out_png_path: Optional[str] = None,
+) -> Dict[str, str]:
+    """
+    Renders publication-grade 3D isometric volumetric neural block diagram
+    matching the CoC TH18 Deep RL visualizer specification:
+    - Stage 1: Spatial CNN Backbone (Input Grid -> S1 -> S2 -> S3 ResBlock with skip arc)
+    - Stage 2: Global Tower (G1 -> G2 -> G3 AdapPool -> G4 Flatten -> G5 Linear)
+    - Stage 3: Tile Pointer (Tile Conv Head -> Tile Logits Out) + Action Head Pills
+    """
+    import subprocess
+
+    step_x = 112
+    start_x = 64
+    stem_y = 175
+    top_branch_y = 112
+    bot_branch_y = 262
+    split_x = start_x + 4 * step_x
+    svg_w = 1240
+    svg_h = 360
+
+    elements: List[str] = []
+
+    def cuboid(cx: int, cy: int, c: int, h: int, w: int, color: str, border: str, top_label: str, shape_label: str, sub_label: str, has_skip: bool = False) -> str:
+        side_h = max(24, min(98, 20 + int((h / 50.0) * 76)))
+        side_w = max(16, min(44, 12 + int((w / 50.0) * 30)))
+        depth = max(10, min(46, int(round(np.log2(max(2, c)) * 5.8))))
+        dx = int(round(depth * 0.72))
+        dy = int(round(depth * 0.42))
+        x0 = cx - depth // 2
+        y0 = cy - side_h // 2
+
+        front_pts = f"{x0},{y0} {x0+depth},{y0} {x0+depth},{y0+side_h} {x0},{y0+side_h}"
+        top_pts = f"{x0},{y0} {x0+dx},{y0-dy} {x0+depth+dx},{y0-dy} {x0+depth},{y0}"
+        right_pts = f"{x0+depth},{y0} {x0+depth+dx},{y0-dy} {x0+depth+dx},{y0+side_h-dy} {x0+depth},{y0+side_h}"
+
+        slice_count = min(6, max(2, c // 24))
+        slices = []
+        for i in range(1, slice_count):
+            frac = i / slice_count
+            sx = int(x0 + frac * depth)
+            slices.append(f'<line x1="{sx}" y1="{y0}" x2="{sx}" y2="{y0+side_h}" stroke="#0f172a" stroke-width="1" opacity="0.35"/>')
+            slices.append(f'<line x1="{sx}" y1="{y0}" x2="{sx+dx}" y2="{y0-dy}" stroke="#0f172a" stroke-width="1" opacity="0.35"/>')
+
+        receptive = ""
+        if side_w > 18:
+            rx = x0 + depth + int(dx * 0.25)
+            ry = y0 + int(side_h * 0.25) - int(dy * 0.25)
+            rw = max(5, int(dx * 0.45))
+            rh = max(5, int(side_w * 0.35))
+            receptive = f'<rect x="{rx}" y="{ry}" width="{rw}" height="{rh}" fill="rgba(255,255,255,0.22)" stroke="#f8fafc" stroke-width="0.7"/>'
+
+        skip = ""
+        if has_skip:
+            skip = f'''<path d="M {x0-28} {y0-4} Q {cx+dx//2} {y0-dy-32} {x0+depth+dx+8} {y0-4}" fill="none" stroke="#facc15" stroke-width="2" stroke-dasharray="4 2"/>
+            <circle cx="{x0+depth+dx+8}" cy="{y0-4}" r="7" fill="#0f172a" stroke="#facc15" stroke-width="1.5"/>
+            <text x="{x0+depth+dx+8}" y="{y0-1}" text-anchor="middle" fill="#facc15" font-size="10" font-weight="800">+</text>'''
+
+        return f'''<g>
+            {skip}
+            <polygon points="{top_pts}" fill="{color}" fill-opacity="0.88" stroke="{border}" stroke-width="1.3"/>
+            <polygon points="{right_pts}" fill="{color}" fill-opacity="0.55" stroke="{border}" stroke-width="1.3"/>
+            <polygon points="{front_pts}" fill="{color}" fill-opacity="0.74" stroke="{border}" stroke-width="1.3"/>
+            {''.join(slices)}
+            {receptive}
+            <text x="{cx+dx//2}" y="{y0-dy-10}" text-anchor="middle" fill="#f8fafc" font-size="10.5" font-weight="700">{top_label}</text>
+            <text x="{cx+dx//2}" y="{y0+side_h+14}" text-anchor="middle" fill="#fde047" font-size="10" font-weight="700">{shape_label}</text>
+            <text x="{cx+dx//2}" y="{y0+side_h+26}" text-anchor="middle" fill="#94a3b8" font-size="9">{sub_label}</text>
+        </g>'''
+
+    def dense_bar(cx: int, cy: int, dim: int, color: str, border: str, top_label: str, sub_label: str) -> str:
+        bar_h = max(28, min(86, int(round(np.log2(max(2, dim)) * 8.5))))
+        bar_w = 16
+        dx = 7
+        dy = 5
+        x0 = cx - bar_w // 2
+        y0 = cy - bar_h // 2
+        dots = "".join([f'<circle cx="{x0+bar_w//2}" cy="{int(y0+bar_h*f)}" r="2.2" fill="#f8fafc" opacity="0.75"/>' for f in (0.25, 0.5, 0.75)])
+        return f'''<g>
+            <polygon points="{x0},{y0} {x0+dx},{y0-dy} {x0+bar_w+dx},{y0-dy} {x0+bar_w},{y0}" fill="{color}" fill-opacity="0.9" stroke="{border}" stroke-width="1.3"/>
+            <polygon points="{x0+bar_w},{y0} {x0+bar_w+dx},{y0-dy} {x0+bar_w+dx},{y0+bar_h-dy} {x0+bar_w},{y0+bar_h}" fill="{color}" fill-opacity="0.55" stroke="{border}" stroke-width="1.3"/>
+            <rect x="{x0}" y="{y0}" width="{bar_w}" height="{bar_h}" fill="{color}" fill-opacity="0.78" stroke="{border}" stroke-width="1.3"/>
+            {dots}
+            <text x="{cx+dx//2}" y="{y0-dy-9}" text-anchor="middle" fill="#f8fafc" font-size="10" font-weight="700">{top_label}</text>
+            <text x="{cx+dx//2}" y="{y0+bar_h+14}" text-anchor="middle" fill="#34d399" font-size="10" font-weight="700">{dim}D</text>
+            <text x="{cx+dx//2}" y="{y0+bar_h+25}" text-anchor="middle" fill="#94a3b8" font-size="8.8">{sub_label}</text>
+        </g>'''
+
+    def filter_cone(x1: int, y1: int, x2: int, y2: int, label: Optional[str] = None, color: str = "rgba(56, 189, 248, 0.25)", stroke: str = "#38bdf8") -> str:
+        patch_h = 18
+        pts = f"{x1+14},{y1-patch_h//2} {x1+14},{y1+patch_h//2} {x2-14},{y2+3} {x2-14},{y2-3}"
+        lbl = f'<text x="{(x1+x2)//2+2}" y="{(y1+y2)//2-10}" text-anchor="middle" fill="#93c5fd" font-size="8.8" font-weight="600">{label}</text>' if label else ""
+        return f'<g><polygon points="{pts}" fill="{color}" stroke="{stroke}" stroke-width="0.9" stroke-opacity="0.65"/>{lbl}</g>'
+
+    # 0. Input Grid
+    in_sub = "Village + Archetypes" if in_channels == 10 else "Village Tensor"
+    elements.append(cuboid(start_x, stem_y, in_channels, 50, 50, "#0284c7", "#38bdf8", "Input Grid", f"{in_channels}×50×50", in_sub))
+
+    # 1. Spatial Stem (S1, S2, S3)
+    elements.append(filter_cone(start_x, stem_y, start_x + step_x, stem_y, "3×3"))
+    elements.append(cuboid(start_x + step_x, stem_y, 32, 50, 50, "#2563eb", "#60a5fa", "S1: Conv2d", "32×50×50", "RF 3×3"))
+
+    elements.append(filter_cone(start_x + step_x, stem_y, start_x + 2*step_x, stem_y, "3×3"))
+    elements.append(cuboid(start_x + 2*step_x, stem_y, 64, 50, 50, "#2563eb", "#60a5fa", "S2: Conv2d", "64×50×50", "RF 5×5"))
+
+    elements.append(filter_cone(start_x + 2*step_x, stem_y, start_x + 3*step_x, stem_y, "3×3 d=2"))
+    elements.append(cuboid(start_x + 3*step_x, stem_y, 64, 50, 50, "#7c3aed", "#a78bfa", "S3: ResBlock", "64×50×50", "RF 11×11", has_skip=True))
+
+    # 2. Upper Branch: Global Tower (G1, G2, G3, G4, G5)
+    elements.append(filter_cone(start_x + 3*step_x, stem_y, split_x, top_branch_y, "3×3 s=2", "rgba(16, 185, 129, 0.2)", "#34d399"))
+    elements.append(cuboid(split_x, top_branch_y, 96, 25, 25, "#2563eb", "#60a5fa", "G1: Conv2d", "96×25×25", "RF 15×15"))
+
+    elements.append(filter_cone(split_x, top_branch_y, split_x + step_x, top_branch_y, "3×3 s=2", "rgba(16, 185, 129, 0.2)", "#34d399"))
+    elements.append(cuboid(split_x + step_x, top_branch_y, 128, 13, 13, "#2563eb", "#60a5fa", "G2: Conv2d", "128×13×13", "RF 23×23"))
+
+    elements.append(filter_cone(split_x + step_x, top_branch_y, split_x + 2*step_x, top_branch_y, "Pool 4×4", "rgba(16, 185, 129, 0.2)", "#34d399"))
+    elements.append(cuboid(split_x + 2*step_x, top_branch_y, 128, 4, 4, "#d97706", "#facc15", "G3: AdapPool", "128×4×4", "RF 50×50"))
+
+    elements.append(filter_cone(split_x + 2*step_x, top_branch_y, split_x + 3*step_x, top_branch_y, "Flatten", "rgba(16, 185, 129, 0.2)", "#34d399"))
+    elements.append(dense_bar(split_x + 3*step_x, top_branch_y, 2048, "#475569", "#94a3b8", "G4: Flatten", "reshape"))
+
+    elements.append(filter_cone(split_x + 3*step_x, top_branch_y, split_x + 4*step_x, top_branch_y, "Dense", "rgba(16, 185, 129, 0.2)", "#34d399"))
+    elements.append(dense_bar(split_x + 4*step_x, top_branch_y, 256, "#059669", "#34d399", "G5: Linear", "525K p"))
+
+    # 3. Lower Branch: Spatial Tile Pointer Pathway
+    tile_mid_x = split_x + 2 * step_x
+    tile_out_x = tile_mid_x + step_x
+    elements.append(filter_cone(start_x + 3*step_x, stem_y, tile_mid_x, bot_branch_y, "Skip + Cond (3×3)", "rgba(250, 204, 21, 0.22)", "#facc15"))
+    elements.append(f'''<path d="M {split_x + 4*step_x} {top_branch_y + 25} C {split_x + 4*step_x} {bot_branch_y - 40}, {tile_mid_x} {top_branch_y + 50}, {tile_mid_x} {bot_branch_y - 35}" fill="none" stroke="#facc15" stroke-width="1.5" stroke-dasharray="4 3"/>''')
+    elements.append(cuboid(tile_mid_x, bot_branch_y, 32, 50, 50, "#d97706", "#facc15", "Tile Conv Head", "32×50×50", "3×3 Pointer"))
+
+    elements.append(filter_cone(tile_mid_x, bot_branch_y, tile_out_x, bot_branch_y, "1×1 Conv", "rgba(249, 115, 22, 0.25)", "#f97316"))
+    elements.append(cuboid(tile_out_x, bot_branch_y, 1, 50, 50, "#ea580c", "#fde047", "Tile Logits (Out)", "1×50×50", "2,500 Tiles"))
+
+    # 4. Action Head Output Pills (Far Right)
+    heads_x = split_x + 5 * step_x
+    elements.append(filter_cone(split_x + 4*step_x, top_branch_y, heads_x, top_branch_y, "MLP 128d", "rgba(56, 189, 248, 0.22)", "#38bdf8"))
+
+    pills: List[Tuple[str, str, str, str]] = [
+        ("Action Type (7)", "NoOp / Troop / Spell...", "#facc15", "#fde047"),
+        ("Slot Index (10)", "Conditioned on Type", "#38bdf8", "#38bdf8"),
+    ]
+    if has_deploy_fraction:
+        pills.append(("Deploy Frac α∈[0,1] (5)", "1 unit / 25% / 50% / 75% / All", "#c084fc", "#e9d5ff"))
+    pills.append(("Critic Value V(s) (1)", "Expected Return", "#4ade80", "#86efac"))
+
+    pills_start_y = top_branch_y - (len(pills) * 19)
+    pill_group: List[str] = []
+    for idx, (p_title, p_sub, p_border, p_title_color) in enumerate(pills):
+        py = pills_start_y + idx * 38
+        pill_group.append(f'''<g transform="translate({heads_x - 30}, {py})">
+            <rect width="144" height="32" rx="6" fill="#1e293b" stroke="{p_border}" stroke-width="1.5"/>
+            <text x="72" y="14" text-anchor="middle" fill="{p_title_color}" font-size="9.2" font-weight="800" font-family="sans-serif">{p_title}</text>
+            <text x="72" y="25" text-anchor="middle" fill="#cbd5e1" font-size="8.2" font-family="sans-serif">{p_sub}</text>
+        </g>''')
+    elements.append("".join(pill_group))
+
+    svg_content = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {svg_w} {svg_h}" width="{svg_w}" height="{svg_h}">
+        <defs>
+            <linearGradient id="bgGridGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#0b1324"/>
+                <stop offset="100%" stop-color="#0f172a"/>
+            </linearGradient>
+        </defs>
+        <rect width="{svg_w}" height="{svg_h}" fill="url(#bgGridGrad)" rx="8"/>
+        <text x="24" y="22" fill="#60a5fa" font-size="10.5" font-weight="800" font-family="sans-serif">STAGE 1 • SPATIAL CNN BACKBONE (Full-Res 50×50 Feature Pathway)</text>
+        <text x="{split_x - 20}" y="22" fill="#34d399" font-size="10.5" font-weight="800" font-family="sans-serif">STAGE 2 • GLOBAL TOWER (Top) &amp; STAGE 3 • TILE POINTER + HEADS (Bottom)</text>
+        {''.join(elements)}
+    </svg>'''
+
+    if out_svg_path:
+        os.makedirs(os.path.dirname(out_svg_path), exist_ok=True)
+        with open(out_svg_path, "w", encoding="utf-8") as f:
+            f.write(svg_content)
+
+    if out_png_path:
+        os.makedirs(os.path.dirname(out_png_path), exist_ok=True)
+        temp_svg = out_svg_path or (out_png_path + ".tmp.svg")
+        if not out_svg_path:
+            with open(temp_svg, "w", encoding="utf-8") as f:
+                f.write(svg_content)
+        try:
+            subprocess.run(["rsvg-convert", "-w", "2440", temp_svg, "-o", out_png_path], check=True)
+        except Exception as e:
+            print(f"[warning] rsvg-convert failed: {e}")
+        if not out_svg_path and os.path.exists(temp_svg):
+            os.remove(temp_svg)
+
+    return {
+        "svg": out_svg_path or "",
+        "png": out_png_path or "",
+    }
+
+
 def ensure_all_architecture_diagrams() -> Dict[str, str]:
-    """Ensures both v1 (8-ch) and v2 (10-ch) stacked CNN images exist in the vault."""
+    """Ensures both v1 (8-ch) and v2 (10-ch) 3D stacked CNN images exist in the vault."""
     ensure_dirs()
+    v1_svg = os.path.join(ARCH_ASSETS_DIR, "v1_architecture.svg")
     v1_png = os.path.join(ARCH_ASSETS_DIR, "v1_architecture.png")
+    v2_svg = os.path.join(ARCH_ASSETS_DIR, "v2_architecture.svg")
     v2_png = os.path.join(ARCH_ASSETS_DIR, "v2_architecture.png")
 
-    if not os.path.exists(v1_png):
-        m1 = CoCActorCritic(in_channels=8, has_deploy_fraction=False)
-        render_model_architecture(m1, ARCH_ASSETS_DIR, "v1_architecture", input_size=(1, 8, 50, 50), depth=2)
-
-    if not os.path.exists(v2_png):
-        m2 = CoCActorCritic(in_channels=10, has_deploy_fraction=True)
-        render_model_architecture(m2, ARCH_ASSETS_DIR, "v2_architecture", input_size=(1, 10, 50, 50), depth=2)
+    # Generate exact 3D isometric stacked CNN diagrams
+    generate_stacked_cnn_svg(in_channels=8, has_deploy_fraction=False, out_svg_path=v1_svg, out_png_path=v1_png)
+    generate_stacked_cnn_svg(in_channels=10, has_deploy_fraction=True, out_svg_path=v2_svg, out_png_path=v2_png)
 
     return {
         "v1_png": os.path.relpath(v1_png, VAULT_DIR),
         "v2_png": os.path.relpath(v2_png, VAULT_DIR),
+        "v1_svg": os.path.relpath(v1_svg, VAULT_DIR),
+        "v2_svg": os.path.relpath(v2_svg, VAULT_DIR),
     }
 
 
@@ -703,9 +900,9 @@ def generate_obsidian_canvas(
         "id": "canvas-header",
         "type": "text",
         "x": 0,
-        "y": -460,
+        "y": -360,
         "width": 3100,
-        "height": 400,
+        "height": 320,
         "color": "5",
         "text": """# 🏰 Clash of Clans TH18 Deep RL — Model Architecture & Training Tracker
 
@@ -718,7 +915,7 @@ This canvas dynamically tracks our neural network architectures, spatial observa
     })
 
     group_width = 1500
-    group_height = 2480
+    group_height = 3480
     gap = 100
     model_keys = ["v1_baseline_8ch", "v2_archetype_10ch"]
 
@@ -764,7 +961,7 @@ This canvas dynamically tracks our neural network architectures, spatial observa
             "label": f"Model Section: {m.get('name', mid)} ({total_eps:,} Cumulative Episodes — {m.get('status', 'active').upper()})",
         })
 
-        # 2. Overview & Resumed Session Lineage Card
+        # 2. Overview & Resumed Session Lineage Card (Generously sized to prevent any scrolling)
         sessions = m.get("sessions", [])
         sess_rows = []
         for s in sessions:
@@ -778,8 +975,8 @@ This canvas dynamically tracks our neural network architectures, spatial observa
             "type": "text",
             "x": base_x + 30,
             "y": base_y + 40,
-            "width": 680,
-            "height": 420,
+            "width": 700,
+            "height": 620,
             "color": status_color,
             "text": f"""### 🏷️ Run Overview & Resumption Lineage
 - **Model Name**: **{m.get('name', mid)}**
@@ -797,16 +994,16 @@ This canvas dynamically tracks our neural network architectures, spatial observa
 > **Resumption Rule**: When training resumes from this model, its card automatically updates with cumulative episodes (**{total_eps:,}**) and re-evaluates the latest weights across all matchups.""",
         })
 
-        # 3. Input Observation Space Card
+        # 3. Input Observation Space Card (Generously sized to fit all 10 channels without scrolling)
         ch_list = CHANNELS_V2 if in_ch == 10 else CHANNELS_V1
         ch_rows = [f"| `{ch}` | **{name}** | `{norm}` |" for ch, name, norm, _ in ch_list]
         nodes.append({
             "id": f"{mid}-inputs",
             "type": "text",
-            "x": base_x + 740,
+            "x": base_x + 760,
             "y": base_y + 40,
-            "width": 730,
-            "height": 420,
+            "width": 710,
+            "height": 620,
             "color": "5",
             "text": f"""### 📥 Input Observation Space
 - **Spatial Grid Tensor**: **`(B, {in_ch}, 50, 50)`**
@@ -819,15 +1016,15 @@ This canvas dynamically tracks our neural network architectures, spatial observa
 *Preserves exact 1-to-1 tile spatial resolution without destructive downsampling.*""",
         })
 
-        # 4. Output Action Space Card
+        # 4. Output Action Space Card (Generously sized to prevent scrolling)
         heads = m.get("action_heads", [])
         nodes.append({
             "id": f"{mid}-outputs",
             "type": "text",
             "x": base_x + 30,
-            "y": base_y + 480,
-            "width": 680,
-            "height": 380,
+            "y": base_y + 690,
+            "width": 700,
+            "height": 420,
             "color": "6",
             "text": f"""### 📤 Output Policy & Critic Heads
 Factorized Multi-Discrete Action Space:
@@ -839,50 +1036,38 @@ Factorized Multi-Discrete Action Space:
 - **v2.0 Rate**: Multi-unit wave drop via `deploy_fraction_head` ($\\alpha \\in \\{{0.0, 0.25, 0.50, 0.75, 1.00\\}}$), dropping full squads in a single $0.64\\text{{s}}$ step!""",
         })
 
-        # 5. Reward Function Card
+        # 5. Reward Function Card (Generously sized to prevent scrolling)
         nodes.append({
             "id": f"{mid}-reward",
             "type": "text",
-            "x": base_x + 740,
-            "y": base_y + 480,
-            "width": 730,
-            "height": 380,
+            "x": base_x + 760,
+            "y": base_y + 690,
+            "width": 710,
+            "height": 420,
             "color": "3",
             "text": REWARD_FUNCTION_DESC,
         })
 
-        # 6. Stacked CNN Architecture Image Card (File Node)
+        # 6. Stacked CNN Architecture Image Card (Full Width 3D Volumetric Neural Block Diagram)
         arch_img_file = f"assets/architectures/{'v2_architecture.png' if in_ch == 10 else 'v1_architecture.png'}"
         nodes.append({
             "id": f"{mid}-arch-img",
             "type": "file",
             "file": arch_img_file,
             "x": base_x + 30,
-            "y": base_y + 880,
-            "width": 680,
-            "height": 520,
+            "y": base_y + 1140,
+            "width": 1440,
+            "height": 480,
         })
 
-        # 7. Training Progression & Resumption Curves Card (File Node)
-        chart_file = f"assets/charts/{mid}_training_curves.png"
-        nodes.append({
-            "id": f"{mid}-curves-img",
-            "type": "file",
-            "file": chart_file,
-            "x": base_x + 740,
-            "y": base_y + 880,
-            "width": 730,
-            "height": 520,
-        })
-
-        # 8. Main Results: Comp vs. Village Matrix Card
+        # 7. Main Results: Comp vs. Village Matrix Card (Full Width, Zero Scrolling)
         nodes.append({
             "id": f"{mid}-results-matrix",
             "type": "text",
             "x": base_x + 30,
-            "y": base_y + 1420,
+            "y": base_y + 1650,
             "width": 1440,
-            "height": 480,
+            "height": 460,
             "color": "4",
             "text": f"""### ⚔️ Main Performance Metric: Army Compositions vs. Reference Villages
 
@@ -894,15 +1079,27 @@ Deterministic rollout benchmarks evaluated across all 3 Meta Compositions agains
 - **Model Checkpoint Tested**: `trained_models/{ckpt}`.""",
         })
 
-        # 9. Hyperparameters & PPO Training Diagnostics Card
+        # 8. Training Progression & Resumption Curves Card (Full Width 3-Panel Chart)
+        chart_file = f"assets/charts/{mid}_training_curves.png"
+        nodes.append({
+            "id": f"{mid}-curves-img",
+            "type": "file",
+            "file": chart_file,
+            "x": base_x + 30,
+            "y": base_y + 2140,
+            "width": 1440,
+            "height": 700,
+        })
+
+        # 9. Hyperparameters & PPO Training Diagnostics Card (Full Width, Zero Scrolling)
         hp = m.get("hyperparams", {})
         nodes.append({
             "id": f"{mid}-hyperparams",
             "type": "text",
             "x": base_x + 30,
-            "y": base_y + 1920,
+            "y": base_y + 2870,
             "width": 1440,
-            "height": 500,
+            "height": 560,
             "color": "2",
             "text": f"""### ⚙️ Hyperparameters & Training Configuration
 

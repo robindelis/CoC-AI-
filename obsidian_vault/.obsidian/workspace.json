@@ -11,14 +11,17 @@
             "id": "a12dbd6778e0f270",
             "type": "leaf",
             "state": {
-              "type": "markdown",
+              "type": "canvas",
               "state": {
-                "file": "00_Index_MOC.md",
-                "mode": "source",
-                "source": false
+                "file": "01_Model_Architecture_and_Training_Tracker.canvas",
+                "viewState": {
+                  "x": 2742.6437804715215,
+                  "y": 260.17155484294574,
+                  "zoom": 0.4499999999999996
+                }
               },
-              "icon": "lucide-file",
-              "title": "00_Index_MOC"
+              "icon": "lucide-layout-dashboard",
+              "title": "01_Model_Architecture_and_Training_Tracker"
             }
           }
         ]
@@ -190,6 +193,7 @@
   },
   "active": "a12dbd6778e0f270",
   "lastOpenFiles": [
+    "00_Index_MOC.md",
     "01_Model_Architecture_and_Training_Tracker.canvas",
     "runs/v2_archetype_10ch.md",
     "runs/v1_baseline_8ch.md",

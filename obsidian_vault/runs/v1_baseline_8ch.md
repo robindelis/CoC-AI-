@@ -6,7 +6,7 @@ status: "superseded"
 total_episodes: 30102
 best_pct: 100
 best_stars: 3
-updated_at: "2026-10-28 16:27:35"
+updated_at: "2026-10-28 17:07:06"
 tags:
   - coc-rl
   - ppo
