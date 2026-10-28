@@ -1,14 +1,13 @@
 {
   "model_class": "CoCActorCritic",
-  "architecture_hash": "7e7f66d556414164a2a6a45f8b01df6cd28bea04e5ce1d768c66415e695da1ab",
   "input_shape": [
     1,
     8,
     50,
     50
   ],
-  "total_params": 908531,
-  "trainable_params": 908531,
+  "total_params": 944248,
+  "trainable_params": 944248,
   "submodules": [
     {
       "name": "encoder.spatial_stem",
@@ -41,6 +40,11 @@
       "params": 35082
     },
     {
+      "name": "deploy_fraction_head",
+      "type": "Sequential",
+      "params": 35717
+    },
+    {
       "name": "tile_cond_proj",
       "type": "Linear",
       "params": 16896
@@ -65,6 +69,5 @@
       "svg": "docs/architecture/coc_actor_critic_detailed.svg",
       "png": "docs/architecture/coc_actor_critic_detailed.png"
     }
-  },
-  "updated_at": "2026-10-27 17:52:51 UTC"
+  }
 }

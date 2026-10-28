@@ -1337,6 +1337,24 @@ def train_pytorch_ppo(
     named_path = os.path.join(TRAINED_MODELS_DIR, named_file)
     _save_attacker_ckpt(named_path, final_cum_ep)
 
+    # Automatically update the Obsidian Vault & Canvas with the new training results
+    try:
+        from coc_rl.vault_generator import update_or_register_training_run
+        update_or_register_training_run(
+            checkpoint_path=named_path,
+            resumed_from=resume_from,
+            base_episodes=base_trained_episodes,
+            new_episodes=len(history),
+            history=history,
+            hyperparams=hyperparams_meta,
+            best_pct=best_pct,
+            best_stars=best_stars,
+            best_reward=best_reward,
+            training_mode=training_mode,
+        )
+    except Exception as e:
+        print(f"[vault_generator] Note: could not update obsidian vault: {e}")
+
     selector_matrices = compute_selector_matrices(
         army_selector, defender_selector, device, history=history, layouts=layouts, armies=armies
     )

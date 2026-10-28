@@ -111,6 +111,9 @@ A Clash of Clans Town Hall 18 combat simulator, village layout editor, and reinf
 
 # 5. Launch the Python GPU AI Studio Server (port 8000)
 .venv/bin/python python/ai_server.py
+
+# 6. Rebuild or Update the Obsidian Vault & Canvas
+.venv/bin/python python/generate_vault.py
 ```
 
 ## Git Workflow

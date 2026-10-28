@@ -132,11 +132,13 @@ class CoCActorCritic(nn.Module):
         in_channels: int = 10,
         army_context_dim: int = 64,
         num_fraction_bins: int = 5,
+        has_deploy_fraction: bool = True,
     ):
         super().__init__()
         self.in_channels = in_channels
         self.army_context_dim = army_context_dim
         self.num_fraction_bins = num_fraction_bins
+        self.has_deploy_fraction = has_deploy_fraction
 
         # Dual-pathway CNN backbone
         self.encoder = CoCSpatialEncoder(
@@ -166,11 +168,14 @@ class CoCActorCritic(nn.Module):
 
         # Head 3: Troop Deployment Fraction logits (bins in [0.0, 0.25, 0.50, 0.75, 1.00]),
         # conditioned on global_emb + one_hot(slot_type) + one_hot(slot_idx)
-        self.deploy_fraction_head = nn.Sequential(
-            nn.Linear(embed_dim + 7 + 10, 128),
-            nn.SiLU(),
-            nn.Linear(128, num_fraction_bins),
-        )
+        if self.has_deploy_fraction:
+            self.deploy_fraction_head = nn.Sequential(
+                nn.Linear(embed_dim + 7 + 10, 128),
+                nn.SiLU(),
+                nn.Linear(128, num_fraction_bins),
+            )
+        else:
+            self.deploy_fraction_head = None
 
         # Head 4: Spatial Tile Pointer (projects conditioned embedding onto the 64x50x50 map)
         self.tile_cond_proj = nn.Linear(embed_dim + 7, spatial_dim)
@@ -212,8 +217,10 @@ class CoCActorCritic(nn.Module):
         idx_onehot = F.one_hot(chosen_idx.clamp(0, 9), num_classes=10).float()
 
         # 3. Conditioned Troop Deployment Fraction (in [0, 1])
-        frac_cond_emb = torch.cat([cond_emb, idx_onehot], dim=-1)
-        fraction_logits = self.deploy_fraction_head(frac_cond_emb)
+        fraction_logits = None
+        if self.has_deploy_fraction and self.deploy_fraction_head is not None:
+            frac_cond_emb = torch.cat([cond_emb, idx_onehot], dim=-1)
+            fraction_logits = self.deploy_fraction_head(frac_cond_emb)
 
         # 4. Conditioned 50x50 Spatial Tile Pointer
         cond_spatial = self.tile_cond_proj(cond_emb).unsqueeze(-1).unsqueeze(-1)
@@ -223,13 +230,15 @@ class CoCActorCritic(nn.Module):
         # 5. Critic Value V(s)
         value = self.critic_head(global_emb).squeeze(-1)
 
-        return {
+        res = {
             "type_logits": type_logits,
             "idx_logits": idx_logits,
-            "fraction_logits": fraction_logits,
             "tile_logits": tile_logits,
             "value": value,
         }
+        if fraction_logits is not None:
+            res["fraction_logits"] = fraction_logits
+        return res
 
     def get_action_and_value(
         self,
@@ -291,17 +300,20 @@ class CoCActorCritic(nn.Module):
 
         # 3. Troop Deployment Fraction Distribution (bins in [0.0, 0.25, 0.50, 0.75, 1.00])
         idx_onehot = F.one_hot(chosen_idx.clamp(0, 9), num_classes=10).float()
-        frac_cond_emb = torch.cat([cond_emb, idx_onehot], dim=-1)
-        frac_logits = self.deploy_fraction_head(frac_cond_emb)
-        frac_dist = Categorical(logits=frac_logits)
-        if action is None:
-            chosen_frac_bin = (
-                frac_logits.argmax(dim=-1) if deterministic else frac_dist.sample()
-            )
-        elif action.shape[-1] >= 5:
-            chosen_frac_bin = action[:, 4].long().clamp(0, self.num_fraction_bins - 1)
-        else:
-            chosen_frac_bin = frac_logits.argmax(dim=-1)
+        frac_dist = None
+        chosen_frac_bin = None
+        if self.has_deploy_fraction and self.deploy_fraction_head is not None:
+            frac_cond_emb = torch.cat([cond_emb, idx_onehot], dim=-1)
+            frac_logits = self.deploy_fraction_head(frac_cond_emb)
+            frac_dist = Categorical(logits=frac_logits)
+            if action is None:
+                chosen_frac_bin = (
+                    frac_logits.argmax(dim=-1) if deterministic else frac_dist.sample()
+                )
+            elif action.shape[-1] >= 5:
+                chosen_frac_bin = action[:, 4].long().clamp(0, self.num_fraction_bins - 1)
+            else:
+                chosen_frac_bin = frac_logits.argmax(dim=-1)
 
         # 4. Spatial Tile Distribution (50x50 = 2500 tiles)
         # Troop (1), Hero (2), and Siege (4) deployments must respect the village no-deploy red zone;
@@ -325,26 +337,31 @@ class CoCActorCritic(nn.Module):
             chosen_tile = tile_logits.argmax(dim=-1) if deterministic else tile_dist.sample()
             tile_x = chosen_tile % 50
             tile_y = torch.div(chosen_tile, 50, rounding_mode="floor")
-            out_action = torch.stack(
-                [chosen_type, chosen_idx, tile_x, tile_y, chosen_frac_bin], dim=-1
-            )
+            if chosen_frac_bin is not None:
+                out_action = torch.stack(
+                    [chosen_type, chosen_idx, tile_x, tile_y, chosen_frac_bin], dim=-1
+                )
+            else:
+                out_action = torch.stack([chosen_type, chosen_idx, tile_x, tile_y], dim=-1)
         else:
             tile_x = action[:, 2].long().clamp(0, 49)
             tile_y = action[:, 3].long().clamp(0, 49)
             chosen_tile = tile_y * 50 + tile_x
             if action.shape[-1] >= 5:
                 out_action = action.long()
-            else:
+            elif chosen_frac_bin is not None:
                 out_action = torch.stack(
                     [chosen_type, chosen_idx, tile_x, tile_y, chosen_frac_bin], dim=-1
                 )
+            else:
+                out_action = torch.stack([chosen_type, chosen_idx, tile_x, tile_y], dim=-1)
 
         # 5. Joint Log-Probability, Entropy, and Critic Value
         # Sub-actions only contribute to log_prob and entropy when active for `chosen_type`.
         uses_idx = (
             (chosen_type == 1) | (chosen_type == 2) | (chosen_type == 3) | (chosen_type == 6)
         ).float()
-        uses_frac = (chosen_type == 1).float()
+        uses_frac = (chosen_type == 1).float() if (self.has_deploy_fraction and frac_dist is not None) else 0.0
         uses_tile = (
             (chosen_type == 1) | (chosen_type == 2) | (chosen_type == 4) | (chosen_type == 6)
         ).float()
@@ -352,13 +369,13 @@ class CoCActorCritic(nn.Module):
         log_prob = (
             type_dist.log_prob(chosen_type)
             + uses_idx * idx_dist.log_prob(chosen_idx)
-            + uses_frac * frac_dist.log_prob(chosen_frac_bin)
+            + (uses_frac * frac_dist.log_prob(chosen_frac_bin) if (self.has_deploy_fraction and frac_dist is not None) else 0.0)
             + uses_tile * tile_dist.log_prob(chosen_tile)
         )
         entropy = (
             type_dist.entropy()
             + uses_idx * idx_dist.entropy()
-            + uses_frac * frac_dist.entropy()
+            + (uses_frac * frac_dist.entropy() if (self.has_deploy_fraction and frac_dist is not None) else 0.0)
             + uses_tile * tile_dist.entropy()
         )
         value = self.critic_head(global_emb).squeeze(-1)
@@ -369,10 +386,11 @@ class CoCActorCritic(nn.Module):
         diagnostics = {
             "slot_type_probs": type_dist.probs.detach(),
             "slot_idx_probs": idx_dist.probs.detach(),
-            "deploy_fraction_probs": frac_dist.probs.detach(),
-            "deploy_fraction": frac_bins_tensor[chosen_frac_bin].detach(),
             "tile_heatmap": tile_dist.probs.detach().reshape(B, 50, 50),
         }
+        if self.has_deploy_fraction and frac_dist is not None and chosen_frac_bin is not None:
+            diagnostics["deploy_fraction_probs"] = frac_dist.probs.detach()
+            diagnostics["deploy_fraction"] = frac_bins_tensor[chosen_frac_bin].detach()
         return out_action, log_prob, entropy, value, diagnostics
 
 

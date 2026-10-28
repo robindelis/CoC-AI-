@@ -58,7 +58,8 @@ checkpoints/
 *.pth
 *.onnx
 *.bin
-runs/
+/runs/
+python/runs/
 wandb/
 lightning_logs/
 events.out.tfevents.*
@@ -79,6 +80,7 @@ htmlcov/
 *.apks
 
 # --- Editor & OS Specific ---
+.obsidian/workspace.json
 .DS_Store
 .DS_Store?
 ._*

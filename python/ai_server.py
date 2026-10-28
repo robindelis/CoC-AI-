@@ -482,5 +482,33 @@ def evolve_defender_base(req: EvolveRequest) -> Dict[str, Any]:
     }
 
 
+@app.post("/api/ai/vault/regenerate")
+def trigger_vault_regeneration(force: bool = False) -> Dict[str, Any]:
+    """Manually triggers a full re-evaluation, chart generation, and canvas rebuild."""
+    try:
+        from coc_rl.vault_generator import rebuild_entire_vault
+        res = rebuild_entire_vault(force_eval=force)
+        return {"success": True, "result": res}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/ai/vault/status")
+def get_vault_status() -> Dict[str, Any]:
+    """Returns the current registry status of models and canvas."""
+    try:
+        from coc_rl.vault_generator import load_registry, CANVAS_FILE
+        reg = load_registry()
+        return {
+            "canvas_exists": os.path.exists(CANVAS_FILE),
+            "canvas_path": CANVAS_FILE,
+            "models_count": len(reg.get("models", {})),
+            "models": list(reg.get("models", {}).keys()),
+            "updated_at": reg.get("updated_at"),
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

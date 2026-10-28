@@ -86,6 +86,7 @@ def _render_torchview_variant(
     depth: int,
     stem_name: str,
     graph_name: str,
+    out_dir: Optional[str] = None,
 ) -> Dict[str, str]:
     wrapper = _TracedModelWrapper(model)
     with _named_module_classes(model):
@@ -112,13 +113,40 @@ def _render_torchview_variant(
         graph.subgraph_dict.clear()
         graph.fill_visual_graph()
 
-    out_base = os.path.join(ARCH_DIR, stem_name)
+    target_dir = out_dir if out_dir is not None else ARCH_DIR
+    os.makedirs(target_dir, exist_ok=True)
+    out_base = os.path.join(target_dir, stem_name)
     svg_path = graph.visual_graph.render(out_base, format="svg", cleanup=True)
     png_path = graph.visual_graph.render(out_base, format="png", cleanup=True)
     return {
         "svg": os.path.relpath(svg_path, REPO_ROOT),
         "png": os.path.relpath(png_path, REPO_ROOT),
+        "abs_svg": os.path.abspath(svg_path),
+        "abs_png": os.path.abspath(png_path),
     }
+
+
+def render_model_architecture(
+    model: nn.Module,
+    out_dir: str,
+    stem_name: str,
+    input_size: tuple[int, ...] = (1, 10, 50, 50),
+    depth: int = 2,
+    graph_name: str = "CoCActorCritic",
+) -> Dict[str, str]:
+    """Renders SVG and PNG diagram for any model instance into `out_dir`."""
+    orig_device = next(model.parameters()).device if list(model.parameters()) else torch.device("cpu")
+    model.to("cpu")
+    res = _render_torchview_variant(
+        model=model,
+        input_size=input_size,
+        depth=depth,
+        stem_name=stem_name,
+        graph_name=graph_name,
+        out_dir=out_dir,
+    )
+    model.to(orig_device)
+    return res
 
 
 def ensure_architecture_diagrams(

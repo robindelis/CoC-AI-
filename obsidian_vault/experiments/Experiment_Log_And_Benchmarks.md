@@ -10,20 +10,18 @@ updated: 2026-10-28
 
 # 📈 Master Experiment Log & Model Benchmarks
 
-Back to [[00_Index_MOC|Vault Index (MOC)]]
+Back to [[00_Index_MOC|Vault Index (MOC)]] • Open [[01_Model_Architecture_and_Training_Tracker.canvas|Interactive Model Architecture & Training Canvas]]
 
-This note tracks every model checkpoint in `trained_models/`, the exact architecture version (`v1.0` vs. `v2.0`), spatial input channels, action head configuration, episode count, hyperparameters, and combat performance on the 5 TH18 reference villages.
+This note tracks every model checkpoint in `trained_models/`, the exact architecture version (`v1.0` vs. `v2.0`), spatial input channels, action head configuration, cumulative episode count across resumed sessions, hyperparameters, and combat performance on the 5 TH18 reference villages.
 
 ---
 
 ## 1. Comparative Benchmark Table
 
-| Exp ID | Checkpoint File | Arch Version | Input Tensor | Action Heads | Episodes Trained | Hyperparameters (`lr`, `batch`, `epochs`, `ticks/step`) | Avg Destruction % | Peak Destruction / Stars | Avg Return | Key Takeaways & Behavioral Observations |
-| :--- | :--- | :--- | :--- | :--- | :---: | :--- | :---: | :---: | :---: | :--- |
-| **EXP-01** | `baseline_v1_random_init.pt` | [[v1.0_Baseline_8Ch_SingleDeploy\|v1.0]] | `8×50×50` + `64-D` | 3 (`type`, `idx`, `tile`) | `0` (Untrained) | `lr=3e-4`, `batch=4`, `K=4`, `ticks=8` | `31.4%` | `48% (0★)` | `+6.8` | Random perimeter drops; high `NoOp` drift (`48%`) and trickled single-unit deployment. |
-| **EXP-02** | `v1_single_deploy_40ep.pt` | [[v1.0_Baseline_8Ch_SingleDeploy\|v1.0]] | `8×50×50` + `64-D` | 3 (`type`, `idx`, `tile`) | `40` | `lr=3e-4`, `batch=4`, `K=4`, `ticks=8` | `64.2%` | `88% (2★)` | `+16.9` | Learns West/South-West perimeter breach and Rage timing, but loses 3-star time because dropping 14 Throwers takes $14 \times 0.64\text{s} = 8.96\text{s}$. |
-| **EXP-03** | `latest_attacker.pt` | [[v2.0_10Ch_Archetype_And_DeployFraction\|v2.0]] | `10×50×50` + `64-D` | 4 (`type`, `idx`, `frac`, `tile`) | `40` | `lr=3e-4`, `batch=4`, `K=4`, `ticks=8` | `78.6%` | `96% (3★)` | `+21.84` | Adding `deploy_fraction_head` ($\alpha_{\text{frac}} \in \{0.5, 1.0\}$) lets the agent drop its Thrower/Balloon core in 1–2 synchronized waves; Ch 8 & Ch 9 improve Poison/Rage targeting. |
-| **EXP-04** | `th18_thrower_specialist.pt` | [[v2.0_10Ch_Archetype_And_DeployFraction\|v2.0]] | `10×50×50` + `64-D` | 4 (`type`, `idx`, `frac`, `tile`) | `120` | `lr=3e-4`, `batch=4`, `K=4`, `ticks=8` | `89.4%` | `100% (3★)` | `+24.50` | Full convergence on Thrower + Healer Smash: uses $\alpha_{\text{frac}}=1.0$ for Healer/Thrower core behind Root Riders, reacts to Ch 9 defending CC & Skeleton traps with Poison + Eternal Tome. |
+| Model Lineage / Run | Checkpoint File | Arch Version | Input Tensor | Action Heads | Total Episodes Trained | Resumed Sessions | Avg Destruction % | Peak Destruction / Stars | Status |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| [[runs/v1_baseline_8ch\|v1.0 Baseline 8-Ch]] | `attacker_ep30102_100pct_3star.pt` | `v1.0` | `8×50×50` + `64-D` | 3 (`type`, `idx`, `tile`) | **`30,102`** | 6 sessions (`0 -> 2.4k -> 3.8k -> 6.5k -> 10.2k -> 15.2k -> 30.1k`) | `60.9%` | **`100% (3★)`** | `SUPERSEDED` |
+| [[runs/v2_archetype_10ch\|v2.0 10-Ch Archetype + Waves]] | `attacker_ep2726_85pct_2star.pt` | `v2.0` | `10×50×50` + `64-D` | 4 (`type`, `idx`, `frac`, `tile`) | **`2,726`** | 2 sessions (`0 -> 2,724 -> 2,726`) | `50.6%` | **`85% (2★)`** | **`ACTIVE`** |
 
 ---
 
