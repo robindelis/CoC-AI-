@@ -1,5 +1,6 @@
 import { ArmyLoadout } from '../types';
 import {
+  AIArchitectureSpec,
   AIEvolutionResult,
   AIInspectResponse,
   AIRolloutResponse,
@@ -11,13 +12,39 @@ import {
 
 const AI_API_BASE = '/api/ai';
 
-export function getArchitectureSvgUrl(detail: 'overview' | 'detailed' = 'overview'): string {
-  return `${AI_API_BASE}/architecture.svg?detail=${detail}`;
+export function getArchitectureSvgUrl(
+  detail: 'overview' | 'detailed' = 'overview',
+  cacheBuster?: string | number,
+  force = false
+): string {
+  const cb = cacheBuster ?? Date.now();
+  return `${AI_API_BASE}/architecture.svg?detail=${detail}${force ? '&force=true' : ''}&v=${encodeURIComponent(String(cb))}`;
+}
+
+export async function fetchArchitectureSpec(force = false): Promise<{
+  architecture_hash?: string;
+  regenerated?: boolean;
+  spec?: AIArchitectureSpec;
+} | null> {
+  try {
+    const res = await fetch(
+      `${AI_API_BASE}/architecture/spec?force=${force ? 'true' : 'false'}&t=${Date.now()}`,
+      { cache: 'no-store' }
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as {
+      architecture_hash?: string;
+      regenerated?: boolean;
+      spec?: AIArchitectureSpec;
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchAIServerStatus(): Promise<AIServerStatus | null> {
   try {
-    const res = await fetch(`${AI_API_BASE}/status`);
+    const res = await fetch(`${AI_API_BASE}/status?t=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) return null;
     return (await res.json()) as AIServerStatus;
   } catch {

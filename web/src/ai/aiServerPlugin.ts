@@ -380,6 +380,299 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
 
     const pathname = urlObj.pathname;
 
+    function buildLiveArchitectureSpecFromDisk() {
+      const networksPath = path.join(rootDir, 'python', 'coc_rl', 'networks.py');
+      let sourceCode = '';
+      try {
+        if (fs.existsSync(networksPath)) {
+          sourceCode = fs.readFileSync(networksPath, 'utf-8');
+        }
+      } catch {
+        // ignore
+      }
+
+      // Extract default hyperparameters from CoCSpatialEncoder & CoCActorCritic in networks.py
+      const inChMatch = sourceCode.match(/class\s+CoCActorCritic[\s\S]*?in_channels:\s*int\s*=\s*(\d+)/)
+        ?? sourceCode.match(/in_channels:\s*int\s*=\s*(\d+)/);
+      const spatialDimMatch = sourceCode.match(/spatial_dim:\s*int\s*=\s*(\d+)/);
+      const embedDimMatch = sourceCode.match(/embed_dim:\s*int\s*=\s*(\d+)/);
+      const armyCtxMatch = sourceCode.match(/army_context_dim:\s*int\s*=\s*(\d+)/);
+      const fracBinsMatch = sourceCode.match(/num_fraction_bins:\s*int\s*=\s*(\d+)/);
+      const s1ChMatch = sourceCode.match(/Conv2d\(\s*in_channels\s*,\s*(\d+)/);
+      const g1ChMatch = sourceCode.match(/Conv2d\(\s*spatial_dim\s*,\s*(\d+)\s*,\s*kernel_size=3\s*,\s*stride=2/);
+      const g2ChMatch = sourceCode.match(/Conv2d\(\s*\d+\s*,\s*(\d+)\s*,\s*kernel_size=3\s*,\s*stride=2/);
+
+      const inCh = inChMatch ? Number(inChMatch[1]) : 10;
+      const spatialDim = spatialDimMatch ? Number(spatialDimMatch[1]) : 64;
+      const embedDim = embedDimMatch ? Number(embedDimMatch[1]) : 256;
+      const armyCtxDim = armyCtxMatch ? Number(armyCtxMatch[1]) : 64;
+      const numFracBins = fracBinsMatch ? Number(fracBinsMatch[1]) : 5;
+      const s1Ch = s1ChMatch ? Number(s1ChMatch[1]) : 32;
+      const g1Ch = g1ChMatch ? Number(g1ChMatch[1]) : 96;
+      const g2Ch = g2ChMatch ? Number(g2ChMatch[1]) : 128;
+
+      const s1Params = inCh * s1Ch * 9 + s1Ch * 2;
+      const s2Params = s1Ch * spatialDim * 9 + spatialDim * 2;
+      const resParams = 2 * (spatialDim * spatialDim * 9 + spatialDim * 2);
+      const g1Params = spatialDim * g1Ch * 9 + g1Ch;
+      const g2Params = g1Ch * g2Ch * 9 + g2Ch;
+      const g5Params = g2Ch * 16 * embedDim + embedDim + embedDim * 2;
+      const armyCtxParams = armyCtxDim * embedDim + embedDim + embedDim * 2;
+      const slotTypeParams = embedDim * 7 + 7;
+      const slotIdxParams = (embedDim + 7) * 128 + 128 + 128 * 10 + 10;
+      const deployFracParams = (embedDim + 17) * 128 + 128 + 128 * numFracBins + numFracBins;
+      const tileCondParams = (embedDim + 7) * spatialDim + spatialDim;
+      const tileConvParams = spatialDim * 32 * 9 + 32 + 32 * 1 + 1;
+      const criticParams = embedDim * 128 + 128 + 128 * 1 + 1;
+
+      const layers = [
+        {
+          id: 's1',
+          stage: 'spatial' as const,
+          type: 'Conv2d + GroupNorm + SiLU',
+          short: 'Conv2d',
+          desc: `${s1Ch} filters, 3×3, s=1, p=1, GroupNorm, SiLU (${inCh}-ch input)`,
+          inputShape: [inCh, 50, 50],
+          outputShape: [s1Ch, 50, 50],
+          receptiveField: 3,
+          params: s1Params,
+          macs: inCh * s1Ch * 9 * 50 * 50,
+          color: '#2563eb',
+          border: '#60a5fa',
+          coneLabel: '3×3',
+        },
+        {
+          id: 's2',
+          stage: 'spatial' as const,
+          type: 'Conv2d + GroupNorm + SiLU',
+          short: 'Conv2d',
+          desc: `${spatialDim} filters, 3×3, s=1, p=1, GroupNorm, SiLU`,
+          inputShape: [s1Ch, 50, 50],
+          outputShape: [spatialDim, 50, 50],
+          receptiveField: 5,
+          params: s2Params,
+          macs: s1Ch * spatialDim * 9 * 50 * 50,
+          color: '#2563eb',
+          border: '#60a5fa',
+          coneLabel: '3×3',
+        },
+        {
+          id: 's3',
+          stage: 'spatial' as const,
+          type: 'Dilated Residual Block',
+          short: 'ResBlock',
+          desc: `2×Conv ${spatialDim} ch, 3×3, d=2 (p=2) → d=1 (p=1), skip+, GroupNorm, SiLU`,
+          inputShape: [spatialDim, 50, 50],
+          outputShape: [spatialDim, 50, 50],
+          receptiveField: 11,
+          params: resParams,
+          macs: 2 * (spatialDim * spatialDim * 9 * 50 * 50),
+          color: '#7c3aed',
+          border: '#a78bfa',
+          coneLabel: '3×3 d=2',
+          hasSkipArc: true,
+        },
+        {
+          id: 'g1',
+          stage: 'global' as const,
+          type: 'Strided Conv2d + SiLU',
+          short: 'Conv2d',
+          desc: `${g1Ch} filters, 3×3, stride=2, pad=1, SiLU`,
+          inputShape: [spatialDim, 50, 50],
+          outputShape: [g1Ch, 25, 25],
+          receptiveField: 15,
+          params: g1Params,
+          macs: spatialDim * g1Ch * 9 * 25 * 25,
+          color: '#2563eb',
+          border: '#60a5fa',
+          coneLabel: '3×3 s=2',
+        },
+        {
+          id: 'g2',
+          stage: 'global' as const,
+          type: 'Strided Conv2d + SiLU',
+          short: 'Conv2d',
+          desc: `${g2Ch} filters, 3×3, stride=2, pad=1, SiLU`,
+          inputShape: [g1Ch, 25, 25],
+          outputShape: [g2Ch, 13, 13],
+          receptiveField: 23,
+          params: g2Params,
+          macs: g1Ch * g2Ch * 9 * 13 * 13,
+          color: '#2563eb',
+          border: '#60a5fa',
+          coneLabel: '3×3 s=2',
+        },
+        {
+          id: 'g3',
+          stage: 'global' as const,
+          type: 'AdaptiveAvgPool2d',
+          short: 'AdapPool',
+          desc: 'Adaptive Grid 4×4',
+          inputShape: [g2Ch, 13, 13],
+          outputShape: [g2Ch, 4, 4],
+          receptiveField: 50,
+          params: 0,
+          macs: 0,
+          color: '#d97706',
+          border: '#fbbf24',
+          coneLabel: 'Pool 4×4',
+        },
+        {
+          id: 'g4',
+          stage: 'global' as const,
+          type: 'Flatten',
+          short: 'Flatten',
+          desc: `Flatten ${g2Ch}×4×4 → ${g2Ch * 16}`,
+          inputShape: [g2Ch, 4, 4],
+          outputShape: [g2Ch * 16],
+          receptiveField: 50,
+          params: 0,
+          macs: 0,
+          color: '#475569',
+          border: '#94a3b8',
+          coneLabel: 'Flatten',
+        },
+        {
+          id: 'g5',
+          stage: 'global' as const,
+          type: 'Linear + LayerNorm + SiLU',
+          short: 'Linear',
+          desc: `Linear(${g2Ch * 16} → ${embedDim}) + LayerNorm(${embedDim}) + SiLU`,
+          inputShape: [g2Ch * 16],
+          outputShape: [embedDim],
+          receptiveField: 50,
+          params: g5Params,
+          macs: g2Ch * 16 * embedDim,
+          color: '#059669',
+          border: '#34d399',
+          coneLabel: 'Dense',
+        },
+        {
+          id: 'head_army_ctx',
+          stage: 'heads' as const,
+          type: 'army_context_proj',
+          short: 'ArmyCtx',
+          desc: `Linear(${armyCtxDim} → ${embedDim}) + LayerNorm(${embedDim}) + SiLU`,
+          inputShape: [armyCtxDim],
+          outputShape: [embedDim],
+          receptiveField: 50,
+          params: armyCtxParams,
+          macs: armyCtxDim * embedDim,
+          color: '#059669',
+          border: '#34d399',
+        },
+        {
+          id: 'head_slot_type',
+          stage: 'heads' as const,
+          type: 'slot_type_head',
+          short: 'TypeHead',
+          desc: `Linear(${embedDim} → 7 Action Types)`,
+          inputShape: [embedDim],
+          outputShape: [7],
+          receptiveField: 50,
+          params: slotTypeParams,
+          macs: embedDim * 7,
+          color: '#ca8a04',
+          border: '#facc15',
+        },
+        {
+          id: 'head_slot_idx',
+          stage: 'heads' as const,
+          type: 'slot_idx_head',
+          short: 'IdxHead',
+          desc: `MLP(${embedDim + 7} → 128 → 10 Loadout Slots, SiLU)`,
+          inputShape: [embedDim + 7],
+          outputShape: [10],
+          receptiveField: 50,
+          params: slotIdxParams,
+          macs: (embedDim + 7) * 128 + 128 * 10,
+          color: '#0284c7',
+          border: '#38bdf8',
+        },
+        {
+          id: 'head_deploy_fraction',
+          stage: 'heads' as const,
+          type: 'deploy_fraction_head',
+          short: 'FracHead',
+          desc: `MLP(${embedDim + 17} → 128 → ${numFracBins} Troop Fraction Bins α ∈ [0,1], SiLU)`,
+          inputShape: [embedDim + 17],
+          outputShape: [numFracBins],
+          receptiveField: 50,
+          params: deployFracParams,
+          macs: (embedDim + 17) * 128 + 128 * numFracBins,
+          color: '#9333ea',
+          border: '#c084fc',
+        },
+        {
+          id: 'head_tile_conv',
+          stage: 'heads' as const,
+          type: 'tile_conv_head',
+          short: 'TileHead',
+          desc: `Cond(${embedDim + 7} → ${spatialDim}) + Conv 3×3(${spatialDim} → 32) + Conv 1×1(32 → 1)`,
+          inputShape: [spatialDim, 50, 50],
+          outputShape: [1, 50, 50],
+          receptiveField: 50,
+          params: tileCondParams + tileConvParams,
+          macs: (spatialDim * 32 * 9 + 32 * 1) * 50 * 50,
+          color: '#d97706',
+          border: '#facc15',
+        },
+        {
+          id: 'head_critic',
+          stage: 'heads' as const,
+          type: 'critic_head',
+          short: 'Critic',
+          desc: `MLP(${embedDim} → 128 → 1 Value V(s), SiLU)`,
+          inputShape: [embedDim],
+          outputShape: [1],
+          receptiveField: 50,
+          params: criticParams,
+          macs: embedDim * 128 + 128,
+          color: '#16a34a',
+          border: '#4ade80',
+        },
+      ];
+
+      const totalParams = layers.reduce((acc, l) => acc + l.params, 0);
+      const totalMacs = layers.reduce((acc, l) => acc + l.macs, 0);
+
+      let archHash = String(Date.now());
+      try {
+        if (fs.existsSync(networksPath)) {
+          const stat = fs.statSync(networksPath);
+          archHash = `${stat.size}-${Math.round(stat.mtimeMs)}-${totalParams}`;
+        }
+      } catch {
+        // ignore
+      }
+
+      return {
+        architecture_hash: archHash,
+        spec: {
+          in_channels: inCh,
+          spatial_dim: spatialDim,
+          embed_dim: embedDim,
+          army_context_dim: armyCtxDim,
+          num_fraction_bins: numFracBins,
+          total_params: totalParams,
+          total_macs: totalMacs,
+          layers,
+          source_code: sourceCode,
+        },
+      };
+    }
+
+    if (req.method === 'GET' && pathname === '/api/ai/architecture/spec') {
+      const live = buildLiveArchitectureSpecFromDisk();
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+      sendJson(res, 200, {
+        architecture_hash: live.architecture_hash,
+        regenerated: true,
+        spec: live.spec,
+      });
+      return true;
+    }
+
     if (req.method === 'GET' && pathname === '/api/ai/architecture.svg') {
       const detail = urlObj.searchParams.get('detail') === 'detailed' ? 'detailed' : 'overview';
       const svgFile =
@@ -389,6 +682,7 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
       if (fs.existsSync(svgFile)) {
         res.statusCode = 200;
         res.setHeader('Content-Type', 'image/svg+xml');
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
         fs.createReadStream(svgFile).pipe(res);
         return true;
       }
@@ -398,25 +692,30 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
     }
 
     if (req.method === 'GET' && pathname === '/api/ai/status') {
+      const liveArch = buildLiveArchitectureSpecFromDisk();
+      const inCh = liveArch.spec.in_channels;
+      const liveParams = liveArch.spec.total_params;
       sendJson(res, 200, {
         online: true,
         device: 'cuda:0',
         device_name: 'PyTorch Actor-Critic Engine (TH18)',
-        param_count: 977905,
+        param_count: liveParams + 18420 + 15229,
         models_info: {
           attacker_selector: {
-            name: 'Attacker 1: Army Selector (10×50×50 → 3 Armies)',
+            name: `Attacker 1: Army Selector (${inCh}×50×50 → 3 Armies)`,
             params: 18420,
           },
           live_attacker: {
-            name: 'Attacker 2: Live Controller (10×50×50+64d → 7×10×5×50×50)',
-            params: 878236,
+            name: `Attacker 2: Live Controller (${inCh}×50×50+64d → 7×10×5×50×50)`,
+            params: liveParams,
           },
           defender_selector: {
             name: 'Defender: Village Selector (64d Army → 5 Villages)',
             params: 15229,
           },
         },
+        architecture_hash: liveArch.architecture_hash,
+        architecture_spec: liveArch.spec,
         saved_models: savedModels,
         checkpoint: {
           episode: trainingState.cumulative_episode ?? trainingState.current_episode,

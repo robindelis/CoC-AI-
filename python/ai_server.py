@@ -143,13 +143,23 @@ class EvolveRequest(BaseModel):
     base_layout_json: Optional[str] = None
 
 
+def _get_fresh_architecture_manifest(force: bool = False) -> Dict[str, Any]:
+    import importlib
+    import coc_rl.networks as _net_mod
+
+    importlib.reload(_net_mod)
+    fresh_model = _net_mod.CoCActorCritic()
+    return ensure_architecture_diagrams(fresh_model, force=force)
+
+
 @app.get("/api/ai/status")
 def get_ai_status() -> Dict[str, Any]:
     live_attacker, army_selector, defender_selector, ckpt = load_all_models(DEVICE)
-    arch_manifest = ensure_architecture_diagrams(live_attacker)
-    live_params = sum(p.numel() for p in live_attacker.parameters())
+    arch_manifest = _get_fresh_architecture_manifest(force=False)
+    live_params = int(arch_manifest.get("total_params") or sum(p.numel() for p in live_attacker.parameters()))
     army_sel_params = sum(p.numel() for p in army_selector.parameters())
     def_sel_params = sum(p.numel() for p in defender_selector.parameters())
+    in_ch = int(arch_manifest.get("live_spec", {}).get("in_channels", 10))
 
     ckpt_meta: Dict[str, Any] = {}
     if ckpt:
@@ -175,11 +185,11 @@ def get_ai_status() -> Dict[str, Any]:
         "param_count": live_params + army_sel_params + def_sel_params,
         "models_info": {
             "attacker_selector": {
-                "name": "Attacker 1: Army Selector (8×50×50 → 3 Armies)",
+                "name": f"Attacker 1: Army Selector ({in_ch}×50×50 → 3 Armies)",
                 "params": army_sel_params,
             },
             "live_attacker": {
-                "name": "Attacker 2: Live Controller (CNN+64d → 7×10×5×50×50)",
+                "name": f"Attacker 2: Live Controller ({in_ch}×50×50+64d → 7×10×5×50×50)",
                 "params": live_params,
             },
             "defender_selector": {
@@ -190,8 +200,19 @@ def get_ai_status() -> Dict[str, Any]:
         "saved_models": list_trained_models(),
         "architecture_hash": arch_manifest.get("architecture_hash"),
         "architecture_files": arch_manifest.get("files"),
+        "architecture_spec": arch_manifest.get("live_spec"),
         "checkpoint": ckpt_meta,
         "training": _training_state,
+    }
+
+
+@app.get("/api/ai/architecture/spec")
+def get_architecture_spec(force: bool = False) -> Dict[str, Any]:
+    manifest = _get_fresh_architecture_manifest(force=force)
+    return {
+        "architecture_hash": manifest.get("architecture_hash"),
+        "regenerated": manifest.get("regenerated", False),
+        "spec": manifest.get("live_spec"),
     }
 
 
@@ -236,12 +257,19 @@ def remove_custom_army_preset(name: str) -> Dict[str, Any]:
 
 
 @app.get("/api/ai/architecture.svg")
-def get_architecture_svg(detail: str = "overview") -> FileResponse:
-    manifest = ensure_architecture_diagrams()
+def get_architecture_svg(detail: str = "overview", force: bool = False) -> FileResponse:
+    manifest = _get_fresh_architecture_manifest(force=force)
     key = "detailed" if detail == "detailed" else "overview"
     rel_path = manifest["files"][key]["svg"]
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    return FileResponse(os.path.join(repo_root, rel_path), media_type="image/svg+xml")
+    return FileResponse(
+        os.path.join(repo_root, rel_path),
+        media_type="image/svg+xml",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+        },
+    )
 
 
 @app.post("/api/ai/inspect")

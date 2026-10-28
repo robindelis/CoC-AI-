@@ -136,6 +136,35 @@ export interface AITrainingState {
   history: AITrainingEpisodeRecord[];
 }
 
+export interface AIArchitectureLayerSpec {
+  id: string;
+  stage: 'spatial' | 'global' | 'heads';
+  type: string;
+  short: string;
+  desc: string;
+  inputShape: number[];
+  outputShape: number[];
+  receptiveField: number;
+  params: number;
+  macs: number;
+  color: string;
+  border: string;
+  coneLabel?: string;
+  hasSkipArc?: boolean;
+}
+
+export interface AIArchitectureSpec {
+  in_channels: number;
+  spatial_dim: number;
+  embed_dim: number;
+  army_context_dim: number;
+  num_fraction_bins: number;
+  total_params: number;
+  total_macs: number;
+  layers: AIArchitectureLayerSpec[];
+  source_code?: string;
+}
+
 export interface AIServerStatus {
   online: boolean;
   device: string;
@@ -146,6 +175,8 @@ export interface AIServerStatus {
     live_attacker: { name: string; params: number };
     defender_selector: { name: string; params: number };
   };
+  architecture_hash?: string;
+  architecture_spec?: AIArchitectureSpec;
   saved_models?: SavedModelMeta[];
   checkpoint: {
     episode?: number;

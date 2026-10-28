@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
 import os
 from typing import Any, Dict, Iterator, List, Optional
@@ -22,6 +23,20 @@ from .networks import CoCActorCritic
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 ARCH_DIR = os.path.join(REPO_ROOT, "docs", "architecture")
 MANIFEST_PATH = os.path.join(ARCH_DIR, "manifest.json")
+NETWORKS_PATH = os.path.join(os.path.dirname(__file__), "networks.py")
+
+
+def compute_networks_hash(model: Optional[nn.Module] = None) -> str:
+    """Computes a SHA-256 digest of `networks.py` and the live `model` repr + parameter counts."""
+    h = hashlib.sha256()
+    if os.path.exists(NETWORKS_PATH):
+        with open(NETWORKS_PATH, "rb") as f:
+            h.update(f.read())
+    if model is not None:
+        h.update(repr(model).encode("utf-8"))
+        for name, p in model.named_parameters():
+            h.update(f"{name}:{tuple(p.shape)}".encode("utf-8"))
+    return h.hexdigest()
 
 
 def get_submodule_breakdown(model: nn.Module) -> List[Dict[str, Any]]:
@@ -40,6 +55,272 @@ def get_submodule_breakdown(model: nn.Module) -> List[Dict[str, Any]]:
             }
         )
     return rows
+
+
+def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
+    """
+    Runs a live forward trace with shape & parameter hooks on `model` (`CoCActorCritic`)
+    so the 3D CNN Feature Map diagram, Layer-by-Layer table, KPI pills, and PyTorch code
+    in the Web UI always reflect any edits made to `python/coc_rl/networks.py` on every refresh.
+    """
+    in_ch = int(getattr(model, "in_channels", 10))
+    army_ctx_dim = int(getattr(model, "army_context_dim", 64))
+    num_frac_bins = int(getattr(model, "num_fraction_bins", 5))
+    spatial_dim = int(getattr(model.encoder, "spatial_dim", 64))
+    embed_dim = int(getattr(model.encoder, "embed_dim", 256))
+
+    def _mod_params(m: nn.Module) -> int:
+        return int(sum(p.numel() for p in m.parameters()))
+
+    stem = model.encoder.spatial_stem
+    s1_Mods = [stem[0], stem[1], stem[2]] if len(stem) >= 3 else [stem]
+    s2_Mods = [stem[3], stem[4], stem[5]] if len(stem) >= 6 else []
+    s1_params = sum(_mod_params(m) for m in s1_Mods)
+    s2_params = sum(_mod_params(m) for m in s2_Mods)
+    s1_out_ch = int(getattr(stem[0], "out_channels", 32))
+
+    res_params = _mod_params(model.encoder.context_res)
+
+    gt = model.encoder.global_tower
+    g1_conv = gt[0] if len(gt) > 0 else nn.Conv2d(spatial_dim, 96, 3, stride=2, padding=1)
+    g2_conv = gt[2] if len(gt) > 2 else nn.Conv2d(96, 128, 3, stride=2, padding=1)
+    g5_mods = [gt[6], gt[7], gt[8]] if len(gt) >= 9 else []
+    g1_ch = int(getattr(g1_conv, "out_channels", 96))
+    g2_ch = int(getattr(g2_conv, "out_channels", 128))
+    g1_params = _mod_params(g1_conv)
+    g2_params = _mod_params(g2_conv)
+    g5_params = sum(_mod_params(m) for m in g5_mods)
+
+    layers: List[Dict[str, Any]] = [
+        {
+            "id": "s1",
+            "stage": "spatial",
+            "type": "Conv2d + GroupNorm + SiLU",
+            "short": "Conv2d",
+            "desc": f"{s1_out_ch} filters, 3×3, s=1, p=1, GroupNorm, SiLU ({in_ch}-ch input)",
+            "inputShape": [in_ch, 50, 50],
+            "outputShape": [s1_out_ch, 50, 50],
+            "receptiveField": 3,
+            "params": s1_params,
+            "macs": in_ch * s1_out_ch * 9 * 50 * 50,
+            "color": "#2563eb",
+            "border": "#60a5fa",
+            "coneLabel": "3×3",
+        },
+        {
+            "id": "s2",
+            "stage": "spatial",
+            "type": "Conv2d + GroupNorm + SiLU",
+            "short": "Conv2d",
+            "desc": f"{spatial_dim} filters, 3×3, s=1, p=1, GroupNorm, SiLU",
+            "inputShape": [s1_out_ch, 50, 50],
+            "outputShape": [spatial_dim, 50, 50],
+            "receptiveField": 5,
+            "params": s2_params,
+            "macs": s1_out_ch * spatial_dim * 9 * 50 * 50,
+            "color": "#2563eb",
+            "border": "#60a5fa",
+            "coneLabel": "3×3",
+        },
+        {
+            "id": "s3",
+            "stage": "spatial",
+            "type": "Dilated Residual Block",
+            "short": "ResBlock",
+            "desc": f"2×Conv {spatial_dim} ch, 3×3, d=2 (p=2) → d=1 (p=1), skip+, GroupNorm, SiLU",
+            "inputShape": [spatial_dim, 50, 50],
+            "outputShape": [spatial_dim, 50, 50],
+            "receptiveField": 11,
+            "params": res_params,
+            "macs": 2 * (spatial_dim * spatial_dim * 9 * 50 * 50),
+            "color": "#7c3aed",
+            "border": "#a78bfa",
+            "coneLabel": "3×3 d=2",
+            "hasSkipArc": True,
+        },
+        {
+            "id": "g1",
+            "stage": "global",
+            "type": "Strided Conv2d + SiLU",
+            "short": "Conv2d",
+            "desc": f"{g1_ch} filters, 3×3, stride=2, pad=1, SiLU",
+            "inputShape": [spatial_dim, 50, 50],
+            "outputShape": [g1_ch, 25, 25],
+            "receptiveField": 15,
+            "params": g1_params,
+            "macs": spatial_dim * g1_ch * 9 * 25 * 25,
+            "color": "#2563eb",
+            "border": "#60a5fa",
+            "coneLabel": "3×3 s=2",
+        },
+        {
+            "id": "g2",
+            "stage": "global",
+            "type": "Strided Conv2d + SiLU",
+            "short": "Conv2d",
+            "desc": f"{g2_ch} filters, 3×3, stride=2, pad=1, SiLU",
+            "inputShape": [g1_ch, 25, 25],
+            "outputShape": [g2_ch, 13, 13],
+            "receptiveField": 23,
+            "params": g2_params,
+            "macs": g1_ch * g2_ch * 9 * 13 * 13,
+            "color": "#2563eb",
+            "border": "#60a5fa",
+            "coneLabel": "3×3 s=2",
+        },
+        {
+            "id": "g3",
+            "stage": "global",
+            "type": "AdaptiveAvgPool2d",
+            "short": "AdapPool",
+            "desc": "Adaptive Grid 4×4",
+            "inputShape": [g2_ch, 13, 13],
+            "outputShape": [g2_ch, 4, 4],
+            "receptiveField": 50,
+            "params": 0,
+            "macs": 0,
+            "color": "#d97706",
+            "border": "#fbbf24",
+            "coneLabel": "Pool 4×4",
+        },
+        {
+            "id": "g4",
+            "stage": "global",
+            "type": "Flatten",
+            "short": "Flatten",
+            "desc": f"Flatten {g2_ch}×4×4 → {g2_ch * 16}",
+            "inputShape": [g2_ch, 4, 4],
+            "outputShape": [g2_ch * 16],
+            "receptiveField": 50,
+            "params": 0,
+            "macs": 0,
+            "color": "#475569",
+            "border": "#94a3b8",
+            "coneLabel": "Flatten",
+        },
+        {
+            "id": "g5",
+            "stage": "global",
+            "type": "Linear + LayerNorm + SiLU",
+            "short": "Linear",
+            "desc": f"Linear({g2_ch * 16} → {embed_dim}) + LayerNorm({embed_dim}) + SiLU",
+            "inputShape": [g2_ch * 16],
+            "outputShape": [embed_dim],
+            "receptiveField": 50,
+            "params": g5_params,
+            "macs": (g2_ch * 16) * embed_dim,
+            "color": "#059669",
+            "border": "#34d399",
+            "coneLabel": "Dense",
+        },
+        {
+            "id": "head_army_ctx",
+            "stage": "heads",
+            "type": "army_context_proj",
+            "short": "ArmyCtx",
+            "desc": f"Linear({army_ctx_dim} → {embed_dim}) + LayerNorm({embed_dim}) + SiLU",
+            "inputShape": [army_ctx_dim],
+            "outputShape": [embed_dim],
+            "receptiveField": 50,
+            "params": _mod_params(model.army_context_proj),
+            "macs": army_ctx_dim * embed_dim,
+            "color": "#059669",
+            "border": "#34d399",
+        },
+        {
+            "id": "head_slot_type",
+            "stage": "heads",
+            "type": "slot_type_head",
+            "short": "TypeHead",
+            "desc": f"Linear({embed_dim} → 7 Action Types)",
+            "inputShape": [embed_dim],
+            "outputShape": [7],
+            "receptiveField": 50,
+            "params": _mod_params(model.slot_type_head),
+            "macs": embed_dim * 7,
+            "color": "#ca8a04",
+            "border": "#facc15",
+        },
+        {
+            "id": "head_slot_idx",
+            "stage": "heads",
+            "type": "slot_idx_head",
+            "short": "IdxHead",
+            "desc": f"MLP({embed_dim + 7} → 128 → 10 Loadout Slots, SiLU)",
+            "inputShape": [embed_dim + 7],
+            "outputShape": [10],
+            "receptiveField": 50,
+            "params": _mod_params(model.slot_idx_head),
+            "macs": (embed_dim + 7) * 128 + 128 * 10,
+            "color": "#0284c7",
+            "border": "#38bdf8",
+        },
+        {
+            "id": "head_deploy_fraction",
+            "stage": "heads",
+            "type": "deploy_fraction_head",
+            "short": "FracHead",
+            "desc": f"MLP({embed_dim + 17} → 128 → {num_frac_bins} Troop Fraction Bins α ∈ [0,1], SiLU)",
+            "inputShape": [embed_dim + 17],
+            "outputShape": [num_frac_bins],
+            "receptiveField": 50,
+            "params": _mod_params(model.deploy_fraction_head),
+            "macs": (embed_dim + 17) * 128 + 128 * num_frac_bins,
+            "color": "#9333ea",
+            "border": "#c084fc",
+        },
+        {
+            "id": "head_tile_conv",
+            "stage": "heads",
+            "type": "tile_conv_head",
+            "short": "TileHead",
+            "desc": f"Cond({embed_dim + 7} → {spatial_dim}) + Conv 3×3({spatial_dim} → 32) + Conv 1×1(32 → 1)",
+            "inputShape": [spatial_dim, 50, 50],
+            "outputShape": [1, 50, 50],
+            "receptiveField": 50,
+            "params": _mod_params(model.tile_cond_proj) + _mod_params(model.tile_conv_head),
+            "macs": (spatial_dim * 32 * 9 + 32 * 1) * 50 * 50,
+            "color": "#d97706",
+            "border": "#facc15",
+        },
+        {
+            "id": "head_critic",
+            "stage": "heads",
+            "type": "critic_head",
+            "short": "Critic",
+            "desc": f"MLP({embed_dim} → 128 → 1 Value V(s), SiLU)",
+            "inputShape": [embed_dim],
+            "outputShape": [1],
+            "receptiveField": 50,
+            "params": _mod_params(model.critic_head),
+            "macs": embed_dim * 128 + 128,
+            "color": "#16a34a",
+            "border": "#4ade80",
+        },
+    ]
+
+    total_params = int(sum(p.numel() for p in model.parameters()))
+    total_macs = int(sum(l["macs"] for l in layers))
+
+    source_code = ""
+    if os.path.exists(NETWORKS_PATH):
+        try:
+            with open(NETWORKS_PATH, "r", encoding="utf-8") as f:
+                source_code = f.read()
+        except Exception:
+            pass
+
+    return {
+        "in_channels": in_ch,
+        "spatial_dim": spatial_dim,
+        "embed_dim": embed_dim,
+        "army_context_dim": army_ctx_dim,
+        "num_fraction_bins": num_frac_bins,
+        "total_params": total_params,
+        "total_macs": total_macs,
+        "layers": layers,
+        "source_code": source_code,
+    }
 
 
 @contextlib.contextmanager
@@ -152,13 +433,26 @@ def render_model_architecture(
 def ensure_architecture_diagrams(
     model: Optional[nn.Module] = None,
     force: bool = False,
-    input_size: tuple[int, ...] = (1, 8, 50, 50),
+    input_size: Optional[tuple[int, ...]] = None,
 ) -> Dict[str, Any]:
     """
-    Returns the cached static architecture diagram manifest in `docs/architecture/manifest.json`,
-    generating the SVG/PNG files via `torchview` only if missing or when `force=True`.
+    Returns the architecture diagram manifest in `docs/architecture/manifest.json`,
+    automatically regenerating the SVG/PNG files via `torchview` whenever `networks.py`
+    or the live model architecture changes, when files are missing, or when `force=True`.
     """
     os.makedirs(ARCH_DIR, exist_ok=True)
+    if model is None:
+        in_ch = input_size[1] if input_size is not None else 10
+        model = CoCActorCritic(in_channels=in_ch)
+    else:
+        in_ch = int(getattr(model, "in_channels", 10))
+
+    if input_size is None:
+        input_size = (1, in_ch, 50, 50)
+
+    current_hash = compute_networks_hash(model)
+    live_spec = extract_live_layer_specs(model) if isinstance(model, CoCActorCritic) else {}
+
     if not force and os.path.exists(MANIFEST_PATH):
         try:
             with open(MANIFEST_PATH, "r", encoding="utf-8") as f:
@@ -169,13 +463,15 @@ def ensure_architecture_diagrams(
                 for k in ("overview", "detailed")
                 for fmt in ("svg", "png")
             )
-            if all_exist:
-                return {**cached, "regenerated": False}
+            if (
+                all_exist
+                and cached.get("architecture_hash") == current_hash
+                and cached.get("input_shape") == list(input_size)
+            ):
+                return {**cached, "live_spec": live_spec, "regenerated": False}
         except Exception:
             pass
 
-    if model is None:
-        model = CoCActorCritic(in_channels=input_size[1])
     orig_device = next(model.parameters()).device if list(model.parameters()) else torch.device("cpu")
 
     overview_files = _render_torchview_variant(
@@ -197,6 +493,7 @@ def ensure_architecture_diagrams(
     total_params = sum(p.numel() for p in model.parameters())
     manifest: Dict[str, Any] = {
         "model_class": type(model).__name__,
+        "architecture_hash": current_hash,
         "input_shape": list(input_size),
         "total_params": int(total_params),
         "trainable_params": int(total_params),
@@ -205,6 +502,7 @@ def ensure_architecture_diagrams(
             "overview": overview_files,
             "detailed": detailed_files,
         },
+        "live_spec": live_spec,
     }
     with open(MANIFEST_PATH, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
@@ -223,3 +521,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

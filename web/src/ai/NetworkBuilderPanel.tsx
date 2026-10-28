@@ -1,24 +1,8 @@
-import React, { useState } from 'react';
-import { getArchitectureSvgUrl } from './aiClient';
+import React, { useCallback, useEffect, useState } from 'react';
+import { fetchArchitectureSpec, getArchitectureSvgUrl } from './aiClient';
+import { AIArchitectureLayerSpec, AIArchitectureSpec } from './aiTypes';
 
-interface StaticLayerRow {
-  id: string;
-  stage: 'spatial' | 'global' | 'heads';
-  type: string;
-  short: string;
-  desc: string;
-  inputShape: number[];
-  outputShape: number[];
-  receptiveField: number;
-  params: number;
-  macs: number;
-  color: string;
-  border: string;
-  coneLabel?: string;
-  hasSkipArc?: boolean;
-}
-
-const STATIC_LAYERS: StaticLayerRow[] = [
+const DEFAULT_LAYERS: AIArchitectureLayerSpec[] = [
   {
     id: 's1',
     stage: 'spatial',
@@ -28,7 +12,7 @@ const STATIC_LAYERS: StaticLayerRow[] = [
     inputShape: [10, 50, 50],
     outputShape: [32, 50, 50],
     receptiveField: 3,
-    params: 2976,
+    params: 2944,
     macs: 7200000,
     color: '#2563eb',
     border: '#60a5fa',
@@ -191,7 +175,7 @@ const STATIC_LAYERS: StaticLayerRow[] = [
     inputShape: [273],
     outputShape: [5],
     receptiveField: 50,
-    params: 35725,
+    params: 35717,
     macs: 35584,
     color: '#9333ea',
     border: '#c084fc',
@@ -226,15 +210,8 @@ const STATIC_LAYERS: StaticLayerRow[] = [
   },
 ];
 
-const TOTAL_PARAMS = 944256;
-const TOTAL_MACS = 336262872;
-const ESTIMATED_VRAM_MB = 10.6;
-const SPATIAL_PCT = 10;
-const GLOBAL_PCT = 73;
-const HEAD_PCT = 17;
-
-const PYTORCH_MODEL_CODE = `class CoCSpatialEncoder(nn.Module):
-    def __init__(self, in_channels: int = 8, spatial_dim: int = 64, embed_dim: int = 256):
+const DEFAULT_PYTORCH_MODEL_CODE = `class CoCSpatialEncoder(nn.Module):
+    def __init__(self, in_channels: int = 10, spatial_dim: int = 64, embed_dim: int = 256):
         super().__init__()
         # Stage 1: Full-resolution 50x50 stem
         self.spatial_stem = nn.Sequential(
@@ -274,7 +251,7 @@ const PYTORCH_MODEL_CODE = `class CoCSpatialEncoder(nn.Module):
 
 
 class CoCActorCritic(nn.Module):
-    def __init__(self, in_channels: int = 8, army_context_dim: int = 64):
+    def __init__(self, in_channels: int = 10, army_context_dim: int = 64, num_fraction_bins: int = 5):
         super().__init__()
         self.encoder = CoCSpatialEncoder(in_channels, spatial_dim=64, embed_dim=256)
         self.army_context_proj = nn.Sequential(
@@ -285,7 +262,7 @@ class CoCActorCritic(nn.Module):
             nn.Linear(256 + 7, 128), nn.SiLU(), nn.Linear(128, 10)
         )
         self.deploy_fraction_head = nn.Sequential(
-            nn.Linear(256 + 7 + 10, 128), nn.SiLU(), nn.Linear(128, 5)
+            nn.Linear(256 + 7 + 10, 128), nn.SiLU(), nn.Linear(128, num_fraction_bins)
         )
         self.tile_cond_proj = nn.Linear(256 + 7, 64)
         self.tile_conv_head = nn.Sequential(
@@ -299,10 +276,14 @@ class CoCActorCritic(nn.Module):
 
 interface NetworkBuilderPanelProps {
   serverOnline: boolean;
+  architectureSpec?: AIArchitectureSpec;
+  architectureHash?: string;
 }
 
 export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
   serverOnline,
+  architectureSpec,
+  architectureHash,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
   const [vizMode, setVizMode] = useState<'cnn3d' | 'torchview'>('cnn3d');
@@ -311,10 +292,70 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
   const [zoom, setZoom] = useState<number>(1.0);
   const [torchviewDetail, setTorchviewDetail] = useState<'overview' | 'detailed'>('overview');
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
+  const [liveSpec, setLiveSpec] = useState<AIArchitectureSpec | null>(architectureSpec ?? null);
+  const [liveHash, setLiveHash] = useState<string>(architectureHash ?? String(Date.now()));
+  const [refreshCount, setRefreshCount] = useState<number>(0);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
-  const spatialLayers = STATIC_LAYERS.filter((l) => l.stage === 'spatial');
-  const globalLayers = STATIC_LAYERS.filter((l) => l.stage === 'global');
-  const hoveredSummary = STATIC_LAYERS.find((l) => l.id === hoveredBlockId) ?? null;
+  const syncArchitectureFromServer = useCallback(async (force = false) => {
+    setIsRefreshing(true);
+    try {
+      const res = await fetchArchitectureSpec(force);
+      if (res?.spec) {
+        setLiveSpec(res.spec);
+      }
+      if (res?.architecture_hash) {
+        setLiveHash(`${res.architecture_hash}-${Date.now()}`);
+      } else {
+        setLiveHash(String(Date.now()));
+      }
+      setRefreshCount((c) => c + 1);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  // Always fetch fresh architecture spec on page refresh / component mount
+  useEffect(() => {
+    void syncArchitectureFromServer(false);
+  }, [syncArchitectureFromServer]);
+
+  // Also sync whenever AIStudioView receives an updated architectureSpec or architectureHash
+  useEffect(() => {
+    if (architectureSpec) {
+      setLiveSpec(architectureSpec);
+    }
+    if (architectureHash) {
+      setLiveHash(architectureHash);
+    }
+  }, [architectureSpec, architectureHash]);
+
+  const activeLayers = liveSpec?.layers ?? DEFAULT_LAYERS;
+  const inChannels = liveSpec?.in_channels ?? activeLayers[0]?.inputShape[0] ?? 10;
+  const spatialDim = liveSpec?.spatial_dim ?? 64;
+  const embedDim = liveSpec?.embed_dim ?? 256;
+  const numFracBins = liveSpec?.num_fraction_bins ?? 5;
+  const totalParams =
+    liveSpec?.total_params ?? activeLayers.reduce((acc, l) => acc + l.params, 0);
+  const totalMacs =
+    liveSpec?.total_macs ?? activeLayers.reduce((acc, l) => acc + l.macs, 0);
+  const estimatedVramMb = Number(((totalParams * 4 * 3) / (1024 * 1024)).toFixed(1));
+  const modelCode = liveSpec?.source_code?.trim()
+    ? liveSpec.source_code
+    : DEFAULT_PYTORCH_MODEL_CODE;
+
+  const spatialLayers = activeLayers.filter((l) => l.stage === 'spatial');
+  const globalLayers = activeLayers.filter((l) => l.stage === 'global');
+  const headLayers = activeLayers.filter((l) => l.stage === 'heads');
+  const hoveredSummary = activeLayers.find((l) => l.id === hoveredBlockId) ?? null;
+
+  const spatialParamSum = spatialLayers.reduce((a, b) => a + b.params, 0);
+  const globalParamSum = globalLayers.reduce((a, b) => a + b.params, 0);
+  const headParamSum = headLayers.reduce((a, b) => a + b.params, 0);
+  const safeTotal = Math.max(1, spatialParamSum + globalParamSum + headParamSum);
+  const spatialPct = Math.round((spatialParamSum / safeTotal) * 100);
+  const globalPct = Math.round((globalParamSum / safeTotal) * 100);
+  const headPct = Math.max(0, 100 - spatialPct - globalPct);
 
   const render3DCnnDiagram = () => {
     const stepX = 112;
@@ -661,18 +702,18 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
             STAGE 2 • GLOBAL TOWER (Top) & STAGE 3 • TILE POINTER + HEADS (Bottom)
           </text>
 
-          {/* 0. Input Volume: obs (8×50×50) */}
+          {/* 0. Input Volume: obs (inChannels×50×50) */}
           {drawCuboid({
             key: 'input_obs',
             cx: startX,
             cy: stemY,
-            c: 8,
+            c: inChannels,
             h: 50,
             w: 50,
             color: '#0284c7',
             borderColor: '#38bdf8',
             topLabel: 'Input Grid',
-            shapeLabel: '8×50×50',
+            shapeLabel: `${inChannels}×50×50`,
             subLabel: 'Village Tensor',
           })}
 
@@ -881,7 +922,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                     strokeWidth={1.5}
                   />
                   <text x={63} y={90} textAnchor="middle" fill="#c084fc" fontSize={9.2} fontWeight={800}>
-                    Deploy Frac α∈[0,1] (5)
+                    Deploy Frac α∈[0,1] ({numFracBins})
                   </text>
                   <text x={63} y={101} textAnchor="middle" fill="#cbd5e1" fontSize={8.2}>
                     1 unit / 25% / 50% / 75% / All
@@ -935,25 +976,37 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
 
         <div className="ai-arch-kpi-pills">
           <div className="arch-pill">
+            <span>Input Tensor</span>
+            <strong>{inChannels}×50×50</strong>
+          </div>
+          <div className="arch-pill">
             <span>Spatial Map</span>
-            <strong>64×50×50 (RF 11×11)</strong>
+            <strong>{spatialDim}×50×50 (RF 11×11)</strong>
           </div>
           <div className="arch-pill">
             <span>Global Emb</span>
-            <strong>256D</strong>
+            <strong>{embedDim}D</strong>
           </div>
           <div className="arch-pill">
             <span>Parameters</span>
             <strong style={{ color: '#facc15' }}>
-              {TOTAL_PARAMS.toLocaleString()}
+              {totalParams.toLocaleString()}
             </strong>
           </div>
           <div className="arch-pill">
             <span>Compute / Size</span>
             <strong>
-              {(TOTAL_MACS / 1e6).toFixed(1)}M MACs • {ESTIMATED_VRAM_MB} MB
+              {(totalMacs / 1e6).toFixed(1)}M MACs • {estimatedVramMb} MB
             </strong>
           </div>
+          <button
+            type="button"
+            className="speed-pill-btn"
+            onClick={() => void syncArchitectureFromServer(true)}
+            title="Re-inspect python/coc_rl/networks.py and regenerate architecture diagrams"
+          >
+            {isRefreshing ? '⟳ Syncing...' : '↻ Sync Model'}
+          </button>
           <button
             type="button"
             className="speed-pill-btn"
@@ -1050,7 +1103,12 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                   }}
                 >
                   <img
-                    src={getArchitectureSvgUrl(torchviewDetail)}
+                    key={`${torchviewDetail}-${liveHash}-${refreshCount}`}
+                    src={getArchitectureSvgUrl(
+                      torchviewDetail,
+                      `${liveHash}-${refreshCount}`,
+                      refreshCount > 1
+                    )}
                     alt={`CoCActorCritic ${torchviewDetail} computation graph`}
                     style={{ maxWidth: '100%', height: 'auto', display: 'block' }}
                   />
@@ -1067,17 +1125,17 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
             <div className="arch-summary-table-wrap">
               <div className="arch-code-header" style={{ marginBottom: 6 }}>
                 <strong>
-                  Layer-by-Layer Architecture ({STATIC_LAYERS.length} Blocks •{' '}
-                  {TOTAL_PARAMS.toLocaleString()} Params)
+                  Layer-by-Layer Architecture ({activeLayers.length} Blocks •{' '}
+                  {totalParams.toLocaleString()} Params)
                 </strong>
                 <div className="arch-footer-param-bar-wrap">
                   <div className="ai-stacked-bar" style={{ height: 8, width: 140 }}>
-                    <div style={{ width: `${SPATIAL_PCT}%`, background: '#3b82f6' }} />
-                    <div style={{ width: `${GLOBAL_PCT}%`, background: '#10b981' }} />
-                    <div style={{ width: `${HEAD_PCT}%`, background: '#facc15' }} />
+                    <div style={{ width: `${spatialPct}%`, background: '#3b82f6' }} />
+                    <div style={{ width: `${globalPct}%`, background: '#10b981' }} />
+                    <div style={{ width: `${headPct}%`, background: '#facc15' }} />
                   </div>
                   <span style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
-                    Stem {SPATIAL_PCT}% • Tower {GLOBAL_PCT}% • Heads {HEAD_PCT}%
+                    Stem {spatialPct}% • Tower {globalPct}% • Heads {headPct}%
                   </span>
                 </div>
               </div>
@@ -1094,7 +1152,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {STATIC_LAYERS.map((row) => (
+                  {activeLayers.map((row) => (
                     <tr
                       key={row.id}
                       style={
@@ -1144,7 +1202,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                   type="button"
                   className="speed-pill-btn active"
                   onClick={() => {
-                    navigator.clipboard?.writeText(PYTORCH_MODEL_CODE);
+                    navigator.clipboard?.writeText(modelCode);
                     setCopiedCode(true);
                     setTimeout(() => setCopiedCode(false), 2000);
                   }}
@@ -1152,7 +1210,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                   {copiedCode ? '✓ Copied' : '📋 Copy PyTorch Code'}
                 </button>
               </div>
-              <pre className="arch-code-pre">{PYTORCH_MODEL_CODE}</pre>
+              <pre className="arch-code-pre">{modelCode}</pre>
             </div>
           </div>
         </>
@@ -1160,3 +1218,4 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
     </section>
   );
 };
+

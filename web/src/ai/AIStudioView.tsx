@@ -883,8 +883,12 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
           </div>
         </div>
 
-        {/* STATIC NEURAL NETWORK ARCHITECTURE VISUALIZER */}
-        <NetworkBuilderPanel serverOnline={Boolean(serverStatus?.online)} />
+        {/* LIVE NEURAL NETWORK ARCHITECTURE VISUALIZER */}
+        <NetworkBuilderPanel
+          serverOnline={Boolean(serverStatus?.online)}
+          architectureSpec={serverStatus?.architecture_spec}
+          architectureHash={serverStatus?.architecture_hash}
+        />
 
         {/* 6-KPI LIVE SUMMARY STRIP */}
         <div className="ai-kpi-strip">
