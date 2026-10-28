@@ -2,9 +2,11 @@ import { ArmyLoadout } from '../types';
 import {
   AIArchitectureSpec,
   AIEvolutionResult,
+  AIFeedbackProviderId,
   AIInspectResponse,
   AIRolloutResponse,
   AIServerStatus,
+  AITrainingFeedbackResponse,
   MatchupMode,
   SavedModelMeta,
   TrainingMode,
@@ -227,6 +229,43 @@ export async function runAIDefenderEvolution(params: {
     });
     if (!res.ok) return null;
     return (await res.json()) as AIEvolutionResult;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchAITrainingFeedback(
+  refreshTelemetry = false,
+  provider?: AIFeedbackProviderId
+): Promise<AITrainingFeedbackResponse | null> {
+  try {
+    const provQuery = provider ? `&provider=${encodeURIComponent(provider)}` : '';
+    const res = await fetch(
+      `${AI_API_BASE}/feedback?refresh_telemetry=${refreshTelemetry ? 'true' : 'false'}${provQuery}&t=${Date.now()}`,
+      { cache: 'no-store' }
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as AITrainingFeedbackResponse;
+  } catch {
+    return null;
+  }
+}
+
+export async function requestAITrainingFeedback(
+  provider: AIFeedbackProviderId,
+  modelFile?: string
+): Promise<AITrainingFeedbackResponse | null> {
+  try {
+    const res = await fetch(`${AI_API_BASE}/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider,
+        model_file: modelFile,
+      }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as AITrainingFeedbackResponse;
   } catch {
     return null;
   }

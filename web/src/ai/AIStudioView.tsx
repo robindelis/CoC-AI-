@@ -888,6 +888,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
           serverOnline={Boolean(serverStatus?.online)}
           architectureSpec={serverStatus?.architecture_spec}
           architectureHash={serverStatus?.architecture_hash}
+          activeCheckpoint={resumeFrom !== 'scratch' ? resumeFrom : undefined}
         />
 
         {/* 6-KPI LIVE SUMMARY STRIP */}

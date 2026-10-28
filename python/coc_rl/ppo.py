@@ -150,11 +150,21 @@ def ppo_minibatch_update(
         advantages_b.std(unbiased=False) + 1e-8
     )
 
+    with torch.no_grad():
+        values_old_b = returns_b - advantages_b
+        var_ret = torch.var(returns_b, unbiased=False)
+        explained_var = (
+            float((1.0 - torch.var(returns_b - values_old_b, unbiased=False) / (var_ret + 1e-8)).item())
+            if float(var_ret.item()) > 1e-8
+            else 0.0
+        )
+
     total_pg_loss = 0.0
     total_v_loss = 0.0
     total_ent = 0.0
     total_kl = 0.0
     total_clip = 0.0
+    total_grad_norm = 0.0
     num_updates = 0
 
     for _epoch in range(max(1, ppo_epochs)):
@@ -194,7 +204,7 @@ def ppo_minibatch_update(
 
             optimizer.zero_grad()
             loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+            grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             optimizer.step()
 
             with torch.no_grad():
@@ -206,6 +216,7 @@ def ppo_minibatch_update(
             total_ent += float(entropy_loss.item())
             total_kl += float(approx_kl)
             total_clip += float(clip_frac)
+            total_grad_norm += float(grad_norm.item()) if hasattr(grad_norm, "item") else float(grad_norm)
             num_updates += 1
             epoch_kl += float(approx_kl)
             epoch_mb += 1
@@ -220,6 +231,8 @@ def ppo_minibatch_update(
         "entropy": total_ent / denom,
         "approx_kl": total_kl / denom,
         "clip_fraction": total_clip / denom,
+        "grad_norm": total_grad_norm / denom,
+        "explained_variance": explained_var,
         "minibatch_updates": num_updates,
     }
 

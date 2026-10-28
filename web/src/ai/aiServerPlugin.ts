@@ -1194,6 +1194,49 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
       return true;
     }
 
+    if (pathname === '/api/ai/feedback') {
+      const reqProvider =
+        req.method === 'POST'
+          ? String((await readJsonBody(req)).provider ?? 'opencode_argon')
+          : urlObj.searchParams.get('provider') ?? 'opencode_argon';
+      const provKey =
+        reqProvider === 'agy_flash' ? 'agy_flash' : 'opencode_argon';
+      const provPath = path.join(
+        rootDir,
+        'trained_models',
+        `last_ai_feedback_${provKey}.json`
+      );
+      const defaultPath = path.join(
+        rootDir,
+        'trained_models',
+        'last_ai_feedback.json'
+      );
+      const targetPath = fs.existsSync(provPath) ? provPath : defaultPath;
+      if (fs.existsSync(targetPath)) {
+        try {
+          const parsed = JSON.parse(fs.readFileSync(targetPath, 'utf-8'));
+          sendJson(res, 200, parsed);
+          return true;
+        } catch {
+          // ignore
+        }
+      }
+      sendJson(res, 200, {
+        success: true,
+        provider: provKey,
+        provider_label:
+          provKey === 'agy_flash' ? 'Flash 3.8 • AGY' : 'Argon 4 • OpenCode',
+        model:
+          provKey === 'agy_flash'
+            ? 'gemini-3.8-flash-medium'
+            : 'google-vertex/gemini-4-argon#medium',
+        generated_at: null,
+        latency_sec: 0,
+        feedback: null,
+      });
+      return true;
+    }
+
     return false;
   }
 

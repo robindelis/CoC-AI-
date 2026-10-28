@@ -66,6 +66,9 @@ export interface AITrainingEpisodeRecord {
   value_loss: number;
   entropy: number;
   approx_kl: number;
+  clip_fraction?: number;
+  grad_norm?: number;
+  explained_variance?: number;
   fps_ticks: number;
   steps: number;
   defender_gen?: number;
@@ -286,3 +289,145 @@ export const SLOT_TYPE_LABELS = [
   'Pop Siege',
   'Cast Spell',
 ] as const;
+
+export type AIFeedbackProviderId = 'opencode_argon' | 'agy_flash';
+
+export interface AIFeedbackIssue {
+  title: string;
+  severity: 'critical' | 'warning' | 'info';
+  symptom: string;
+  root_cause: string;
+}
+
+export interface AIFeedbackRecommendation {
+  action: string;
+  target: string;
+  rationale: string;
+}
+
+export interface AIFeedbackReport {
+  health_status: 'progressing' | 'plateaued' | 'degrading' | 'unstable' | 'early_stage';
+  health_score: number;
+  is_progressing: boolean;
+  headline: string;
+  progression_summary: string;
+  what_is_going_wrong: AIFeedbackIssue[];
+  recommendations: AIFeedbackRecommendation[];
+}
+
+export interface AITelemetryHeadEntropy {
+  entropy: number;
+  max_possible: number;
+  saturation_pct: number;
+  top5_tile_prob_mass_pct?: number;
+}
+
+export interface AITrainingTelemetrySummary {
+  collected_at: string;
+  session: {
+    is_training: boolean;
+    training_mode: string;
+    matchup_mode: string;
+    active_checkpoint: string;
+    current_episode: number;
+    cumulative_episode: number;
+    total_episodes: number;
+    history_length: number;
+    best_pct: number;
+    best_stars: number;
+    hyperparams: Record<string, unknown>;
+  };
+  trends: {
+    full_run_pct_slope_per_100ep?: number;
+    recent_window_episodes?: number;
+    recent_pct_slope_per_100ep?: number;
+    recent_reward_slope_per_100ep?: number;
+    recent_entropy_slope_per_100ep?: number;
+    recent_value_loss_slope_per_100ep?: number;
+    recent_noop_slope_per_100ep?: number;
+    rolling50_peak_pct?: number;
+    rolling50_peak_at_episode?: number;
+    episodes_since_rolling50_peak?: number;
+    current_rolling50_pct?: number;
+    drawdown_from_rolling50_peak_pct?: number;
+    best_single_ep_pct?: number;
+    best_pct_first_at_episode?: number;
+    episodes_since_best_pct?: number;
+  };
+  windows: Record<
+    string,
+    {
+      window: string;
+      ep_start: number;
+      ep_end: number;
+      episodes: number;
+      mean_pct: number;
+      std_pct: number;
+      min_pct: number;
+      max_pct: number;
+      mean_stars: number;
+      zero_star_rate_pct: number;
+      one_plus_star_rate_pct: number;
+      two_plus_star_th_rate_pct: number;
+      three_star_triple_rate_pct: number;
+      mean_reward: number;
+      mean_noop_pct: number;
+      mean_steps: number;
+      mean_deploy_steps: number;
+      mean_spell_steps: number;
+      mean_ability_steps: number;
+      mean_policy_loss: number;
+      mean_value_loss: number;
+      mean_entropy: number;
+      mean_approx_kl: number;
+    }
+  >;
+  live_model_probe?: {
+    probe_duration_ms: number;
+    head_entropy_breakdown: {
+      slot_type: AITelemetryHeadEntropy;
+      slot_idx: AITelemetryHeadEntropy;
+      deploy_fraction: AITelemetryHeadEntropy;
+      tile_xy: AITelemetryHeadEntropy;
+    };
+    critic_calibration: {
+      predicted_v_s0: number;
+      pred_value_min: number;
+      pred_value_max: number;
+      empirical_recent50_return: number | null;
+      calibration_gap_v0_minus_return: number | null;
+    };
+    tactical_rollout_behavior: {
+      probe_steps_before_exhaustion: number;
+      probe_destruction_pct: number;
+      probe_stars: number;
+      spatial_deploy_spread_std_tiles: number;
+      unique_deploy_tiles_ratio: number;
+      troop_deploy_tick_span: [number, number];
+      spell_cast_tick_span: [number, number];
+      hero_ability_tick_span: [number, number];
+    };
+  };
+  detected_signals?: Array<{
+    id: string;
+    severity: 'critical' | 'warning' | 'info';
+    metric: string;
+    detail: string;
+  }>;
+}
+
+export interface AITrainingFeedbackResponse {
+  success: boolean;
+  error?: string | null;
+  provider: AIFeedbackProviderId;
+  provider_label: string;
+  model: string;
+  generated_at: string | null;
+  latency_sec: number;
+  feedback: AIFeedbackReport | null;
+  telemetry?: AITrainingTelemetrySummary;
+  providers?: Record<
+    string,
+    { id: string; label: string; model: string; cli: string }
+  >;
+}

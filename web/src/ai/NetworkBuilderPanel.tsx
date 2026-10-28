@@ -1,6 +1,16 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { fetchArchitectureSpec, getArchitectureSvgUrl } from './aiClient';
-import { AIArchitectureLayerSpec, AIArchitectureSpec } from './aiTypes';
+import {
+  fetchAITrainingFeedback,
+  fetchArchitectureSpec,
+  getArchitectureSvgUrl,
+  requestAITrainingFeedback,
+} from './aiClient';
+import {
+  AIArchitectureLayerSpec,
+  AIArchitectureSpec,
+  AIFeedbackProviderId,
+  AITrainingFeedbackResponse,
+} from './aiTypes';
 
 const DEFAULT_LAYERS: AIArchitectureLayerSpec[] = [
   {
@@ -210,80 +220,78 @@ const DEFAULT_LAYERS: AIArchitectureLayerSpec[] = [
   },
 ];
 
-const DEFAULT_PYTORCH_MODEL_CODE = `class CoCSpatialEncoder(nn.Module):
-    def __init__(self, in_channels: int = 10, spatial_dim: int = 64, embed_dim: int = 256):
-        super().__init__()
-        # Stage 1: Full-resolution 50x50 stem
-        self.spatial_stem = nn.Sequential(
-            nn.Conv2d(in_channels, 32, kernel_size=3, padding=1, bias=False),
-            nn.GroupNorm(4, 32),
-            nn.SiLU(),
-            nn.Conv2d(32, spatial_dim, kernel_size=3, padding=1, bias=False),
-            nn.GroupNorm(8, spatial_dim),
-            nn.SiLU(),
-        )
-        # Stage 2: Dilated 3x3 residual block (receptive field 11x11)
-        self.context_res = nn.Sequential(
-            nn.Conv2d(spatial_dim, spatial_dim, kernel_size=3, padding=2, dilation=2, bias=False),
-            nn.GroupNorm(8, spatial_dim),
-            nn.SiLU(),
-            nn.Conv2d(spatial_dim, spatial_dim, kernel_size=3, padding=1, bias=False),
-            nn.GroupNorm(8, spatial_dim),
-        )
-        # Stage 3: Strided downsampling pyramid (50x50 -> 25x25 -> 13x13 -> 4x4 -> 256-D)
-        self.global_tower = nn.Sequential(
-            nn.Conv2d(spatial_dim, 96, kernel_size=3, stride=2, padding=1),
-            nn.SiLU(),
-            nn.Conv2d(96, 128, kernel_size=3, stride=2, padding=1),
-            nn.SiLU(),
-            nn.AdaptiveAvgPool2d((4, 4)),
-            nn.Flatten(),
-            nn.Linear(128 * 4 * 4, embed_dim),
-            nn.LayerNorm(embed_dim),
-            nn.SiLU(),
-        )
-
-    def forward(self, obs: torch.Tensor):
-        h = self.spatial_stem(obs)
-        spatial_features = F.silu(h + self.context_res(h))
-        global_embedding = self.global_tower(spatial_features)
-        return spatial_features, global_embedding
-
-
-class CoCActorCritic(nn.Module):
-    def __init__(self, in_channels: int = 10, army_context_dim: int = 64, num_fraction_bins: int = 5):
-        super().__init__()
-        self.encoder = CoCSpatialEncoder(in_channels, spatial_dim=64, embed_dim=256)
-        self.army_context_proj = nn.Sequential(
-            nn.Linear(army_context_dim, 256), nn.LayerNorm(256), nn.SiLU()
-        )
-        self.slot_type_head = nn.Linear(256, 7)
-        self.slot_idx_head = nn.Sequential(
-            nn.Linear(256 + 7, 128), nn.SiLU(), nn.Linear(128, 10)
-        )
-        self.deploy_fraction_head = nn.Sequential(
-            nn.Linear(256 + 7 + 10, 128), nn.SiLU(), nn.Linear(128, num_fraction_bins)
-        )
-        self.tile_cond_proj = nn.Linear(256 + 7, 64)
-        self.tile_conv_head = nn.Sequential(
-            nn.Conv2d(64, 32, kernel_size=3, padding=1),
-            nn.SiLU(),
-            nn.Conv2d(32, 1, kernel_size=1),
-        )
-        self.critic_head = nn.Sequential(
-            nn.Linear(256, 128), nn.SiLU(), nn.Linear(128, 1)
-        )`;
-
 interface NetworkBuilderPanelProps {
   serverOnline: boolean;
   architectureSpec?: AIArchitectureSpec;
   architectureHash?: string;
+  activeCheckpoint?: string;
 }
+
+const HEALTH_STYLE: Record<
+  string,
+  { label: string; bg: string; border: string; text: string }
+> = {
+  progressing: {
+    label: 'PROGRESSING',
+    bg: 'rgba(34, 197, 94, 0.16)',
+    border: '#22c55e',
+    text: '#4ade80',
+  },
+  plateaued: {
+    label: 'PLATEAUED',
+    bg: 'rgba(245, 158, 11, 0.16)',
+    border: '#f59e0b',
+    text: '#fbbf24',
+  },
+  degrading: {
+    label: 'DEGRADING',
+    bg: 'rgba(239, 68, 68, 0.18)',
+    border: '#ef4444',
+    text: '#f87171',
+  },
+  unstable: {
+    label: 'UNSTABLE',
+    bg: 'rgba(239, 68, 68, 0.18)',
+    border: '#ef4444',
+    text: '#f87171',
+  },
+  early_stage: {
+    label: 'EARLY STAGE',
+    bg: 'rgba(56, 189, 248, 0.16)',
+    border: '#38bdf8',
+    text: '#7dd3fc',
+  },
+};
+
+const SEVERITY_STYLE: Record<
+  string,
+  { badge: string; border: string; color: string; bg: string }
+> = {
+  critical: {
+    badge: 'CRITICAL',
+    border: '#ef4444',
+    color: '#fca5a5',
+    bg: 'rgba(239, 68, 68, 0.12)',
+  },
+  warning: {
+    badge: 'WARNING',
+    border: '#f59e0b',
+    color: '#fcd34d',
+    bg: 'rgba(245, 158, 11, 0.10)',
+  },
+  info: {
+    badge: 'INFO',
+    border: '#38bdf8',
+    color: '#7dd3fc',
+    bg: 'rgba(56, 189, 248, 0.10)',
+  },
+};
 
 export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
   serverOnline,
   architectureSpec,
   architectureHash,
+  activeCheckpoint,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
   const [vizMode, setVizMode] = useState<'cnn3d' | 'torchview'>('cnn3d');
@@ -291,11 +299,17 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null);
   const [zoom, setZoom] = useState<number>(1.0);
   const [torchviewDetail, setTorchviewDetail] = useState<'overview' | 'detailed'>('overview');
-  const [copiedCode, setCopiedCode] = useState<boolean>(false);
   const [liveSpec, setLiveSpec] = useState<AIArchitectureSpec | null>(architectureSpec ?? null);
   const [liveHash, setLiveHash] = useState<string>(architectureHash ?? String(Date.now()));
   const [refreshCount, setRefreshCount] = useState<number>(0);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+
+  // AI Training Feedback state
+  const [feedbackProvider, setFeedbackProvider] =
+    useState<AIFeedbackProviderId>('opencode_argon');
+  const [feedbackData, setFeedbackData] =
+    useState<AITrainingFeedbackResponse | null>(null);
+  const [isAnalyzingFeedback, setIsAnalyzingFeedback] = useState<boolean>(false);
 
   const syncArchitectureFromServer = useCallback(async (force = false) => {
     setIsRefreshing(true);
@@ -315,9 +329,45 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
     }
   }, []);
 
-  // Always fetch fresh architecture spec on page refresh / component mount
+  const handleRunFeedbackAnalysis = useCallback(
+    async (providerOverride?: AIFeedbackProviderId) => {
+      const targetProvider = providerOverride ?? feedbackProvider;
+      setIsAnalyzingFeedback(true);
+      try {
+        const res = await requestAITrainingFeedback(
+          targetProvider,
+          activeCheckpoint
+        );
+        if (res) {
+          setFeedbackData(res);
+        }
+      } finally {
+        setIsAnalyzingFeedback(false);
+      }
+    },
+    [feedbackProvider, activeCheckpoint]
+  );
+
+  const handleSelectFeedbackProvider = useCallback(
+    async (nextProvider: AIFeedbackProviderId) => {
+      setFeedbackProvider(nextProvider);
+      const cached = await fetchAITrainingFeedback(false, nextProvider);
+      if (cached && cached.provider === nextProvider && cached.feedback) {
+        setFeedbackData(cached);
+      }
+    },
+    []
+  );
   useEffect(() => {
     void syncArchitectureFromServer(false);
+    void fetchAITrainingFeedback(false).then((res) => {
+      if (res) {
+        setFeedbackData(res);
+        if (res.provider === 'opencode_argon' || res.provider === 'agy_flash') {
+          setFeedbackProvider(res.provider);
+        }
+      }
+    });
   }, [syncArchitectureFromServer]);
 
   // Also sync whenever AIStudioView receives an updated architectureSpec or architectureHash
@@ -340,9 +390,6 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
   const totalMacs =
     liveSpec?.total_macs ?? activeLayers.reduce((acc, l) => acc + l.macs, 0);
   const estimatedVramMb = Number(((totalParams * 4 * 3) / (1024 * 1024)).toFixed(1));
-  const modelCode = liveSpec?.source_code?.trim()
-    ? liveSpec.source_code
-    : DEFAULT_PYTORCH_MODEL_CODE;
 
   const spatialLayers = activeLayers.filter((l) => l.stage === 'spatial');
   const globalLayers = activeLayers.filter((l) => l.stage === 'global');
@@ -1195,22 +1242,255 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
               </table>
             </div>
 
-            <div className="arch-code-pane">
-              <div className="arch-code-header">
-                <strong>PyTorch `nn.Module` Implementation</strong>
-                <button
-                  type="button"
-                  className="speed-pill-btn active"
-                  onClick={() => {
-                    navigator.clipboard?.writeText(modelCode);
-                    setCopiedCode(true);
-                    setTimeout(() => setCopiedCode(false), 2000);
-                  }}
-                >
-                  {copiedCode ? '✓ Copied' : '📋 Copy PyTorch Code'}
-                </button>
+            <div className="arch-code-pane ai-feedback-pane">
+              <div className="arch-code-header ai-feedback-header">
+                <div className="ai-feedback-title-group">
+                  <strong>🩺 AI Training Health & Diagnostics</strong>
+                  {feedbackData?.feedback && (() => {
+                    const st =
+                      HEALTH_STYLE[feedbackData.feedback.health_status] ??
+                      HEALTH_STYLE.plateaued;
+                    return (
+                      <span
+                        className="ai-health-badge"
+                        style={{
+                          background: st.bg,
+                          borderColor: st.border,
+                          color: st.text,
+                        }}
+                      >
+                        {st.label} • {feedbackData.feedback.health_score}/100
+                      </span>
+                    );
+                  })()}
+                  {feedbackData?.model && (
+                    <span className="ai-feedback-meta-tag" title={feedbackData.model}>
+                      {feedbackData.provider === 'agy_flash'
+                        ? 'gemini-3.8-flash'
+                        : 'gemini-4-argon#medium'}
+                      {feedbackData.latency_sec
+                        ? ` • ${feedbackData.latency_sec}s`
+                        : ''}
+                    </span>
+                  )}
+                </div>
+
+                <div className="ai-feedback-controls">
+                  <div className="ai-provider-toggle" role="group">
+                    <button
+                      type="button"
+                      className={`ai-provider-btn ${
+                        feedbackProvider === 'opencode_argon' ? 'active' : ''
+                      }`}
+                      disabled={isAnalyzingFeedback}
+                      onClick={() => void handleSelectFeedbackProvider('opencode_argon')}
+                      title="OpenCode CLI: google-vertex/gemini-4-argon#medium"
+                    >
+                      Argon 4 • OpenCode
+                    </button>
+                    <button
+                      type="button"
+                      className={`ai-provider-btn ${
+                        feedbackProvider === 'agy_flash' ? 'active' : ''
+                      }`}
+                      disabled={isAnalyzingFeedback}
+                      onClick={() => void handleSelectFeedbackProvider('agy_flash')}
+                      title="AGY CLI: gemini-3.8-flash-medium"
+                    >
+                      Flash 3.8 • AGY
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="speed-pill-btn active"
+                    disabled={!serverOnline || isAnalyzingFeedback}
+                    onClick={() => void handleRunFeedbackAnalysis()}
+                  >
+                    {isAnalyzingFeedback
+                      ? `⟳ ${
+                          feedbackProvider === 'agy_flash'
+                            ? 'AGY Flash...'
+                            : 'OpenCode Argon...'
+                        }`
+                      : '⚡ Diagnose'}
+                  </button>
+                </div>
               </div>
-              <pre className="arch-code-pre">{modelCode}</pre>
+
+              {feedbackData?.telemetry && (() => {
+                const tel = feedbackData.telemetry;
+                const rec50 = tel.windows?.recent_50;
+                const hb = tel.live_model_probe?.head_entropy_breakdown;
+                const cal = tel.live_model_probe?.critic_calibration;
+                const slope = tel.trends?.recent_pct_slope_per_100ep ?? 0;
+                return (
+                  <div className="ai-feedback-telemetry-strip">
+                    <div className="ai-tel-chip">
+                      <span>Slope</span>
+                      <strong
+                        style={{ color: slope >= 0.35 ? '#4ade80' : '#fbbf24' }}
+                      >
+                        {slope >= 0 ? `+${slope}` : slope}%/100ep
+                      </strong>
+                    </div>
+                    <div className="ai-tel-chip">
+                      <span>50-Ep Peak</span>
+                      <strong>
+                        {tel.trends?.rolling50_peak_pct ?? 0}% (Ep{' '}
+                        {tel.trends?.rolling50_peak_at_episode ?? 0})
+                      </strong>
+                    </div>
+                    <div className="ai-tel-chip">
+                      <span>2★ TH / 3★</span>
+                      <strong style={{ color: '#facc15' }}>
+                        {rec50?.two_plus_star_th_rate_pct ?? 0}% /{' '}
+                        {rec50?.three_star_triple_rate_pct ?? 0}%
+                      </strong>
+                    </div>
+                    <div className="ai-tel-chip">
+                      <span>NoOp / Steps</span>
+                      <strong style={{ color: '#38bdf8' }}>
+                        {rec50?.mean_noop_pct ?? 0}% / {rec50?.mean_steps ?? 0}st
+                      </strong>
+                    </div>
+                    {hb && (
+                      <div className="ai-tel-chip">
+                        <span>Head H Sat</span>
+                        <strong>
+                          Tile {hb.tile_xy.saturation_pct}% • Type{' '}
+                          {hb.slot_type.saturation_pct}% • Idx{' '}
+                          {hb.slot_idx.saturation_pct}%
+                        </strong>
+                      </div>
+                    )}
+                    {cal && (
+                      <div className="ai-tel-chip">
+                        <span>Critic V(s₀)/R̄</span>
+                        <strong>
+                          {cal.predicted_v_s0} /{' '}
+                          {cal.empirical_recent50_return ?? '—'}
+                        </strong>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              <div className="ai-feedback-scroll">
+                {feedbackData?.error && (
+                  <div className="ai-feedback-error">
+                    ⚠️ {feedbackData.error}
+                  </div>
+                )}
+
+                {feedbackData?.feedback ? (
+                  <>
+                    <div className="ai-feedback-verdict">
+                      <div className="ai-verdict-headline">
+                        <span
+                          className={`ai-prog-pill ${
+                            feedbackData.feedback.is_progressing
+                              ? 'prog-yes'
+                              : 'prog-no'
+                          }`}
+                        >
+                          {feedbackData.feedback.is_progressing
+                            ? '✓ Progressing'
+                            : '⚠ Not Progressing'}
+                        </span>
+                        <strong>{feedbackData.feedback.headline}</strong>
+                      </div>
+                      <p>{feedbackData.feedback.progression_summary}</p>
+                    </div>
+
+                    <div className="ai-feedback-section">
+                      <div className="ai-feedback-section-title">
+                        What Is Going Wrong & Root Causes (
+                        {feedbackData.feedback.what_is_going_wrong.length})
+                      </div>
+                      <div className="ai-feedback-issues-list">
+                        {feedbackData.feedback.what_is_going_wrong.map(
+                          (item, idx) => {
+                            const sev =
+                              SEVERITY_STYLE[item.severity] ??
+                              SEVERITY_STYLE.warning;
+                            return (
+                              <div
+                                key={idx}
+                                className="ai-feedback-issue-card"
+                                style={{
+                                  borderLeftColor: sev.border,
+                                  background: sev.bg,
+                                }}
+                              >
+                                <div className="ai-issue-top">
+                                  <span
+                                    className="ai-issue-sev"
+                                    style={{
+                                      color: sev.color,
+                                      borderColor: sev.border,
+                                    }}
+                                  >
+                                    {sev.badge}
+                                  </span>
+                                  <strong>{item.title}</strong>
+                                </div>
+                                <div className="ai-issue-row">
+                                  <span className="ai-issue-tag">Symptom</span>
+                                  <span>{item.symptom}</span>
+                                </div>
+                                <div className="ai-issue-row">
+                                  <span className="ai-issue-tag cause">
+                                    Cause
+                                  </span>
+                                  <span>{item.root_cause}</span>
+                                </div>
+                              </div>
+                            );
+                          }
+                        )}
+                      </div>
+                    </div>
+
+                    {feedbackData.feedback.recommendations?.length > 0 && (
+                      <div className="ai-feedback-section">
+                        <div className="ai-feedback-section-title">
+                          Recommended Fixes (
+                          {feedbackData.feedback.recommendations.length})
+                        </div>
+                        <div className="ai-feedback-recs-list">
+                          {feedbackData.feedback.recommendations.map(
+                            (rec, idx) => (
+                              <div key={idx} className="ai-feedback-rec-card">
+                                <div className="ai-rec-top">
+                                  <span className="ai-rec-target">
+                                    {rec.target}
+                                  </span>
+                                  <strong>{rec.action}</strong>
+                                </div>
+                                <div className="ai-rec-rationale">
+                                  {rec.rationale}
+                                </div>
+                              </div>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="arch-stage-placeholder">
+                    {isAnalyzingFeedback
+                      ? `Gathering live PPO telemetry & querying ${
+                          feedbackProvider === 'agy_flash'
+                            ? 'Gemini 3.8 Flash via AGY'
+                            : 'Gemini 4 Argon (#medium) via OpenCode'
+                        }...`
+                      : 'Click "⚡ Diagnose" to analyze training health, bottlenecks, and root causes.'}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </>

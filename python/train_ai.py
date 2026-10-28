@@ -132,6 +132,9 @@ def sanitize_model_filename(name: str) -> str:
     return clean
 
 
+_MODEL_META_CACHE: Dict[str, Tuple[float, float, Dict[str, Any]]] = {}
+
+
 def list_trained_models() -> List[Dict[str, Any]]:
     ensure_trained_models_dir()
     items: List[Dict[str, Any]] = []
@@ -144,6 +147,10 @@ def list_trained_models() -> List[Dict[str, Any]]:
             continue
         mtime = os.path.getmtime(fpath)
         size_kb = round(os.path.getsize(fpath) / 1024.0, 1)
+        cached = _MODEL_META_CACHE.get(fname)
+        if cached and cached[0] == mtime and cached[1] == size_kb:
+            items.append(cached[2])
+            continue
         meta: Dict[str, Any] = {
             "filename": fname,
             "size_kb": size_kb,
@@ -177,6 +184,7 @@ def list_trained_models() -> List[Dict[str, Any]]:
             meta["village_names"] = [v.get("name", f"Village #{i+1}") for i, v in enumerate(meta["villages"])]
         except Exception:
             pass
+        _MODEL_META_CACHE[fname] = (mtime, size_kb, meta)
         items.append(meta)
 
     items.sort(key=lambda x: (x["filename"] == "latest_attacker.pt", x["mtime"]), reverse=True)
@@ -790,6 +798,8 @@ def train_pytorch_ppo(
         "entropy": 0.0,
         "approx_kl": 0.0,
         "clip_fraction": 0.0,
+        "grad_norm": 0.0,
+        "explained_variance": 0.0,
     }
 
     b_eps = max(1, batch_episodes)
@@ -1311,6 +1321,9 @@ def train_pytorch_ppo(
             "value_loss": round(last_metrics.get("value_loss", 0.0), 4),
             "entropy": round(last_metrics.get("entropy", 0.0), 3),
             "approx_kl": round(last_metrics.get("approx_kl", 0.0), 4),
+            "clip_fraction": round(last_metrics.get("clip_fraction", 0.0), 4),
+            "grad_norm": round(last_metrics.get("grad_norm", 0.0), 4),
+            "explained_variance": round(last_metrics.get("explained_variance", 0.0), 4),
             "fps_ticks": round(fps_ticks, 0),
             "steps": steps_run,
             "defender_gen": defender_gen,

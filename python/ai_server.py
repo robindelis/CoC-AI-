@@ -24,9 +24,13 @@ from pydantic import BaseModel
 
 import coc_py
 from coc_rl import (
+    AI_PROVIDERS,
     CoCAttackerEnv,
     CoCDefenderEvolution,
     ensure_architecture_diagrams,
+    gather_training_telemetry,
+    generate_ai_training_feedback,
+    load_cached_ai_feedback,
 )
 from train_ai import (
     ARMY_SHORT_NAMES,
@@ -141,6 +145,11 @@ class EvolveRequest(BaseModel):
     generations: int = 3
     population_size: int = 12
     base_layout_json: Optional[str] = None
+
+
+class FeedbackRequest(BaseModel):
+    provider: str = "opencode_argon"
+    model_file: Optional[str] = None
 
 
 def _get_fresh_architecture_manifest(force: bool = False) -> Dict[str, Any]:
@@ -507,6 +516,52 @@ def evolve_defender_base(req: EvolveRequest) -> Dict[str, Any]:
         "best_layout": best_layout,
         "generations": generations_log,
         "validation": validation,
+    }
+
+
+@app.get("/api/ai/feedback")
+def get_training_feedback(
+    provider: Optional[str] = None,
+    refresh_telemetry: bool = False,
+) -> Dict[str, Any]:
+    cached = load_cached_ai_feedback(provider=provider)
+    if cached and not refresh_telemetry:
+        return {
+            **cached,
+            "providers": AI_PROVIDERS,
+        }
+    telemetry = gather_training_telemetry(_training_state, DEVICE)
+    if cached:
+        cached["telemetry"] = telemetry
+        return {
+            **cached,
+            "providers": AI_PROVIDERS,
+        }
+    prov_key = provider if provider in AI_PROVIDERS else "opencode_argon"
+    return {
+        "success": True,
+        "provider": prov_key,
+        "provider_label": AI_PROVIDERS[prov_key]["label"],
+        "model": AI_PROVIDERS[prov_key]["model"],
+        "generated_at": None,
+        "latency_sec": 0.0,
+        "feedback": None,
+        "telemetry": telemetry,
+        "providers": AI_PROVIDERS,
+    }
+
+
+@app.post("/api/ai/feedback")
+def run_training_feedback(req: FeedbackRequest) -> Dict[str, Any]:
+    res = generate_ai_training_feedback(
+        training_state=_training_state,
+        device=DEVICE,
+        provider=req.provider,
+        model_file=req.model_file,
+    )
+    return {
+        **res,
+        "providers": AI_PROVIDERS,
     }
 
 

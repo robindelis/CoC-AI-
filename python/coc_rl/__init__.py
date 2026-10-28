@@ -12,6 +12,12 @@ from .ppo import (
     ppo_update_step,
     selector_ppo_update_step,
 )
+from .training_feedback import (
+    AI_PROVIDERS,
+    gather_training_telemetry,
+    generate_ai_training_feedback,
+    load_cached_ai_feedback,
+)
 
 
 def ensure_architecture_diagrams(*args, **kwargs):
@@ -33,4 +39,8 @@ __all__ = [
     "ppo_minibatch_update",
     "selector_ppo_update_step",
     "ensure_architecture_diagrams",
+    "AI_PROVIDERS",
+    "gather_training_telemetry",
+    "generate_ai_training_feedback",
+    "load_cached_ai_feedback",
 ]
