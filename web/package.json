@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "vite build"
+    "dev": "(test -f src/sim-ts/catalogData.ts || python3 ../scripts/generate_catalog_ts.py) && vite --port=3000 --host=0.0.0.0",
+    "build": "(test -f src/sim-ts/catalogData.ts || python3 ../scripts/generate_catalog_ts.py) && vite build"
   },
   "dependencies": {
     "katex": "^0.16.11",

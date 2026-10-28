@@ -4,8 +4,8 @@ import http from 'node:http';
 import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
-import { FULL_CATALOG } from '../wasm-pkg/catalogData';
-import { WasmBattleSession, validateLayout } from '../wasm-pkg/coc_wasm';
+import { FULL_CATALOG } from '../sim-ts/catalogData';
+import { WasmBattleSession, validateLayout } from '../sim-ts/coc_sim';
 import type { ArmyLoadout, VillageLayout } from '../types';
 import type {
   AIArmyStat,

@@ -7,8 +7,18 @@ import { createCocAiServerPlugin, isPortOpen } from './src/ai/aiServerPlugin';
 
 let aiServerProc: ChildProcess | null = null;
 const rootDir = path.resolve(__dirname, '..');
+const wasmJsPath = path.resolve(__dirname, 'src/wasm-pkg/coc_wasm.js');
+const simTsFallbackPath = path.resolve(__dirname, 'src/sim-ts/coc_sim.ts');
 
 export default defineConfig({
+  resolve: {
+    alias: fs.existsSync(wasmJsPath)
+      ? {}
+      : {
+          './wasm-pkg/coc_wasm': simTsFallbackPath,
+          '../wasm-pkg/coc_wasm': simTsFallbackPath,
+        },
+  },
   plugins: [
     react(),
     createCocAiServerPlugin(rootDir),

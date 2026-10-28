@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generates /web/src/wasm-pkg/catalogData.ts directly from crates/coc-data/src/*.rs."""
+"""Generates /web/src/sim-ts/catalogData.ts directly from crates/coc-data/src/*.rs."""
 
 import json
 import math
@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "crates" / "coc-data" / "src"
-OUT_PATH = ROOT / "web" / "src" / "wasm-pkg" / "catalogData.ts"
+OUT_PATH = ROOT / "web" / "src" / "sim-ts" / "catalogData.ts"
 
 
 def strip_comments(text: str) -> str:
