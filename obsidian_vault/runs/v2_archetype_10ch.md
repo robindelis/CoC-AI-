@@ -3,10 +3,10 @@ title: "v2.0 — 10-Channel Archetype & Batch-Deploy Fraction"
 model_id: "v2_archetype_10ch"
 arch_version: "2.0"
 status: "active"
-total_episodes: 5788
+total_episodes: 120
 best_pct: 100
 best_stars: 3
-updated_at: "2026-10-28 20:23:13"
+updated_at: "2026-10-29 00:12:12"
 tags:
   - coc-rl
   - ppo
@@ -25,31 +25,15 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 - **Model Identifier**: `v2_archetype_10ch`
 - **Architecture Version**: `v2.0`
 - **Active Status**: **ACTIVE**
-- **Total Episodes Trained**: **`5,788`** (Cumulative across **18** training sessions)
-- **Peak Combat Performance**: **`100%` (3★)** (Best dense return: `+127.8575248226292`)
-- **Latest Checkpoint**: `trained_models/attacker_ep5788_100pct_3star.pt`
+- **Total Episodes Trained**: **`120`** (Cumulative across **2** training sessions)
+- **Peak Combat Performance**: **`100%` (3★)** (Best dense return: `+98.21449594687596`)
+- **Latest Checkpoint**: `trained_models/attacker_ep120_100pct_3star.pt`
 
 ### 🔄 Resumed Training Sessions History
 | Session # | Start Ep | End Ep | Episodes Added | Checkpoint File | Peak % | Stars | Notes |
 | :---: | :---: | :---: | :---: | :--- | :---: | :---: | :--- |
-| **#1** | `0` | `2,724` | `+2,724` | `latest_attacker.pt` | `84%` | `2★` | Initial training: fractional wave drops (0.25..1.0) and unit archetype perception (Ch 8 & 9) |
-| **#2** | `2,724` | `2,726` | `+2` | `attacker_ep2726_85pct_2star.pt` | `85%` | `2★` | Resumed training (+2 ep from latest_attacker.pt) |
-| **#3** | `8,770` | `8,806` | `+36` | `attacker_ep8806_90pct_2star.pt` | `90%` | `2★` | Resumed training (+36 ep from latest_attacker.pt) |
-| **#4** | `8,806` | `8,866` | `+60` | `attacker_ep8866_100pct_3star.pt` | `100%` | `3★` | Resumed training (+60 ep from latest_attacker.pt) |
-| **#5** | `8,866` | `8,902` | `+36` | `attacker_ep8902_100pct_3star.pt` | `100%` | `3★` | Resumed training (+36 ep from latest_attacker.pt) |
-| **#6** | `8,902` | `8,962` | `+60` | `attacker_ep8962_100pct_3star.pt` | `100%` | `3★` | Resumed training (+60 ep from latest_attacker.pt) |
-| **#7** | `8,962` | `9,022` | `+60` | `attacker_ep9022_100pct_3star.pt` | `100%` | `3★` | Resumed training (+60 ep from latest_attacker.pt) |
-| **#8** | `8,770` | `8,830` | `+60` | `attacker_ep8830_90pct_2star.pt` | `90%` | `2★` | Resumed training (+60 ep from latest_attacker.pt) |
-| **#9** | `30,102` | `30,162` | `+60` | `attacker_ep30162_100pct_3star.pt` | `100%` | `3★` | Resumed training (+60 ep from attacker_ep30102_100pct_3star.pt) |
-| **#10** | `8,770` | `8,830` | `+60` | `attacker_ep8830_94pct_2star.pt` | `94%` | `2★` | Resumed training (+60 ep from attacker_ep8770_90pct_2star.pt) |
-| **#11** | `8,770` | `8,830` | `+60` | `attacker_ep8830_100pct_3star.pt` | `100%` | `3★` | Resumed training (+60 ep from attacker_ep8770_90pct_2star.pt) |
-| **#12** | `8,770` | `8,830` | `+60` | `attacker_ep8830_100pct_3star.pt` | `100%` | `3★` | Resumed training (+60 ep from attacker_ep8770_90pct_2star.pt) |
-| **#13** | `8,770` | `8,950` | `+180` | `attacker_ep8950_100pct_3star.pt` | `100%` | `3★` | Resumed training (+180 ep from attacker_ep8770_90pct_2star.pt) |
-| **#14** | `8,770` | `8,878` | `+108` | `attacker_ep8878_100pct_3star.pt` | `98%` | `2★` | Resumed training (+108 ep from attacker_ep8770_90pct_2star.pt) |
-| **#15** | `8,878` | `8,938` | `+60` | `attacker_ep8938_100pct_3star.pt` | `100%` | `3★` | Resumed training (+60 ep from latest_attacker.pt) |
-| **#16** | `0` | `4` | `+4` | `attacker_ep4_88pct_2star.pt` | `88%` | `2★` | Initial training (4 ep) |
-| **#17** | `0` | `5,786` | `+5,786` | `attacker_ep5786_100pct_3star.pt` | `100%` | `3★` | Initial training (5,786 ep) |
-| **#18** | `5,786` | `5,788` | `+2` | `attacker_ep5788_100pct_3star.pt` | `100%` | `3★` | Resumed training (+2 ep from latest_attacker.pt) |
+| **#1** | `0` | `924` | `+924` | `latest_attacker.pt` | `84%` | `2★` | Initial training: fractional wave drops (0.25..1.0) and unit archetype perception (Ch 8 & 9) |
+| **#2** | `0` | `120` | `+120` | `attacker_ep120_100pct_3star.pt` | `100%` | `3★` | Initial training (120 ep) |
 
 ---
 
@@ -93,15 +77,17 @@ The network parameterizes a factorized multi-discrete policy:
 
 ## 4. Reward Shaping Function
 
-### 🎯 Reward Formulation & Two-Phase Pacing (TH18 Combat v2.1)
+### 🎯 Reward Formulation (TH18 Combat)
 
-Calibrated 100-point dense & milestone reward shaping balancing **Destruction + Core HP Damage** ($50\text{ pts}$) and **Victory Stars + Town Hall 18 Takedown** ($50\text{ pts}$):
+Balanced 50/50 weighting between **Destruction Percentage** and **Milestone Victory Stars**:
 
-$$R_t = 0.35 \cdot \Delta \%_{\text{destr}} + 15.0 \cdot \Delta \text{HP}_{\text{ratio}} + 12.0 \cdot \Delta \text{stars} + 14.0 \cdot \mathbb{I}_{\text{TH18}} + 0.08 \cdot C_{\text{funnel}} - 0.05 \cdot \mathbb{I}_{\text{invalid}}$$
+$$R_t = 0.50 \cdot \Delta \%_{\text{destr}} + 16.6667 \cdot \Delta \text{stars} - 0.05 \cdot \mathbb{I}_{\text{invalid}}$$
 
-- **Destruction & Core HP Damage**: $0.35\text{ pts}$ per $1\%$ destruction ($35.0\text{ pts}$ max) $+ 15.0\text{ pts}$ continuous building/core HP pool damage ($50.0\text{ pts}$ combined).
-- **Stars & TH18 Takedown**: $12.0\text{ pts}$ per star ($36.0\text{ pts}$ max) $+ 14.0\text{ pts}$ dedicated milestone bonus upon destroying Town Hall 18 ($50.0\text{ pts}$ combined).
-- **Two-Phase Tactical Masking & Normalized Per-Head Entropy (`reg_entropy`)**: Phase 1 deploys frontline troop waves along exterior cardinal funnels (excluding interior teaser holes) before Siege/Heroes; Phase 2 paces Spells (`t >= 40`) and Hero Abilities (`t >= 64`) with `NoOp` waiting and Town Hall spell-halo protection.
+- **Destruction**: $0.50\text{ pts}$ per $1\%$ building destruction ($50.0\text{ pts}$ max).
+- **Victory Stars**: $\frac{50.0}{3} = 16.6667\text{ pts}$ per star earned ($50.0\text{ pts}$ max for 3 stars).
+- **Invalid Penalty**: $-0.05\text{ pts}$ deducted for executing illegal actions (e.g. dropping in red zone).
+- **Total Wipe Return**: A complete $100\%$ 3-star wipe achieves **$100.0\text{ base reward}$**.
+- **Fast-Forward Bonus**: When active attack actions are exhausted or timer reaches limit, remaining simulation ticks run to resolution and award accrued terminal rewards.
 
 ---
 
@@ -109,22 +95,16 @@ $$R_t = 0.35 \cdot \Delta \%_{\text{destr}} + 15.0 \cdot \Delta \text{HP}_{\text
 
 | Attack Composition | **Central Box** | **Offset Diamond** | **Anti-Hydra Ring** | **Anti-Fireball** | **Compact Teaser** | **Avg Destruction** | **3★ Rate** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **TH18 Thrower + Healer + Totem Smash** | `67% (2★)` | `75% (2★)` | `80% (2★)` | `100% (3★)` | `66% (2★)` | **77.6%** | **20.0%** |
-| **TH18 Dragon Duke Charge Hydra** | `37% (0★)` | `66% (2★)` | `52% (1★)` | `85% (2★)` | `66% (2★)` | **61.2%** | **0.0%** |
-| **TH18 Fireball Super Bowler & Meteor Golem Smash** | `59% (1★)` | `53% (2★)` | `84% (2★)` | `52% (2★)` | `63% (2★)` | **62.2%** | **0.0%** |
-| **Base Defense Rate (Avg)** | **54.3% (1.0★)** | **64.7% (2.0★)** | **72.0% (1.67★)** | **79.0% (2.33★)** | **65.0% (2.0★)** | **Overall: 67.0%** | — |
+| **TH18 Thrower + Healer + Totem Smash** | `28% (0★)` | `33% (1★)` | `40% (1★)` | `28% (0★)` | `39% (1★)` | **33.6%** | **0.0%** |
+| **TH18 Dragon Duke Charge Hydra** | `26% (0★)` | `18% (0★)` | `34% (0★)` | `36% (0★)` | `52% (2★)` | **33.2%** | **0.0%** |
+| **TH18 Fireball Super Bowler & Meteor Golem Smash** | `15% (0★)` | `16% (0★)` | `32% (0★)` | `29% (0★)` | `28% (1★)` | **24.0%** | **0.0%** |
+| **Base Defense Rate (Avg)** | **23.0% (0.0★)** | **22.3% (0.33★)** | **35.3% (0.33★)** | **31.0% (0.0★)** | **39.7% (1.33★)** | **Overall: 30.3%** | — |
 
 ---
 
 ## 6. Training Progress & Optimization Curves
 
 ![Training Curves Progression](../assets/charts/v2_archetype_10ch_training_curves.png)
-
-### 🩺 AI Diagnostic Telemetry Suite (Head Entropy, Tactical Pacing & Critic Calibration)
-
-See [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Telemetry Architecture & PPO Pathology Fixes]] for the full Dual-LLM (`OpenCode Gemini 4 Argon` & `AGY Gemini 3.8 Flash`) root-cause analysis.
-
-![AI Diagnostic Telemetry Overview](../assets/charts/v2_ai_diagnostics_telemetry.png)
 
 ---
 
@@ -141,4 +121,4 @@ See [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Tel
 | **GAE ($\lambda$)** | `0.95` | Generalized Advantage Estimation smoothing |
 | **Clip Coefficient** | `0.2` | PPO surrogate objective clipping range |
 | **Entropy Coefficient** | `0.015` | Exploration policy entropy bonus |
-| **Total Training Episodes** | **`5,788`** | **Cumulative episodes across all resumed sessions** |
+| **Total Training Episodes** | **`120`** | **Cumulative episodes across all resumed sessions** |
