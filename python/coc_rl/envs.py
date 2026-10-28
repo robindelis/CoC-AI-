@@ -67,6 +67,9 @@ class CoCAttackerEnv(gym.Env):
             "tile": np.asarray(valid_deploy_mask, dtype=bool),
         }
 
+    def get_army_context(self) -> np.ndarray:
+        return np.asarray(self._sim.get_army_context(), dtype=np.float32)
+
     def reset(
         self,
         *,
@@ -96,6 +99,7 @@ class CoCAttackerEnv(gym.Env):
             "invalid_action": False,
             "tick": 0,
             "action_masks": self.get_action_masks(),
+            "army_context": self.get_army_context(),
         }
 
     def step(
@@ -152,8 +156,40 @@ class CoCAttackerEnv(gym.Env):
             "invalid_action": invalid_action,
             "tick": int(tick),
             "action_masks": self.get_action_masks(),
+            "army_context": self.get_army_context(),
         }
         return obs, float(reward), bool(done), False, info
+
+    def finish_battle(self) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
+        raw_obs, reward, done, destruction_pct, stars = self._sim.finish_battle()
+        dmg_total, hp_pool, th_destroyed, tick = self._sim.get_reward_telemetry()
+
+        delta_pct = max(0, int(destruction_pct) - self._prev_pct)
+        delta_stars = max(0, int(stars) - self._prev_stars)
+        delta_dmg_ratio = max(0.0, float(dmg_total - self._prev_dmg) / float(hp_pool))
+        th_just_destroyed = bool(th_destroyed and not self._prev_th_destroyed)
+        time_rem_ratio = max(0.0, (1800.0 - float(tick)) / 1800.0)
+
+        self._prev_pct = int(destruction_pct)
+        self._prev_stars = int(stars)
+        self._prev_dmg = float(dmg_total)
+        self._prev_th_destroyed = bool(th_destroyed)
+
+        obs = np.asarray(raw_obs, dtype=np.float32).reshape((8, 50, 50))
+        info = {
+            "destruction_pct": int(destruction_pct),
+            "stars": int(stars),
+            "delta_pct": delta_pct,
+            "delta_stars": delta_stars,
+            "delta_damage_ratio": delta_dmg_ratio,
+            "th_just_destroyed": th_just_destroyed,
+            "time_remaining_ratio": time_rem_ratio,
+            "invalid_action": False,
+            "tick": int(tick),
+            "action_masks": self.get_action_masks(),
+            "army_context": self.get_army_context(),
+        }
+        return obs, float(reward), bool(done), info
 
     def valid_deploy_tiles(self) -> List[Tuple[int, int]]:
         mask = self._sim.get_no_deploy_mask_flat()

@@ -64,6 +64,10 @@ impl WasmBattleSession {
         serde_json::to_string(&self.engine.extract_spatial_observation()).unwrap()
     }
 
+    pub fn extract_army_context_json(&self) -> String {
+        serde_json::to_string(&self.engine.extract_army_context()).unwrap()
+    }
+
     pub fn apply_action_json(&mut self, action_json: &str) -> bool {
         let Ok(action) = serde_json::from_str::<BattleAction>(action_json) else {
             return false;
@@ -111,6 +115,24 @@ impl WasmBattleSession {
     }
 
     pub fn run_heuristic_ai_step(&mut self) -> String {
+        self.run_heuristic_ai_ticks(1)
+    }
+
+    pub fn run_heuristic_ai_ticks(&mut self, num_ticks: u32) -> String {
+        let mut accumulated_events = Vec::new();
+        for _ in 0..num_ticks.max(1) {
+            if self.engine.is_finished {
+                break;
+            }
+            self.step_heuristic_ai_once(&mut accumulated_events);
+        }
+        self.engine.visual_events = accumulated_events;
+        serde_json::to_string(&self.engine).unwrap()
+    }
+}
+
+impl WasmBattleSession {
+    fn step_heuristic_ai_once(&mut self, accumulated_events: &mut Vec<VisualEvent>) {
         // Coordinated TH18 tactical AI attacker:
         // Phase 1 (t == 0 or no attackers deployed): Funnel & Tank wave along West breach line + Siege Machine
         // Phase 2 (t >= 10): Main Army core wave + all Heroes & Pets
@@ -215,10 +237,8 @@ impl WasmBattleSession {
             }
         }
 
-        let mut action_events = std::mem::take(&mut self.engine.visual_events);
+        accumulated_events.append(&mut self.engine.visual_events);
         self.engine.step(BattleAction::NoOp);
-        action_events.append(&mut self.engine.visual_events);
-        self.engine.visual_events = action_events;
-        serde_json::to_string(&self.engine).unwrap()
+        accumulated_events.append(&mut self.engine.visual_events);
     }
 }

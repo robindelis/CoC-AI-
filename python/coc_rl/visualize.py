@@ -178,6 +178,64 @@ def _render_torchview_variant(
     }
 
 
+_SVG_MEM_CACHE: Dict[str, str] = {}
+
+
+def render_custom_torchview_svg(
+    model: nn.Module,
+    input_size: tuple[int, ...] = (1, 8, 50, 50),
+    depth: int = 2,
+    graph_dir: str = "LR",
+) -> str:
+    """
+    Renders a `torchview` computation graph SVG in-memory for any custom or default
+    `CoCActorCritic` instance, cached by `(arch_hash, depth, graph_dir)`.
+    """
+    arch_hash = compute_architecture_hash(model)
+    cache_key = f"{arch_hash}:d={depth}:dir={graph_dir}"
+    if cache_key in _SVG_MEM_CACHE:
+        return _SVG_MEM_CACHE[cache_key]
+
+    orig_device = (
+        next(model.parameters()).device
+        if list(model.parameters())
+        else torch.device("cpu")
+    )
+    wrapper = _TracedModelWrapper(model)
+    with _named_module_classes(model):
+        graph = draw_graph(
+            wrapper,
+            input_size=input_size,
+            expand_nested=True,
+            depth=depth,
+            graph_dir=graph_dir,
+            graph_name="Custom_CoCActorCritic",
+            device="cpu",
+        )
+        for root_node in graph.root_container:
+            root_node.name = "obs (input)"
+        for out_key, tensor_nodes in wrapper.captured_outputs.items():
+            if tensor_nodes:
+                tensor_nodes[-1].name = f"{out_key} (output)"
+
+        graph.visual_graph.body.clear()
+        graph.running_node_id = 0
+        graph.running_subgraph_id = 0
+        graph.id_dict.clear()
+        graph.node_set.clear()
+        graph.edge_list.clear()
+        graph.subgraph_dict.clear()
+        graph.fill_visual_graph()
+
+    model.to(orig_device)
+    svg_str = graph.visual_graph.pipe(format="svg").decode("utf-8")
+    if len(_SVG_MEM_CACHE) > 32:
+        _SVG_MEM_CACHE.clear()
+    _SVG_MEM_CACHE[cache_key] = svg_str
+    return svg_str
+
+
+
 def _sync_obsidian_canvas(manifest: Dict[str, Any]) -> None:
     """
     Updates `docs/AI_Architecture.canvas` so the Obsidian Canvas includes a live
@@ -305,6 +363,7 @@ def ensure_architecture_diagrams(
         except Exception:
             pass
 
+    orig_device = next(model.parameters()).device if list(model.parameters()) else torch.device("cpu")
     overview_files = _render_torchview_variant(
         model=model,
         input_size=input_size,
@@ -319,6 +378,7 @@ def ensure_architecture_diagrams(
         stem_name="coc_actor_critic_detailed",
         graph_name="CoCActorCritic_Detailed",
     )
+    model.to(orig_device)
 
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)

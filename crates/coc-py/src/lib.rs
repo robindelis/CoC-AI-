@@ -210,6 +210,22 @@ impl PyBattleEnv {
         )
     }
 
+    /// Fast-forwards the battle to completion in pure Rust when no further deployment/ability actions remain.
+    pub fn finish_battle(&mut self) -> (Vec<f32>, f32, bool, u8, u8) {
+        let mut total_reward = 0.0f32;
+        while !self.engine.is_finished && self.engine.tick < 1800 {
+            let r = self.engine.step(BattleAction::NoOp);
+            total_reward += r.reward;
+        }
+        (
+            self.engine.extract_spatial_observation(),
+            total_reward,
+            self.engine.is_finished,
+            self.engine.destruction_pct,
+            self.engine.stars,
+        )
+    }
+
     pub fn get_no_deploy_mask_flat(&self) -> Vec<bool> {
         let mut out = Vec::with_capacity(2500);
         for y in 0..50 {
@@ -222,6 +238,11 @@ impl PyBattleEnv {
 
     pub fn get_state_json(&self) -> String {
         serde_json::to_string(&self.engine).unwrap()
+    }
+
+    /// Returns the 64-float army & live inventory context vector.
+    pub fn get_army_context(&self) -> Vec<f32> {
+        self.engine.extract_army_context()
     }
 
     /// Fast telemetry tuple for custom reward shaping in Python RL labs:

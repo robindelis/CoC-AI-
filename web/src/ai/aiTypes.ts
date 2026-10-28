@@ -1,29 +1,224 @@
-import { VillageLayout } from '../types';
+import { ArmyLoadout, VillageLayout } from '../types';
+
+export type TrainingMode =
+  | 'cycle'
+  | 'live_attacker'
+  | 'attacker_selector'
+  | 'defender_selector';
+
+export type MatchupMode =
+  | 'random'
+  | 'round_robin'
+  | 'fixed_current'
+  | 'selectors';
+
+export type LayerBlockType =
+  | 'conv2d'
+  | 'resblock2d'
+  | 'dwsep_conv2d'
+  | 'se_block2d'
+  | 'maxpool2d'
+  | 'avgpool2d'
+  | 'adaptive_avgpool2d'
+  | 'adaptive_maxpool2d'
+  | 'dropout2d'
+  | 'flatten'
+  | 'linear';
+
+export type NormType = 'none' | 'group' | 'batch' | 'layer';
+
+export type ActivationType =
+  | 'silu'
+  | 'relu'
+  | 'gelu'
+  | 'leaky_relu'
+  | 'elu'
+  | 'tanh'
+  | 'none';
+
+export interface NetworkBlockConfig {
+  id: string;
+  type: LayerBlockType;
+  filters?: number;
+  kernel_size?: number;
+  stride?: number;
+  padding?: number;
+  dilation?: number;
+  norm?: NormType;
+  activation?: ActivationType;
+  bias?: boolean;
+  pool_size?: number;
+  reduction?: number;
+  dropout?: number;
+  units?: number;
+}
+
+export interface NetworkHeadsConfig {
+  tile_head_filters: number;
+  tile_head_kernel: number;
+  head_hidden_dim: number;
+  head_activation: ActivationType;
+}
+
+export interface ArchitectureConfig {
+  preset_id?: string;
+  name: string;
+  spatial_blocks: NetworkBlockConfig[];
+  global_blocks: NetworkBlockConfig[];
+  heads: NetworkHeadsConfig;
+}
+
+export interface AnalyzedLayerSummary {
+  id: string;
+  stage: 'spatial' | 'global' | 'heads';
+  type: string;
+  desc: string;
+  input_shape: number[];
+  output_shape: number[];
+  receptive_field: number;
+  params: number;
+  macs: number;
+}
+
+export interface ArchitectureAnalysisResult {
+  valid: boolean;
+  error?: string;
+  name: string;
+  is_default: boolean;
+  total_params: number;
+  trainable_params: number;
+  estimated_vram_mb: number;
+  total_macs: number;
+  spatial_out_shape: number[];
+  spatial_receptive_field: number;
+  embed_dim: number;
+  layers_summary: AnalyzedLayerSummary[];
+  pytorch_repr: string;
+  svg?: string | null;
+}
+
+export interface SavedModelMeta {
+  filename: string;
+  size_kb: number;
+  updated_at: string;
+  mtime: number;
+  episode: number;
+  best_pct: number;
+  best_stars: number;
+  best_reward: number;
+  model_type: string;
+  arch_config?: ArchitectureConfig;
+  armies?: ArmyLoadout[];
+  villages?: VillageLayout[];
+  army_names?: string[];
+  village_names?: string[];
+  hyperparams?: {
+    lr?: number;
+    batch_episodes?: number;
+    minibatch_size?: number;
+    ppo_epochs?: number;
+    episodes?: number;
+    ticks_per_step?: number;
+    training_mode?: string;
+    matchup_mode?: string;
+    co_evolve_defender?: boolean;
+    resumed_from?: string;
+  };
+}
 
 export interface AITrainingEpisodeRecord {
   episode: number;
+  cumulative_episode?: number;
   total_episodes: number;
+  active_model?: string;
+  army_idx?: number;
+  army_name?: string;
+  village_idx?: number;
+  village_name?: string;
   reward: number;
   avg_reward_10: number;
+  defender_reward?: number;
   destruction_pct: number;
+  avg_pct_10?: number;
+  avg_pct_50?: number;
   stars: number;
   best_pct: number;
   best_stars: number;
+  noop_pct?: number;
+  deploy_steps?: number;
+  spell_steps?: number;
+  ability_steps?: number;
   policy_loss: number;
   value_loss: number;
   entropy: number;
   approx_kl: number;
   fps_ticks: number;
   steps: number;
+  defender_gen?: number;
+  defender_fitness?: number;
+  army_probs?: number[];
+  village_probs?: number[];
+}
+
+export interface AIArmyStat {
+  army_idx: number;
+  name: string;
+  full_name: string;
+  episodes: number;
+  usage_pct?: number;
+  avg_pct: number;
+  recent_avg_pct?: number;
+  peak_pct?: number;
+  avg_stars: number;
+  avg_reward: number;
+  triple_rate: number;
+  mean_selector_prob: number;
+  selector_model_prob?: number;
+}
+
+export interface AIVillageStat {
+  village_idx: number;
+  name: string;
+  full_name: string;
+  episodes: number;
+  usage_pct?: number;
+  avg_pct_allowed: number;
+  recent_avg_pct_allowed?: number;
+  avg_stars_allowed: number;
+  hold_rate: number;
+  mean_selector_prob: number;
+  selector_model_prob?: number;
+}
+
+export interface AISelectorMatrices {
+  armies: string[];
+  villages: string[];
+  village_to_army_probs: number[][];
+  army_to_village_probs: number[][];
+  layout_values: number[];
+  defender_values: number[];
+  army_stats: AIArmyStat[];
+  village_stats: AIVillageStat[];
 }
 
 export interface AITrainingState {
   is_training: boolean;
   stop_requested: boolean;
+  training_mode?: TrainingMode;
+  matchup_mode?: MatchupMode;
+  resume_from?: string;
+  saved_filename?: string;
+  active_model?: string;
   current_episode: number;
+  cumulative_episode?: number;
   total_episodes: number;
   best_pct: number;
   best_stars: number;
+  co_evolve_defender?: boolean;
+  defender_gen?: number;
+  defender_fitness?: number;
+  evolved_layout?: VillageLayout | null;
+  selector_matrices?: AISelectorMatrices | null;
   history: AITrainingEpisodeRecord[];
 }
 
@@ -32,6 +227,12 @@ export interface AIServerStatus {
   device: string;
   device_name: string;
   param_count: number;
+  models_info?: {
+    attacker_selector: { name: string; params: number };
+    live_attacker: { name: string; params: number };
+    defender_selector: { name: string; params: number };
+  };
+  saved_models?: SavedModelMeta[];
   checkpoint: {
     episode?: number;
     best_pct?: number;
@@ -54,6 +255,45 @@ export interface AIInspectResponse {
     tile_x: number;
     tile_y: number;
   };
+  attacker_selector?: {
+    recommended_army_idx: number;
+    recommended_army_name: string;
+    army_probs: number[];
+    value: number;
+  };
+  defender_selector?: {
+    recommended_village_idx: number;
+    recommended_village_name: string;
+    village_probs: number[];
+    value: number;
+  };
+  model_meta?: SavedModelMeta;
+}
+
+export interface AIRolloutStep {
+  step: number;
+  tick: number;
+  slot_type: number;
+  slot_idx: number;
+  tile_x: number;
+  tile_y: number;
+  battle_action: unknown | null;
+  value: number;
+  entropy: number;
+  noop_prob: number;
+}
+
+export interface AIRolloutResponse {
+  model_file: string;
+  model_episode: number;
+  ticks_per_step: number;
+  steps_run: number;
+  final_tick: number;
+  destruction_pct: number;
+  stars: number;
+  total_reward: number;
+  noop_pct: number;
+  actions_schedule: AIRolloutStep[];
 }
 
 export interface AIEvolutionGeneration {
@@ -87,7 +327,7 @@ export const SPATIAL_CHANNELS = [
 ] as const;
 
 export const SLOT_TYPE_LABELS = [
-  'NoOp',
+  'NoOp (Wait)',
   'Deploy Troop',
   'Deploy Hero',
   'Hero Ability',

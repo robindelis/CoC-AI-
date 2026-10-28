@@ -14,12 +14,17 @@ import {
   TROOP_SPRITES,
   UI_SPRITES,
 } from '../assetsManifest';
+import {
+  deleteCustomArmyPreset,
+  fetchArmyPresets,
+  saveCustomArmyPreset,
+} from '../ai/aiClient';
 
 interface Props {
   catalog: FullCatalog;
   army: ArmyLoadout;
   onChangeArmy: (next: ArmyLoadout) => void;
-  onLaunchBattle: () => void;
+  onGoToTrainer?: () => void;
 }
 
 type CatalogTab =
@@ -38,7 +43,7 @@ export const GameArmyBuilder: React.FC<Props> = ({
   catalog,
   army,
   onChangeArmy,
-  onLaunchBattle,
+  onGoToTrainer,
 }) => {
   const [catalogTab, setCatalogTab] = useState<CatalogTab>('elixir');
   const [targetDestination, setTargetDestination] = useState<'main' | 'cc'>('main');
@@ -47,6 +52,7 @@ export const GameArmyBuilder: React.FC<Props> = ({
     slotIdx: 0 | 1;
   } | null>(null);
   const [editingHeroPet, setEditingHeroPet] = useState<string | null>(null);
+  const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [savedRecipes, setSavedRecipes] = useState<ArmyLoadout[]>(() => {
     try {
       const raw = localStorage.getItem(SAVED_RECIPES_KEY);
@@ -55,6 +61,25 @@ export const GameArmyBuilder: React.FC<Props> = ({
       return [];
     }
   });
+
+  // Sync server custom armies on mount
+  React.useEffect(() => {
+    fetchArmyPresets().then((res) => {
+      if (res && res.custom_armies && res.custom_armies.length > 0) {
+        setSavedRecipes((prev) => {
+          const names = new Set(prev.map((r) => r.name));
+          const additions = res.custom_armies.filter((ca) => !names.has(ca.name));
+          const merged = [...additions, ...prev].slice(0, 16);
+          try {
+            localStorage.setItem(SAVED_RECIPES_KEY, JSON.stringify(merged));
+          } catch {
+            // ignore
+          }
+          return merged;
+        });
+      }
+    });
+  }, []);
 
   // Helper to get a Hero's 2 equipped items
   const getHeroEquipmentPair = (hero: HeroSpec): [string, string] => {
@@ -210,21 +235,66 @@ export const GameArmyBuilder: React.FC<Props> = ({
     }
   };
 
-  const saveCurrentRecipe = () => {
+  const saveCurrentRecipe = async () => {
+    const cloned = structuredClone(army);
     const next = [
-      structuredClone(army),
+      cloned,
       ...savedRecipes.filter((r) => r.name !== army.name),
-    ].slice(0, 8);
+    ].slice(0, 16);
     setSavedRecipes(next);
     try {
       localStorage.setItem(SAVED_RECIPES_KEY, JSON.stringify(next));
     } catch {
       // ignore storage quota errors
     }
+    await saveCustomArmyPreset(cloned);
+    setStatusNotice(`⭐ "${army.name}" saved as Training Preset! Ready in AI Trainer.`);
+    setTimeout(() => setStatusNotice(null), 4000);
   };
+
+  const deleteSavedRecipe = async (name: string) => {
+    const next = savedRecipes.filter((r) => r.name !== name);
+    setSavedRecipes(next);
+    try {
+      localStorage.setItem(SAVED_RECIPES_KEY, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+    await deleteCustomArmyPreset(name);
+    setStatusNotice(`🗑️ Deleted custom preset "${name}".`);
+    setTimeout(() => setStatusNotice(null), 3000);
+  };
+
+  const isCurrentCustom = savedRecipes.some((r) => r.name === army.name);
 
   return (
     <div className="recipe-page">
+      {statusNotice && (
+        <div
+          style={{
+            background: 'rgba(34, 197, 94, 0.2)',
+            border: '1px solid #22c55e',
+            color: '#4ade80',
+            padding: '8px 16px',
+            borderRadius: 8,
+            margin: '0 16px 12px 16px',
+            fontSize: '0.9rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <span>{statusNotice}</span>
+          <button
+            type="button"
+            style={{ background: 'transparent', border: 'none', color: '#cbd5e1', cursor: 'pointer' }}
+            onClick={() => setStatusNotice(null)}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* 1. TOP ARMY RECIPE HEADER BAR */}
       <div className="recipe-header-bar">
         <div className="recipe-title-group">
@@ -281,7 +351,7 @@ export const GameArmyBuilder: React.FC<Props> = ({
               ))}
             </optgroup>
             {savedRecipes.length > 0 && (
-              <optgroup label="Saved Custom Recipes">
+              <optgroup label="Custom Training Presets">
                 {savedRecipes.map((sr) => (
                   <option key={sr.name} value={sr.name}>
                     💾 {sr.name}
@@ -292,8 +362,18 @@ export const GameArmyBuilder: React.FC<Props> = ({
           </select>
 
           <button className="clash-btn gold" onClick={saveCurrentRecipe}>
-            💾 Save Recipe
+            ⭐ Save as Training Preset
           </button>
+          {isCurrentCustom && (
+            <button
+              className="clash-btn danger"
+              style={{ padding: '0 8px' }}
+              title="Delete this custom preset"
+              onClick={() => deleteSavedRecipe(army.name)}
+            >
+              🗑️ Delete Preset
+            </button>
+          )}
           <button
             className="clash-btn danger"
             onClick={() =>
@@ -304,11 +384,13 @@ export const GameArmyBuilder: React.FC<Props> = ({
               })
             }
           >
-            🗑️ Clear
+            Clear All
           </button>
-          <button className="clash-btn green" onClick={onLaunchBattle}>
-            ⚔️ Attack With Army!
-          </button>
+          {onGoToTrainer && (
+            <button className="clash-btn green" onClick={onGoToTrainer}>
+              🚀 Use in AI Trainer →
+            </button>
+          )}
         </div>
       </div>
 

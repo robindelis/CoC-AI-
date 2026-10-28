@@ -228,25 +228,24 @@ class CoCActorCritic(nn.Module):
 def compute_custom_reward(step_info: Dict[str, Any]) -> float:
     """
     Lab 3A Reference: Custom Dense & Milestone Reward Shaping for TH18 Combat.
-    Balances continuous damage progression with tactical star objectives.
+    50/50 balanced weighting between Destruction Percentage (50% max)
+    and Stars Earned (50% max).
+    - 50.0 points total for 100% destruction (0.50 pt per 1% destruction).
+    - 50.0 points total for 3 stars (16.6667 pts per star).
+    A complete 100% 3-star wipe achieves 100.0 base reward.
     """
-    delta_dmg_ratio = float(step_info.get("delta_damage_ratio", 0.0))
-    delta_pct = int(step_info.get("delta_pct", 0))
-    delta_stars = int(step_info.get("delta_stars", 0))
-    th_just_destroyed = bool(step_info.get("th_just_destroyed", False))
+    delta_pct = float(step_info.get("delta_pct", 0))
+    delta_stars = float(step_info.get("delta_stars", 0))
     invalid_action = bool(step_info.get("invalid_action", False))
-    stars = int(step_info.get("stars", 0))
-    time_rem = float(step_info.get("time_remaining_ratio", 0.0))
 
-    reward = (
-        delta_dmg_ratio * 2.5
-        + delta_pct * 0.12
-        + delta_stars * 3.5
-    )
-    if th_just_destroyed:
-        reward += 2.5
-    if stars == 3 and delta_stars > 0:
-        reward += 5.0 + 3.0 * time_rem
+    # 50% for 100% destruction -> 0.50 points per 1%
+    pct_reward = delta_pct * 0.50
+
+    # 50% for 3 stars -> 50.0 / 3.0 = 16.6666667 points per star
+    stars_reward = delta_stars * (50.0 / 3.0)
+
+    reward = pct_reward + stars_reward
+
     if invalid_action:
         reward -= 0.05
 

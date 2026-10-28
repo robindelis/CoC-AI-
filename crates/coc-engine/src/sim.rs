@@ -1975,7 +1975,7 @@ impl BattleEngine {
         self.visual_events.clear();
         let prev_pct = self.destruction_pct;
         let prev_stars = self.stars;
-        let prev_dmg = self.damage_dealt_total;
+        let _prev_dmg = self.damage_dealt_total;
 
         let valid = self.apply_action(action);
         if self.is_finished {
@@ -2000,18 +2000,12 @@ impl BattleEngine {
 
         let delta_pct = self.destruction_pct.saturating_sub(prev_pct);
         let delta_stars = self.stars.saturating_sub(prev_stars);
-        let delta_dmg = (self.damage_dealt_total - prev_dmg).max(0.0);
 
-        let mut reward = (delta_dmg / self.total_hp_pool) * 2.0
-            + (delta_pct as f32) * 0.1
-            + (delta_stars as f32) * 3.0;
+        // 50/50 balanced reward: 50.0 pts for 100% destruction + 50.0 pts for 3 stars
+        let mut reward = (delta_pct as f32) * 0.50
+            + (delta_stars as f32) * (50.0 / 3.0);
         if !valid {
             reward -= 0.05;
-        }
-        if self.is_finished && self.stars == 3 {
-            // Bonus for fast 3-star
-            let time_left_ratio = (MAX_TICKS.saturating_sub(self.tick) as f32) / (MAX_TICKS as f32);
-            reward += 5.0 + 3.0 * time_left_ratio;
         }
 
         StepRewardInfo {
@@ -6337,6 +6331,97 @@ impl BattleEngine {
         }
 
         obs
+    }
+
+    /// Extracts a 64-float vector encoding full knowledge of the attacking army composition
+    /// and live remaining inventory (troops, spells, heroes, hero equipment, pets, siege machine, CC, clock).
+    pub fn extract_army_context(&self) -> Vec<f32> {
+        let mut ctx = vec![0.0f32; 64];
+        // [0..4]: Global battle progress
+        let active_attackers = self
+            .units
+            .iter()
+            .filter(|u| u.alive && u.team == Team::Attacker)
+            .count();
+        ctx[0] = ((1800.0 - self.tick as f32) / 1800.0).clamp(0.0, 1.0);
+        ctx[1] = (self.destruction_pct as f32 / 100.0).clamp(0.0, 1.0);
+        ctx[2] = (self.stars as f32 / 3.0).clamp(0.0, 1.0);
+        ctx[3] = (active_attackers as f32 / 50.0).clamp(0.0, 1.0);
+
+        // [4..24]: 10 Troop slots (tid normalized + remaining count normalized)
+        for i in 0..10 {
+            if let Some(&(tid, rem)) = self.remaining_troops.get(i) {
+                ctx[4 + i * 2] = ((tid as usize + 1) as f32 / 60.0).clamp(0.0, 1.0);
+                ctx[4 + i * 2 + 1] = (rem as f32 / 20.0).clamp(0.0, 1.0);
+            }
+        }
+
+        // [24..44]: 10 Spell slots (sid normalized + remaining count normalized)
+        for i in 0..10 {
+            if let Some(&(sid, rem)) = self.remaining_spells.get(i) {
+                ctx[24 + i * 2] = ((sid as usize + 1) as f32 / 20.0).clamp(0.0, 1.0);
+                ctx[24 + i * 2 + 1] = (rem as f32 / 8.0).clamp(0.0, 1.0);
+            }
+        }
+
+        // [44..56]: 4 Hero slots (Hero+Equipment+Pet signature, live HP / availability, ability state)
+        let mut all_heroes: Vec<HeroId> = self.remaining_heroes.iter().map(|(h, _)| *h).collect();
+        for &(dh, _) in &self.deployed_heroes {
+            if !all_heroes.contains(&dh) {
+                all_heroes.push(dh);
+            }
+        }
+        all_heroes.sort_by_key(|h| *h as usize);
+        for (i, &hid) in all_heroes.iter().take(4).enumerate() {
+            let eq_sig = self
+                .hero_equipment
+                .iter()
+                .find(|(h, _)| *h == hid)
+                .map(|(_, eqs)| (eqs[0] as usize + 1) * 7 + (eqs[1] as usize + 1))
+                .unwrap_or(1);
+            let pet_sig = self
+                .remaining_heroes
+                .iter()
+                .find(|(h, _)| *h == hid)
+                .map(|(_, p)| *p as usize + 1)
+                .unwrap_or(1);
+            let sig = ((hid as usize + 1) * 60 + eq_sig + pet_sig) as f32 / 500.0;
+            ctx[44 + i * 3] = sig.clamp(0.0, 1.0);
+
+            if self.remaining_heroes.iter().any(|(rh, _)| *rh == hid) {
+                // In deployment bar ready to deploy
+                ctx[44 + i * 3 + 1] = 1.0;
+                ctx[44 + i * 3 + 2] = 0.5;
+            } else if let Some(&(_, uid)) = self.deployed_heroes.iter().find(|(dh, _)| *dh == hid) {
+                if let Some(u) = self.units.iter().find(|u| u.id == uid && u.alive) {
+                    ctx[44 + i * 3 + 1] = (u.hp / u.max_hp.max(1.0)).clamp(0.0, 1.0);
+                    ctx[44 + i * 3 + 2] = if u.ability_used { 0.0 } else { 1.0 };
+                }
+            }
+        }
+
+        // [56..64]: Siege machine & Clan Castle full knowledge
+        if let Some(siege_id) = self.remaining_siege {
+            ctx[56] = ((siege_id as usize + 1) as f32 / 60.0).clamp(0.0, 1.0);
+            ctx[57] = 1.0;
+        } else if let Some(uid) = self.active_siege_unit_id {
+            if let Some(u) = self.units.iter().find(|u| u.id == uid && u.alive) {
+                if let UnitKind::Troop(sid) = u.kind {
+                    ctx[56] = ((sid as usize + 1) as f32 / 60.0).clamp(0.0, 1.0);
+                }
+                ctx[58] = if self.attacker_cc_popped { 0.0 } else { 1.0 };
+            }
+        }
+        ctx[59] = if self.attacker_cc_popped { 1.0 } else { 0.0 };
+        if let Some(&(cc_t0, cc_c0)) = self.attacker_cc_troops.first() {
+            ctx[60] = ((cc_t0 as usize + 1) as f32 / 60.0).clamp(0.0, 1.0);
+            ctx[61] = (cc_c0 as f32 / 5.0).clamp(0.0, 1.0);
+        }
+        if let Some(&(cc_t1, cc_c1)) = self.attacker_cc_troops.get(1) {
+            ctx[62] = ((cc_t1 as usize + 1) as f32 / 60.0).clamp(0.0, 1.0);
+            ctx[63] = (cc_c1 as f32 / 5.0).clamp(0.0, 1.0);
+        }
+        ctx
     }
 }
 

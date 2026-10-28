@@ -238,7 +238,7 @@
       "width": 520,
       "height": 420,
       "color": "4",
-      "text": "### Live Network Telemetry & Torchview Sync\n- **Architecture Hash**: `dde4e8df8255`\n- **Total Parameters**: **`891,379`** (`input_shape = (1, 8, 50, 50)`)\n- **Last Auto-Synced**: `2026-10-26 16:03:09 UTC`\n\n| Submodule | Layer Type | Params |\n| :--- | :--- | ---: |\n| `encoder.spatial_stem` | `Sequential` | `20,928` |\n| `encoder.context_res` | `Sequential` | `73,984` |\n| `encoder.global_tower` | `Sequential` | `691,168` |\n| `slot_type_head` | `Linear` | `1,799` |\n| `slot_idx_head` | `Sequential` | `35,082` |\n| `tile_cond_proj` | `Linear` | `16,896` |\n| `tile_conv_head` | `Sequential` | `18,497` |\n| `critic_head` | `Sequential` | `33,025` |"
+      "text": "### Live Network Telemetry & Torchview Sync\n- **Architecture Hash**: `7e7f66d55641`\n- **Total Parameters**: **`908,531`** (`input_shape = (1, 8, 50, 50)`)\n- **Last Auto-Synced**: `2026-10-27 17:52:51 UTC`\n\n| Submodule | Layer Type | Params |\n| :--- | :--- | ---: |\n| `encoder.spatial_stem` | `Sequential` | `20,928` |\n| `encoder.context_res` | `Sequential` | `73,984` |\n| `encoder.global_tower` | `Sequential` | `691,168` |\n| `army_context_proj` | `Sequential` | `17,152` |\n| `slot_type_head` | `Linear` | `1,799` |\n| `slot_idx_head` | `Sequential` | `35,082` |\n| `tile_cond_proj` | `Linear` | `16,896` |\n| `tile_conv_head` | `Sequential` | `18,497` |\n| `critic_head` | `Sequential` | `33,025` |"
     },
     {
       "id": "torchview-overview-img",

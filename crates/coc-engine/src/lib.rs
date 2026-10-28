@@ -116,7 +116,8 @@ mod tests {
         assert_eq!(cat.heroes.len(), 6);
         assert_eq!(cat.equipment.len(), 43);
         assert_eq!(cat.pets.len(), 12);
-        assert_eq!(armies.len(), 1, "Only one default meta composition should be present");
+        assert_eq!(layouts.len(), 5, "Five TH18 meta villages should be present");
+        assert_eq!(armies.len(), 3, "Three TH18 meta compositions should be present");
 
         // Test custom Dragon Duke loadout + default Thrower + Healer composition
         let mut dd_army = armies[0].clone();

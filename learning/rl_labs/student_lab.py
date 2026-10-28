@@ -353,35 +353,21 @@ def compute_custom_reward(step_info: Dict[str, Any]) -> float:
       - `time_remaining_ratio` (float in 0..1): fraction of the 180s battle clock left
       - `invalid_action`     (bool): True if the agent attempted an illegal action
     """
-    # >>> YOUR LAB 3A REWARD FORMULA (Tweak weights to shape agent behavior!) <<<
-    delta_dmg_ratio = float(step_info.get("delta_damage_ratio", 0.0))
-    delta_pct = int(step_info.get("delta_pct", 0))
-    delta_stars = int(step_info.get("delta_stars", 0))
-    th_just_destroyed = bool(step_info.get("th_just_destroyed", False))
+    # >>> YOUR LAB 3A REWARD FORMULA (50/50 Balanced Destruction % & Stars) <<<
+    delta_pct = float(step_info.get("delta_pct", 0))
+    delta_stars = float(step_info.get("delta_stars", 0))
     invalid_action = bool(step_info.get("invalid_action", False))
-    stars = int(step_info.get("stars", 0))
-    time_rem = float(step_info.get("time_remaining_ratio", 0.0))
 
-    # Justification for each term:
-    # 1. `delta_dmg_ratio * 2.5`: Immediate dense signal on every hit so the agent learns
-    #    that dealing damage is good even before a full building or star falls.
-    # 2. `delta_pct * 0.12`: Rewards finishing off buildings to push toward the 50% and 100% thresholds.
-    # 3. `delta_stars * 3.5`: Large discrete jump at 50% destruction, TH18 takedown, and 100% wipe.
-    reward = (
-        delta_dmg_ratio * 2.5     # Dense HP progress signal
-        + delta_pct * 0.12        # Destruction % ticks
-        + delta_stars * 3.5       # Major milestone for 50%, TH, and 100% stars
-    )
-    if th_just_destroyed:
-        # Justification: Town Hall 18 is the most heavily defended building AND grants an instant
-        # star; an extra bonus focuses the policy on pathing core-diving units/spells into TH18.
-        reward += 2.5             # Extra priority on securing the TH18 star
-    if stars == 3 and delta_stars > 0:
-        # Justification: Scaling by `time_rem` encourages decisive attacks instead of stalling.
-        reward += 5.0 + 3.0 * time_rem  # Fast 3-star victory bonus
+    # 1. 50% for 100% destruction: 0.50 points per 1% destruction (50.0 max)
+    pct_reward = delta_pct * 0.50
+    # 2. 50% for 3 stars: 50.0 / 3.0 = 16.6667 points per star (50.0 max)
+    stars_reward = delta_stars * (50.0 / 3.0)
+
+    reward = pct_reward + stars_reward
+
     if invalid_action:
-        # Justification: Safety net penalty if an unmasked call ever attempts an illegal move.
-        reward -= 0.05            # Small penalty for illegal unmasked actions
+        # Small safety penalty for illegal unmasked actions
+        reward -= 0.05
 
     return float(reward)
 

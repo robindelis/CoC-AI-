@@ -215,9 +215,9 @@ impl LayoutBuilder {
     }
 }
 
-/// Ordered Town Hall 18 defense manifest: (BuildingId, DefenseMode) repeated to
-/// its exact max count. 52 defensive structures, matching the live game.
-fn th18_defenses() -> Vec<(BuildingId, DefenseMode)> {
+/// Ordered Town Hall 18 defense manifest parameterized by meta archetype (0..5).
+/// 52 defensive structures, matching the live game.
+fn th18_defenses_for_archetype(archetype: usize) -> Vec<(BuildingId, DefenseMode)> {
     use BuildingId::*;
     use DefenseMode::*;
     let mut v: Vec<(BuildingId, DefenseMode)> = Vec::new();
@@ -229,23 +229,75 @@ fn th18_defenses() -> Vec<(BuildingId, DefenseMode)> {
     // Cross-map signature artillery
     push(Monolith, Default, 1);
     push(RevengeTower, Default, 1);
-    push(MultiGearTower, MultiGearLongRange, 1);
+    let mg_mode = if archetype == 4 {
+        MultiGearFastAttack
+    } else {
+        MultiGearLongRange
+    };
+    push(MultiGearTower, mg_mode, 1);
     push(CraftingStation, Default, 1);
-    // Heavy splash / single-target core
-    push(InfernoTower, InfernoMulti, 3);
+
+    // Inferno & X-Bow & Spell Tower modes customized per meta archetype
+    match archetype {
+        // 1: Offset Diamond (2 Single + 1 Multi Inferno, Poison + Rage Towers)
+        1 => {
+            push(InfernoTower, InfernoSingle, 2);
+            push(InfernoTower, InfernoMulti, 1);
+        }
+        // 2: Anti-Hydra Air Ring (2 Single + 1 Multi Inferno, all 4 Air X-Bows)
+        2 => {
+            push(InfernoTower, InfernoSingle, 2);
+            push(InfernoTower, InfernoMulti, 1);
+        }
+        // 3: Anti-Fireball Wide Spread (3 Single Infernos to melt Meteor Golem / Duke / Heroes)
+        3 => {
+            push(InfernoTower, InfernoSingle, 3);
+        }
+        // 0 (Central Box) & 4 (Teaser Killzone): 3 Multi-Target Infernos
+        _ => {
+            push(InfernoTower, InfernoMulti, 3);
+        }
+    }
+
     push(Scattershot, Default, 2);
     push(Firespitter, Default, 2);
     push(SuperWizardTower, Default, 2);
-    push(XBow, XBowAirAndGround, 3);
-    push(XBow, XBowGround, 1);
+
+    if archetype == 2 {
+        push(XBow, XBowAirAndGround, 4);
+    } else if archetype == 3 {
+        push(XBow, XBowGround, 2);
+        push(XBow, XBowAirAndGround, 2);
+    } else {
+        push(XBow, XBowAirAndGround, 3);
+        push(XBow, XBowGround, 1);
+    }
+
     push(MultiArcherTower, Default, 3);
     push(RicochetCannon, Default, 3);
     // Air coverage
     push(AirDefense, Default, 4);
     push(AirSweeper, Default, 2);
-    // Mid ring
-    push(SpellTower, SpellTowerRage, 1);
-    push(SpellTower, SpellTowerPoison, 1);
+
+    // Spell Towers
+    match archetype {
+        2 => {
+            push(SpellTower, SpellTowerPoison, 1);
+            push(SpellTower, SpellTowerInvisibility, 1);
+        }
+        3 => {
+            push(SpellTower, SpellTowerEarthquake, 1);
+            push(SpellTower, SpellTowerInvisibility, 1);
+        }
+        4 => {
+            push(SpellTower, SpellTowerRage, 2);
+        }
+        _ => {
+            push(SpellTower, SpellTowerRage, 1);
+            push(SpellTower, SpellTowerPoison, 1);
+        }
+    }
+
     push(BombTower, Default, 2);
     push(WizardTower, Default, 2);
     push(Mortar, Default, 4);
@@ -318,43 +370,117 @@ fn th18_army_buildings() -> Vec<BuildingId> {
     ]
 }
 
-/// Builds a complete, overlap-free Town Hall 18 village containing every
-/// defensive building, every resource building, every army building, a full
-/// 325-wall layout and all 48 traps.
-pub fn build_full_th18_village() -> VillageLayout {
+/// Builds one of the 5 current-meta Town Hall 18 village layouts (overlap-free, 95 buildings,
+/// up to 325 walls, 48 traps):
+///   0: "TH18 Central Box Legends (Cake-A-Pult + Smasher)"
+///   1: "TH18 Offset Diamond (Hot Candle + Longshot)"
+///   2: "TH18 Anti-Hydra Air Ring (4 Air X-Bows + Sweepers)"
+///   3: "TH18 Anti-Fireball Wide Spread (3 Single Infernos)"
+///   4: "TH18 Teaser War Base (Double Rage Towers + Killzone)"
+pub fn build_th18_meta_village(archetype: usize) -> VillageLayout {
     let mut b = LayoutBuilder::new();
 
-    // Town Hall dead centre (4x4 covering tiles 23..27)
-    b.try_place_building(BuildingId::TownHall, 23, 23, DefenseMode::GuardianLogger, 0.0);
+    let (th_x, th_y, th_mode, core_cx, core_cy) = match archetype {
+        1 => (16u8, 23u8, DefenseMode::GuardianLongshot, 30.0f32, 24.0f32),
+        2 => (23u8, 23u8, DefenseMode::GuardianLongshot, 24.0f32, 24.0f32),
+        3 => (23u8, 17u8, DefenseMode::GuardianLogger, 24.0f32, 26.0f32),
+        4 => (17u8, 28u8, DefenseMode::GuardianLogger, 29.0f32, 19.0f32),
+        _ => (23u8, 23u8, DefenseMode::GuardianSmasher, 24.0f32, 24.0f32),
+    };
 
-    // Compartment walls are laid down first so that buildings go around them,
-    // exactly like a hand-built war base: a core box, a mid ring and an outer ring.
-    b.add_wall_rect(19, 19, 30, 30, true);
-    b.add_wall_rect(14, 14, 35, 35, true);
-    b.add_wall_rect(9, 9, 40, 40, true);
-    // Radial dividers turn each ring into four separate compartments
-    for i in 5u8..9 {
-        b.try_add_wall(i, 24);
-        b.try_add_wall(49 - i, 24);
-        b.try_add_wall(24, i);
-        b.try_add_wall(24, 49 - i);
+    b.try_place_building(BuildingId::TownHall, th_x, th_y, th_mode, 0.0);
+
+    // Compartment wall geometry per meta archetype
+    match archetype {
+        1 => {
+            // Offset Diamond: West TH compartment + East kill-core box + outer frame
+            b.add_wall_rect(13, 19, 22, 29, true);
+            b.add_wall_rect(25, 17, 37, 31, true);
+            b.add_wall_rect(9, 10, 41, 39, true);
+            for i in 5u8..12 {
+                b.try_add_wall(24, i);
+                b.try_add_wall(24, 49 - i);
+            }
+        }
+        2 => {
+            // Anti-Hydra Air Ring: Isolated inner island + wide moat ring + outer compartments
+            b.add_wall_rect(20, 20, 29, 29, false);
+            b.add_wall_rect(12, 12, 37, 37, true);
+            b.add_wall_rect(7, 7, 42, 42, true);
+            for i in 7u8..12 {
+                b.try_add_wall(i, 20);
+                b.try_add_wall(49 - i, 29);
+                b.try_add_wall(20, i);
+                b.try_add_wall(29, 49 - i);
+            }
+        }
+        3 => {
+            // Anti-Fireball Wide Spread: 4 separated quadrant boxes to prevent Fireball/SpikyBall chains
+            b.add_wall_rect(9, 9, 21, 21, true);
+            b.add_wall_rect(28, 9, 40, 21, true);
+            b.add_wall_rect(9, 28, 21, 40, true);
+            b.add_wall_rect(28, 28, 40, 40, true);
+            b.add_wall_rect(18, 15, 31, 34, true);
+        }
+        4 => {
+            // Teaser War Base: Open South-West bait side + fortified North-East killzone compartments
+            b.add_wall_rect(23, 12, 37, 26, true);
+            b.add_wall_rect(18, 9, 41, 32, true);
+            b.add_wall_rect(12, 24, 24, 36, true);
+            b.add_wall_rect(8, 8, 42, 41, true);
+        }
+        _ => {
+            // Central Box Legends: Classic 3-ring divided war box
+            b.add_wall_rect(19, 19, 30, 30, true);
+            b.add_wall_rect(14, 14, 35, 35, true);
+            b.add_wall_rect(9, 9, 40, 40, true);
+            for i in 5u8..9 {
+                b.try_add_wall(i, 24);
+                b.try_add_wall(49 - i, 24);
+                b.try_add_wall(24, i);
+                b.try_add_wall(24, 49 - i);
+            }
+        }
     }
 
-    // Defences: tight core ring, expanding outward
-    let defences = th18_defenses();
+    let defences = th18_defenses_for_archetype(archetype);
     let n = defences.len();
     for (i, &(id, mode)) in defences.iter().enumerate() {
-        // First third sits in the core, the rest spreads outward
-        let (r_min, r_max) = if i < n / 3 {
-            (3.4, 7.0)
-        } else if i < (2 * n) / 3 {
-            (7.0, 11.0)
-        } else {
-            (11.0, 14.5)
+        let (r_min, r_max) = match archetype {
+            // Anti-Hydra Ring pushes mid defenses out into a wider ring to split air pathing
+            2 => {
+                if i < n / 4 {
+                    (3.5, 6.0)
+                } else if i < (3 * n) / 4 {
+                    (9.0, 14.0)
+                } else {
+                    (14.0, 17.5)
+                }
+            }
+            // Anti-Fireball Wide Spread increases spacing between defenses
+            3 => {
+                if i < n / 3 {
+                    (5.0, 9.5)
+                } else if i < (2 * n) / 3 {
+                    (9.5, 14.0)
+                } else {
+                    (14.0, 18.0)
+                }
+            }
+            _ => {
+                if i < n / 3 {
+                    (3.4, 7.0)
+                } else if i < (2 * n) / 3 {
+                    (7.0, 11.0)
+                } else {
+                    (11.0, 14.5)
+                }
+            }
         };
-        let (tx, ty) = LayoutBuilder::spread_anchor(i, n, r_min, r_max);
+        let (base_x, base_y) = LayoutBuilder::spread_anchor(i + archetype * 5, n, r_min, r_max);
+        let tx = (base_x + (core_cx - 24.0) * 0.55).clamp(6.0, 43.0);
+        let ty = (base_y + (core_cy - 24.0) * 0.55).clamp(6.0, 43.0);
         if !b.place_near(id, tx, ty, mode) {
-            // Fallback: any free tile
             b.place_near(id, 24.0, 24.0, mode);
         }
     }
@@ -362,25 +488,27 @@ pub fn build_full_th18_village() -> VillageLayout {
     // Storages ring
     let storages = th18_storages();
     for (i, &id) in storages.iter().enumerate() {
-        let (tx, ty) = LayoutBuilder::spread_anchor(i + 7, storages.len(), 6.0, 11.5);
+        let (tx, ty) =
+            LayoutBuilder::spread_anchor(i + 7 + archetype * 3, storages.len(), 6.0, 11.5);
         b.place_near(id, tx, ty, DefenseMode::Default);
     }
 
     // Collectors + drills outer ring
     let collectors = th18_collectors();
     for (i, &id) in collectors.iter().enumerate() {
-        let (tx, ty) = LayoutBuilder::spread_anchor(i, collectors.len(), 13.0, 19.5);
+        let (tx, ty) =
+            LayoutBuilder::spread_anchor(i + archetype * 2, collectors.len(), 13.0, 19.5);
         b.place_near(id, tx, ty, DefenseMode::Default);
     }
 
     // Army / utility buildings on the outer edge
     let army = th18_army_buildings();
     for (i, &id) in army.iter().enumerate() {
-        let (tx, ty) = LayoutBuilder::spread_anchor(i + 3, army.len(), 15.0, 20.5);
+        let (tx, ty) = LayoutBuilder::spread_anchor(i + 3 + archetype, army.len(), 15.0, 20.5);
         b.place_near(id, tx, ty, DefenseMode::Default);
     }
 
-    // Traps fill the free tiles closest to the core
+    // Traps fill the free tiles closest to the archetype's kill-core
     let mut trap_queue: Vec<(TrapId, TrapMode)> = Vec::new();
     for spec in TRAPS {
         for _ in 0..spec.max_count {
@@ -396,8 +524,8 @@ pub fn build_full_th18_village() -> VillageLayout {
                 if !b.can_place(x, y, size) {
                     continue;
                 }
-                let dx = x as f32 + size as f32 * 0.5 - 24.0;
-                let dy = y as f32 + size as f32 * 0.5 - 24.0;
+                let dx = x as f32 + size as f32 * 0.5 - core_cx;
+                let dy = y as f32 + size as f32 * 0.5 - core_cy;
                 let d2 = (dx * dx + dy * dy) as i32;
                 if best.map_or(true, |(_, _, bd)| d2 < bd) {
                     best = Some((x, y, d2));
@@ -417,10 +545,26 @@ pub fn build_full_th18_village() -> VillageLayout {
         }
     }
 
-    // Ensure the 2 Air Sweepers and 2 Firespitters cover opposite 180-deg hemispheres
-    let sweeper_dirs = [180.0f32, 0.0f32];
+    // Top up remaining walls up to 325 around the perimeter compartments if spare walls exist
+    for r in [16u8, 22u8, 27u8, 33u8] {
+        if b.walls.len() >= 325 {
+            break;
+        }
+        b.add_wall_rect(r.min(20), r.min(20), (49 - r).max(29), (49 - r).max(29), true);
+    }
+
+    // Ensure the 2 Air Sweepers and 2 Firespitters cover opposite hemispheres
+    let sweeper_dirs = if archetype % 2 == 0 {
+        [180.0f32, 0.0f32]
+    } else {
+        [90.0f32, 270.0f32]
+    };
     let mut sweeper_idx = 0usize;
-    let spitter_dirs = [180.0f32, 0.0f32];
+    let spitter_dirs = if archetype == 4 {
+        [225.0f32, 180.0f32]
+    } else {
+        [180.0f32, 0.0f32]
+    };
     let mut spitter_idx = 0usize;
     for pb in &mut b.buildings {
         if pb.building_id == BuildingId::AirSweeper {
@@ -432,8 +576,35 @@ pub fn build_full_th18_village() -> VillageLayout {
         }
     }
 
+    let name = match archetype {
+        1 => "TH18 Offset Diamond (Hot Candle + Longshot)",
+        2 => "TH18 Anti-Hydra Air Ring (4 Air X-Bows + Sweepers)",
+        3 => "TH18 Anti-Fireball Wide Spread (3 Single Infernos)",
+        4 => "TH18 Teaser War Base (Double Rage Towers + Killzone)",
+        _ => "TH18 Central Box Legends (Cake-A-Pult + Smasher)",
+    };
+
+    let defending_cc_troops = match archetype {
+        2 => vec![
+            (TroopId::LavaHound, 1),
+            (TroopId::IceGolem, 1),
+            (TroopId::Archer, 5),
+        ],
+        4 => vec![
+            (TroopId::Furnace, 1),
+            (TroopId::Witch, 1),
+            (TroopId::Headhunter, 3),
+            (TroopId::Archer, 2),
+        ],
+        _ => vec![
+            (TroopId::IceGolem, 2),
+            (TroopId::Headhunter, 3),
+            (TroopId::Archer, 7),
+        ],
+    };
+
     VillageLayout {
-        name: "TH18 Maxed Village (All Defenses)".to_string(),
+        name: name.to_string(),
         buildings: b.buildings,
         walls: b.walls,
         traps: b.traps,
@@ -443,71 +614,166 @@ pub fn build_full_th18_village() -> VillageLayout {
             PlacedHeroBanner { hero_id: HeroId::GrandWarden, tile_x: 27, tile_y: 28 },
             PlacedHeroBanner { hero_id: HeroId::DragonDuke, tile_x: 20, tile_y: 20 },
         ],
-        defending_cc_troops: vec![
-            (TroopId::IceGolem, 2),
-            (TroopId::Headhunter, 3),
-            (TroopId::Archer, 7),
-        ],
+        defending_cc_troops,
     }
 }
 
-/// Compact war variant with a tighter core and heavier trap coverage.
+pub fn build_full_th18_village() -> VillageLayout {
+    build_th18_meta_village(0)
+}
+
 pub fn build_th18_war_village() -> VillageLayout {
-    let mut layout = build_full_th18_village();
-    layout.name = "TH18 War Base (Tight Core)".to_string();
-    layout
+    build_th18_meta_village(1)
 }
 
 pub fn get_preset_layouts() -> Vec<VillageLayout> {
-    vec![build_full_th18_village(), build_th18_war_village()]
+    (0..5).map(build_th18_meta_village).collect()
 }
 
 pub fn get_preset_armies() -> Vec<ArmyLoadout> {
-    vec![ArmyLoadout {
-        name: "TH18 Thrower + Healer + Totem Smash (Meta)".to_string(),
-        troops: vec![
-            (TroopId::Thrower, 12),
-            (TroopId::Healer, 5),
-            (TroopId::Furnace, 2),
-            (TroopId::Druid, 1),
-            (TroopId::IceGolem, 1),
-            (TroopId::SuperWallBreaker, 1),
-            (TroopId::Headhunter, 1),
-            (TroopId::Balloon, 1),
-            (TroopId::Archer, 4),
-        ],
-        spells: vec![
-            (SpellId::Totem, 7),
-            (SpellId::Rage, 1),
-            (SpellId::Poison, 1),
-            (SpellId::SkeletonSpell, 1),
-        ],
-        heroes: vec![
-            (HeroId::BarbarianKing, PetId::Frosty),
-            (HeroId::ArcherQueen, PetId::Unicorn),
-            (HeroId::GrandWarden, PetId::AngryJelly),
-            (HeroId::RoyalChampion, PetId::Phoenix),
-        ],
-        hero_equipment: vec![
-            (
-                HeroId::BarbarianKing,
-                [EquipmentId::SpikyBall, EquipmentId::SnakeBracelet],
-            ),
-            (
-                HeroId::ArcherQueen,
-                [EquipmentId::MagicMirror, EquipmentId::ActionFigure],
-            ),
-            (
-                HeroId::GrandWarden,
-                [EquipmentId::EternalTome, EquipmentId::RageGem],
-            ),
-            (
-                HeroId::RoyalChampion,
-                [EquipmentId::RocketSpear, EquipmentId::ElectroBoots],
-            ),
-        ],
-        siege_machine: Some(TroopId::LogLauncher),
-        cc_troops: vec![(TroopId::SuperYeti, 1), (TroopId::SuperValkyrie, 1)],
-        cc_spells: vec![(SpellId::Rage, 1), (SpellId::Freeze, 1)],
-    }]
+    vec![
+        // Army 0: Thrower + Healer + Totem Smash (352 housing)
+        ArmyLoadout {
+            name: "TH18 Thrower + Healer + Totem Smash (Meta)".to_string(),
+            troops: vec![
+                (TroopId::Thrower, 12),
+                (TroopId::Healer, 5),
+                (TroopId::Furnace, 2),
+                (TroopId::Druid, 1),
+                (TroopId::IceGolem, 1),
+                (TroopId::SuperWallBreaker, 1),
+                (TroopId::Headhunter, 1),
+                (TroopId::Balloon, 1),
+                (TroopId::Archer, 4),
+            ],
+            spells: vec![
+                (SpellId::Totem, 7),
+                (SpellId::Rage, 1),
+                (SpellId::Poison, 1),
+                (SpellId::SkeletonSpell, 1),
+            ],
+            heroes: vec![
+                (HeroId::BarbarianKing, PetId::Frosty),
+                (HeroId::ArcherQueen, PetId::Unicorn),
+                (HeroId::GrandWarden, PetId::AngryJelly),
+                (HeroId::RoyalChampion, PetId::Phoenix),
+            ],
+            hero_equipment: vec![
+                (
+                    HeroId::BarbarianKing,
+                    [EquipmentId::SpikyBall, EquipmentId::SnakeBracelet],
+                ),
+                (
+                    HeroId::ArcherQueen,
+                    [EquipmentId::MagicMirror, EquipmentId::ActionFigure],
+                ),
+                (
+                    HeroId::GrandWarden,
+                    [EquipmentId::EternalTome, EquipmentId::RageGem],
+                ),
+                (
+                    HeroId::RoyalChampion,
+                    [EquipmentId::RocketSpear, EquipmentId::ElectroBoots],
+                ),
+            ],
+            siege_machine: Some(TroopId::LogLauncher),
+            cc_troops: vec![(TroopId::SuperYeti, 1), (TroopId::SuperValkyrie, 1)],
+            cc_spells: vec![(SpellId::Rage, 1), (SpellId::Freeze, 1)],
+        },
+        // Army 1: Dragon Duke Charge Hydra (Dragons + Dragon Riders + Totem Spells, 352 housing)
+        ArmyLoadout {
+            name: "TH18 Dragon Duke Charge Hydra (Meta)".to_string(),
+            troops: vec![
+                (TroopId::Dragon, 7),
+                (TroopId::DragonRider, 6),
+                (TroopId::RocketBalloon, 5),
+                (TroopId::IceGolem, 1),
+                (TroopId::Headhunter, 1),
+                (TroopId::Archer, 1),
+            ],
+            spells: vec![
+                (SpellId::Totem, 6),
+                (SpellId::Rage, 2),
+                (SpellId::Freeze, 1),
+                (SpellId::Poison, 1),
+            ],
+            heroes: vec![
+                (HeroId::DragonDuke, PetId::Phoenix),
+                (HeroId::MinionPrince, PetId::AngryJelly),
+                (HeroId::GrandWarden, PetId::ElectroOwl),
+                (HeroId::RoyalChampion, PetId::SpiritFox),
+            ],
+            hero_equipment: vec![
+                (
+                    HeroId::DragonDuke,
+                    [EquipmentId::RevengeDeck, EquipmentId::FlameBlower],
+                ),
+                (
+                    HeroId::MinionPrince,
+                    [EquipmentId::PortalPendant, EquipmentId::DarkOrb],
+                ),
+                (
+                    HeroId::GrandWarden,
+                    [EquipmentId::EternalTome, EquipmentId::RageGem],
+                ),
+                (
+                    HeroId::RoyalChampion,
+                    [EquipmentId::RocketSpear, EquipmentId::ElectroBoots],
+                ),
+            ],
+            siege_machine: Some(TroopId::BattleBlimp),
+            cc_troops: vec![(TroopId::DragonRider, 2), (TroopId::Balloon, 1)],
+            cc_spells: vec![(SpellId::Rage, 1), (SpellId::Freeze, 1)],
+        },
+        // Army 2: Warden Fireball + Super Bowler & Meteor Golem Smash (352 housing)
+        ArmyLoadout {
+            name: "TH18 Fireball Super Bowler & Meteor Golem Smash (Meta)".to_string(),
+            troops: vec![
+                (TroopId::SuperBowler, 5),
+                (TroopId::MeteorGolem, 1),
+                (TroopId::Healer, 5),
+                (TroopId::RootRider, 1),
+                (TroopId::Furnace, 1),
+                (TroopId::Druid, 1),
+                (TroopId::SuperWallBreaker, 2),
+                (TroopId::IceGolem, 1),
+                (TroopId::Headhunter, 1),
+                (TroopId::Archer, 1),
+            ],
+            spells: vec![
+                (SpellId::Totem, 4),
+                (SpellId::Rage, 2),
+                (SpellId::Overgrowth, 1),
+                (SpellId::Earthquake, 1),
+                (SpellId::Invisibility, 1),
+            ],
+            heroes: vec![
+                (HeroId::GrandWarden, PetId::AngryJelly),
+                (HeroId::DragonDuke, PetId::Phoenix),
+                (HeroId::BarbarianKing, PetId::Frosty),
+                (HeroId::ArcherQueen, PetId::Unicorn),
+            ],
+            hero_equipment: vec![
+                (
+                    HeroId::GrandWarden,
+                    [EquipmentId::Fireball, EquipmentId::EternalTome],
+                ),
+                (
+                    HeroId::DragonDuke,
+                    [EquipmentId::RocketBackpack, EquipmentId::FireHeart],
+                ),
+                (
+                    HeroId::BarbarianKing,
+                    [EquipmentId::GiantGauntlet, EquipmentId::SpikyBall],
+                ),
+                (
+                    HeroId::ArcherQueen,
+                    [EquipmentId::MagicMirror, EquipmentId::FrozenArrow],
+                ),
+            ],
+            siege_machine: Some(TroopId::FlameFlinger),
+            cc_troops: vec![(TroopId::SuperYeti, 1), (TroopId::IceGolem, 1)],
+            cc_spells: vec![(SpellId::Rage, 1), (SpellId::Poison, 1)],
+        },
+    ]
 }

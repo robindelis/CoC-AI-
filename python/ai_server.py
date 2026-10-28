@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """
 FastAPI AI Training & Inference Server for Clash of Clans TH18 AI Studio.
-Provides GPU PyTorch PPO training, live spatial tensor & policy heatmap inspection,
-neural policy battle stepping, and Rayon multi-core defender base evolution.
+Manages all 3 Models + `trained_models/` checkpoint library + live rollout testing:
+  1. Attacker Model 1 (`AttackerArmySelectorNet`): Village Layout (8×50×50) -> Top 3 Meta Armies
+  2. Attacker Model 2 (`CoCActorCritic`): Village Layout + Full Army Context (64) -> Live Placement / NoOp
+  3. Defender Model   (`DefenderVillageSelectorNet`): Incoming Army Context (64) -> Top 5 Meta Villages
 """
 
 import json
 import os
+import sys
 import threading
 from typing import Any, Dict, List, Optional
 
-import numpy as np
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import torch
 import uvicorn
 from fastapi import FastAPI
@@ -23,9 +27,28 @@ from coc_rl import (
     CoCActorCritic,
     CoCAttackerEnv,
     CoCDefenderEvolution,
+    analyze_architecture,
     ensure_architecture_diagrams,
+    get_default_arch_config,
+    render_custom_torchview_svg,
 )
-from train_ai import DEFAULT_CKPT_PATH, masks_np_to_torch, train_pytorch_ppo
+from train_ai import (
+    ARMY_SHORT_NAMES,
+    DEFAULT_CKPT_PATH,
+    VILLAGE_SHORT_NAMES,
+    compute_selector_matrices,
+    delete_custom_army,
+    get_all_army_presets,
+    list_custom_armies,
+    list_trained_models,
+    load_all_models,
+    masks_np_to_torch,
+    rename_trained_model,
+    sanitize_model_filename,
+    save_custom_army,
+    simulate_model_rollout,
+    train_pytorch_ppo,
+)
 
 app = FastAPI(title="CoC TH18 AI Studio Server")
 
@@ -40,42 +63,91 @@ app.add_middleware(
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DEVICE_NAME = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
 
+_LAST_STATE_PATH = os.path.join(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
+    "trained_models",
+    "last_training_state.json",
+)
+
 _train_lock = threading.Lock()
 _training_state: Dict[str, Any] = {
     "is_training": False,
     "stop_requested": False,
+    "training_mode": "live_attacker",
+    "matchup_mode": "random",
+    "resume_from": "latest_attacker.pt",
+    "saved_filename": "latest_attacker.pt",
+    "active_model": "live_attacker",
     "current_episode": 0,
+    "cumulative_episode": 0,
     "total_episodes": 0,
     "best_pct": 0,
     "best_stars": 0,
+    "co_evolve_defender": False,
+    "defender_gen": 0,
+    "defender_fitness": 0.0,
+    "evolved_layout": None,
+    "selector_matrices": None,
     "history": [],
 }
 
+if os.path.exists(_LAST_STATE_PATH):
+    try:
+        with open(_LAST_STATE_PATH, "r", encoding="utf-8") as _f:
+            _saved_st = json.load(_f)
+        if isinstance(_saved_st, dict):
+            _training_state.update(_saved_st)
+            _training_state["is_training"] = False
+            _training_state["stop_requested"] = False
+    except Exception:
+        pass
 
-def _load_model() -> CoCActorCritic:
-    model = CoCActorCritic(in_channels=8).to(DEVICE)
-    if os.path.exists(DEFAULT_CKPT_PATH):
-        try:
-            ckpt = torch.load(DEFAULT_CKPT_PATH, map_location=DEVICE, weights_only=False)
-            if "model_state_dict" in ckpt:
-                model.load_state_dict(ckpt["model_state_dict"], strict=False)
-        except Exception:
-            pass
-    model.eval()
-    return model
 
 
 class InspectRequest(BaseModel):
     layout_json: Optional[str] = None
     army_json: Optional[str] = None
+    model_file: Optional[str] = "latest_attacker.pt"
+
+
+class RolloutRequest(BaseModel):
+    model_file: Optional[str] = "latest_attacker.pt"
+    layout_json: str
+    army_json: str
+    ticks_per_step: int = 8
+    deterministic: bool = False
 
 
 class TrainStartRequest(BaseModel):
-    episodes: int = 20
+    episodes: int = 24
+    batch_episodes: int = 4
+    minibatch_size: int = 64
+    ppo_epochs: int = 4
     lr: float = 3e-4
     ticks_per_step: int = 8
+    training_mode: str = "live_attacker"
+    matchup_mode: str = "random"
+    resume_from: Optional[str] = "latest_attacker.pt"
+    save_name: Optional[str] = None
+    co_evolve_defender: bool = False
     layout_json: Optional[str] = None
     army_json: Optional[str] = None
+    armies_json: Optional[str] = None
+    villages_json: Optional[str] = None
+    arch_config: Optional[Any] = None
+
+
+class ArchitecturePreviewRequest(BaseModel):
+    arch_config: Optional[Dict[str, Any]] = None
+    detail: str = "overview"
+    direction: str = "LR"
+    include_svg: bool = True
+
+
+
+class RenameModelRequest(BaseModel):
+    old_filename: str
+    new_filename: str
 
 
 class EvolveRequest(BaseModel):
@@ -86,32 +158,94 @@ class EvolveRequest(BaseModel):
 
 @app.get("/api/ai/status")
 def get_ai_status() -> Dict[str, Any]:
-    model = _load_model()
-    arch_manifest = ensure_architecture_diagrams(model)
-    param_count = sum(p.numel() for p in model.parameters())
+    live_attacker, army_selector, defender_selector, ckpt = load_all_models(DEVICE)
+    arch_manifest = ensure_architecture_diagrams(live_attacker)
+    live_params = sum(p.numel() for p in live_attacker.parameters())
+    army_sel_params = sum(p.numel() for p in army_selector.parameters())
+    def_sel_params = sum(p.numel() for p in defender_selector.parameters())
+
     ckpt_meta: Dict[str, Any] = {}
-    if os.path.exists(DEFAULT_CKPT_PATH):
-        try:
-            ckpt = torch.load(DEFAULT_CKPT_PATH, map_location="cpu", weights_only=False)
-            ckpt_meta = {
-                "episode": ckpt.get("episode", 0),
-                "best_pct": ckpt.get("best_pct", 0),
-                "best_stars": ckpt.get("best_stars", 0),
-                "best_reward": round(float(ckpt.get("best_reward", 0.0)), 3),
-            }
-        except Exception:
-            pass
+    if ckpt:
+        ckpt_meta = {
+            "episode": ckpt.get("episode", 0),
+            "best_pct": ckpt.get("best_pct", 0),
+            "best_stars": ckpt.get("best_stars", 0),
+            "best_reward": round(float(ckpt.get("best_reward", 0.0)), 3),
+        }
+
+    if _training_state["selector_matrices"] is None:
+        _training_state["selector_matrices"] = compute_selector_matrices(
+            army_selector,
+            defender_selector,
+            DEVICE,
+            history=_training_state["history"],
+        )
 
     return {
         "online": True,
         "device": str(DEVICE),
         "device_name": DEVICE_NAME,
-        "param_count": param_count,
+        "param_count": live_params + army_sel_params + def_sel_params,
+        "models_info": {
+            "attacker_selector": {
+                "name": "Attacker 1: Army Selector (8×50×50 → 3 Armies)",
+                "params": army_sel_params,
+            },
+            "live_attacker": {
+                "name": "Attacker 2: Live Controller (CNN+64d → 7×10×50×50)",
+                "params": live_params,
+            },
+            "defender_selector": {
+                "name": "Defender: Village Selector (64d Army → 5 Villages)",
+                "params": def_sel_params,
+            },
+        },
+        "saved_models": list_trained_models(),
         "architecture_hash": arch_manifest.get("architecture_hash"),
         "architecture_files": arch_manifest.get("files"),
         "checkpoint": ckpt_meta,
         "training": _training_state,
     }
+
+
+@app.get("/api/ai/models")
+def get_saved_models() -> Dict[str, Any]:
+    return {"models": list_trained_models()}
+
+
+@app.post("/api/ai/models/rename")
+def rename_model(req: RenameModelRequest) -> Dict[str, Any]:
+    try:
+        updated_models = rename_trained_model(req.old_filename, req.new_filename)
+        new_name = sanitize_model_filename(req.new_filename)
+        with _train_lock:
+            if _training_state.get("resume_from") == req.old_filename:
+                _training_state["resume_from"] = new_name
+            if _training_state.get("saved_filename") == req.old_filename:
+                _training_state["saved_filename"] = new_name
+        return {"success": True, "models": updated_models, "new_filename": new_name}
+    except Exception as e:
+        return {"success": False, "error": str(e), "models": list_trained_models()}
+
+
+@app.get("/api/ai/presets/armies")
+def get_army_presets() -> Dict[str, Any]:
+    all_armies, custom_armies = get_all_army_presets()
+    return {"all_armies": all_armies, "custom_armies": custom_armies}
+
+
+@app.post("/api/ai/presets/armies")
+def add_custom_army_preset(army: Dict[str, Any]) -> Dict[str, Any]:
+    updated_custom = save_custom_army(army)
+    all_armies, _ = get_all_army_presets()
+    return {"success": True, "custom_armies": updated_custom, "all_armies": all_armies}
+
+
+@app.delete("/api/ai/presets/armies/{name}")
+def remove_custom_army_preset(name: str) -> Dict[str, Any]:
+    updated_custom = delete_custom_army(name)
+    all_armies, _ = get_all_army_presets()
+    return {"success": True, "custom_armies": updated_custom, "all_armies": all_armies}
 
 
 @app.get("/api/ai/architecture.svg")
@@ -123,6 +257,25 @@ def get_architecture_svg(detail: str = "overview") -> FileResponse:
     return FileResponse(os.path.join(repo_root, rel_path), media_type="image/svg+xml")
 
 
+@app.post("/api/ai/architecture/preview")
+def preview_custom_architecture(req: ArchitecturePreviewRequest) -> Dict[str, Any]:
+    try:
+        cfg = req.arch_config or get_default_arch_config()
+        analysis = analyze_architecture(cfg)
+        svg_str: Optional[str] = None
+        if req.include_svg:
+            model = CoCActorCritic(in_channels=8, army_context_dim=64, arch_config=cfg)
+            depth = 3 if req.detail == "detailed" else 2
+            direction = "TB" if req.direction == "TB" else "LR"
+            svg_str = render_custom_torchview_svg(
+                model, input_size=(1, 8, 50, 50), depth=depth, graph_dir=direction
+            )
+        return {**analysis, "svg": svg_str}
+    except Exception as e:
+        return {"valid": False, "error": str(e)}
+
+
+
 @app.post("/api/ai/inspect")
 def inspect_policy_and_tensors(req: InspectRequest) -> Dict[str, Any]:
     env = CoCAttackerEnv(
@@ -131,17 +284,37 @@ def inspect_policy_and_tensors(req: InspectRequest) -> Dict[str, Any]:
         ticks_per_step=5,
     )
     obs_np, info = env.reset()
-    model = _load_model()
+    live_attacker, army_selector, defender_selector, atk_ckpt = load_all_models(
+        DEVICE, attacker_model_file=req.model_file
+    )
+    live_attacker.eval()
+    army_selector.eval()
+    defender_selector.eval()
 
     obs_t = torch.as_tensor(obs_np, dtype=torch.float32, device=DEVICE).unsqueeze(0)
-    masks_t = masks_np_to_torch(info["action_masks"], DEVICE, prevent_early_noop=True)
+    army_ctx_t = torch.as_tensor(
+        info["army_context"], dtype=torch.float32, device=DEVICE
+    ).unsqueeze(0)
+    masks_t = masks_np_to_torch(info["action_masks"], DEVICE, prevent_early_noop=False)
 
     with torch.no_grad():
-        action_t, _, entropy_t, value_t, diag = model.get_action_and_value(
-            obs_t, masks=masks_t
+        action_t, _, entropy_t, value_t, diag = live_attacker.get_action_and_value(
+            obs_t, masks=masks_t, army_context=army_ctx_t
+        )
+        chosen_army_t, _, _, army_val_t, army_probs_t = army_selector.get_action_and_value(
+            obs_t, deterministic=True
+        )
+        chosen_vil_t, _, _, def_val_t, vil_probs_t = defender_selector.get_action_and_value(
+            army_ctx_t, deterministic=True
         )
 
     act = action_t.squeeze(0).cpu().tolist()
+    army_idx = int(chosen_army_t.item())
+    vil_idx = int(chosen_vil_t.item())
+
+    model_armies = atk_ckpt.get("armies", [])
+    model_villages = atk_ckpt.get("villages", [])
+
     return {
         "channels": obs_np.tolist(),
         "tile_heatmap": diag["tile_heatmap"].squeeze(0).cpu().tolist(),
@@ -155,41 +328,143 @@ def inspect_policy_and_tensors(req: InspectRequest) -> Dict[str, Any]:
             "tile_x": int(act[2]),
             "tile_y": int(act[3]),
         },
+        "model_meta": {
+            "filename": req.model_file or "latest_attacker.pt",
+            "episode": int(atk_ckpt.get("episode", 0)),
+            "best_pct": int(atk_ckpt.get("best_pct", 0)),
+            "best_stars": int(atk_ckpt.get("best_stars", 0)),
+            "best_reward": round(float(atk_ckpt.get("best_reward", 0.0)), 2),
+            "hyperparams": atk_ckpt.get("hyperparams", {}),
+            "armies": model_armies,
+            "villages": model_villages,
+            "army_names": [a.get("name") for a in model_armies if isinstance(a, dict)],
+            "village_names": [v.get("name") for v in model_villages if isinstance(v, dict)],
+        },
+        "attacker_selector": {
+            "recommended_army_idx": army_idx,
+            "recommended_army_name": (
+                model_armies[army_idx]["name"]
+                if army_idx < len(model_armies) and isinstance(model_armies[army_idx], dict) and "name" in model_armies[army_idx]
+                else ARMY_SHORT_NAMES[army_idx % len(ARMY_SHORT_NAMES)]
+            ),
+            "army_probs": [round(float(x), 4) for x in army_probs_t.squeeze(0).cpu().tolist()],
+            "value": round(float(army_val_t.item()), 3),
+        },
+        "defender_selector": {
+            "recommended_village_idx": vil_idx,
+            "recommended_village_name": (
+                model_villages[vil_idx]["name"]
+                if vil_idx < len(model_villages) and isinstance(model_villages[vil_idx], dict) and "name" in model_villages[vil_idx]
+                else VILLAGE_SHORT_NAMES[vil_idx % len(VILLAGE_SHORT_NAMES)]
+            ),
+            "village_probs": [round(float(x), 4) for x in vil_probs_t.squeeze(0).cpu().tolist()],
+            "value": round(float(def_val_t.item()), 3),
+        },
     }
+
+
+@app.post("/api/ai/rollout")
+def run_trained_model_rollout(req: RolloutRequest) -> Dict[str, Any]:
+    return simulate_model_rollout(
+        model_file=req.model_file,
+        layout_json=req.layout_json,
+        army_json=req.army_json,
+        ticks_per_step=req.ticks_per_step,
+        deterministic=req.deterministic,
+    )
 
 
 @app.post("/api/ai/train/start")
 def start_ppo_training(req: TrainStartRequest) -> Dict[str, Any]:
     with _train_lock:
         if _training_state["is_training"]:
-            return {"started": False, "reason": "Training already in progress", "training": _training_state}
+            return {
+                "started": False,
+                "reason": "Training already in progress",
+                "training": _training_state,
+            }
         _training_state["is_training"] = True
         _training_state["stop_requested"] = False
+        _training_state["training_mode"] = req.training_mode
+        _training_state["matchup_mode"] = req.matchup_mode
+        _training_state["resume_from"] = req.resume_from or "scratch"
+        _training_state["active_model"] = (
+            "live_attacker" if req.training_mode == "cycle" else req.training_mode
+        )
         _training_state["current_episode"] = 0
         _training_state["total_episodes"] = req.episodes
+        _training_state["co_evolve_defender"] = req.co_evolve_defender
+        _training_state["defender_gen"] = 0
+        _training_state["defender_fitness"] = 0.0
+        _training_state["evolved_layout"] = None
         _training_state["history"] = []
 
     def _worker() -> None:
         def _on_ep(rec: Dict[str, Any]) -> bool:
-            _training_state["current_episode"] = rec["episode"]
-            _training_state["best_pct"] = rec["best_pct"]
-            _training_state["best_stars"] = rec["best_stars"]
-            _training_state["history"].append(rec)
+            ep_copy = dict(rec)
+            evolved = ep_copy.pop("evolved_layout", None)
+            _training_state["current_episode"] = ep_copy["episode"]
+            _training_state["cumulative_episode"] = ep_copy.get(
+                "cumulative_episode", ep_copy["episode"]
+            )
+            _training_state["active_model"] = ep_copy.get("active_model", "live_attacker")
+            _training_state["best_pct"] = ep_copy["best_pct"]
+            _training_state["best_stars"] = ep_copy["best_stars"]
+            _training_state["defender_gen"] = ep_copy.get("defender_gen", 0)
+            _training_state["defender_fitness"] = ep_copy.get("defender_fitness", 0.0)
+            if evolved is not None:
+                _training_state["evolved_layout"] = evolved
+            _training_state["history"].append(ep_copy)
+
+            if ep_copy["episode"] % 2 == 0 or ep_copy["episode"] == ep_copy["total_episodes"]:
+                try:
+                    _, army_sel, def_sel, _ = load_all_models(DEVICE)
+                    _training_state["selector_matrices"] = compute_selector_matrices(
+                        army_sel, def_sel, DEVICE, history=_training_state["history"]
+                    )
+                except Exception:
+                    pass
+
             return not bool(_training_state["stop_requested"])
 
         try:
-            train_pytorch_ppo(
+            res = train_pytorch_ppo(
                 episodes=req.episodes,
+                batch_episodes=req.batch_episodes,
+                minibatch_size=req.minibatch_size,
+                ppo_epochs=req.ppo_epochs,
                 lr=req.lr,
                 ticks_per_step=req.ticks_per_step,
+                training_mode=req.training_mode,
+                matchup_mode=req.matchup_mode,
+                resume_from=req.resume_from,
+                save_name=req.save_name,
+                co_evolve_defender=req.co_evolve_defender,
                 layout_json=req.layout_json,
                 army_json=req.army_json,
+                armies_json=req.armies_json,
+                villages_json=req.villages_json,
+                arch_config=req.arch_config,
                 on_episode_callback=_on_ep,
             )
+            if "selector_matrices" in res:
+                _training_state["selector_matrices"] = res["selector_matrices"]
+            if "saved_filename" in res:
+                _training_state["saved_filename"] = res["saved_filename"]
+            if "armies" in res:
+                _training_state["armies"] = res["armies"]
+            if "villages" in res:
+                _training_state["villages"] = res["villages"]
         finally:
             with _train_lock:
                 _training_state["is_training"] = False
                 _training_state["stop_requested"] = False
+                try:
+                    os.makedirs(os.path.dirname(_LAST_STATE_PATH), exist_ok=True)
+                    with open(_LAST_STATE_PATH, "w", encoding="utf-8") as _f:
+                        json.dump(_training_state, _f)
+                except Exception:
+                    pass
 
     threading.Thread(target=_worker, daemon=True).start()
     return {"started": True, "training": _training_state}
