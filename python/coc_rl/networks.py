@@ -60,7 +60,14 @@ class CoCSpatialEncoder(nn.Module):
         # Dilation=2 lets each tile's feature vector see across TH18 wall compartments and
         # overlapping defense ranges without downsampling the 50x50 coordinate grid.
         self.context_res = nn.Sequential(
-            nn.Conv2d(spatial_dim, spatial_dim, kernel_size=3, padding=2, dilation=2, bias=False),
+            nn.Conv2d(
+                spatial_dim,
+                spatial_dim,
+                kernel_size=3,
+                padding=2,
+                dilation=2,
+                bias=False,
+            ),
             nn.GroupNorm(8, spatial_dim),
             nn.SiLU(),
             nn.Conv2d(spatial_dim, spatial_dim, kernel_size=3, padding=1, bias=False),
@@ -138,7 +145,7 @@ class CoCActorCritic(nn.Module):
             embed_dim=256,
         )
         spatial_dim = self.encoder.spatial_dim  # 64
-        embed_dim = self.encoder.embed_dim      # 256
+        embed_dim = self.encoder.embed_dim  # 256
 
         # Army inventory & composition projection (64-D -> 256-D)
         self.army_context_proj = nn.Sequential(
@@ -231,7 +238,9 @@ class CoCActorCritic(nn.Module):
         action: Optional[torch.Tensor] = None,
         deterministic: bool = False,
         army_context: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
+    ) -> Tuple[
+        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]
+    ]:
         """
         Samples or evaluates a factorized action `[slot_type, slot_idx, tile_x, tile_y, frac_bin]`
         with invalid-action logit masking, returning `(action, log_prob, entropy, value, diagnostics)`.
@@ -267,7 +276,9 @@ class CoCActorCritic(nn.Module):
 
         type_dist = Categorical(logits=type_logits)
         if action is None:
-            chosen_type = type_logits.argmax(dim=-1) if deterministic else type_dist.sample()
+            chosen_type = (
+                type_logits.argmax(dim=-1) if deterministic else type_dist.sample()
+            )
         else:
             chosen_type = action[:, 0].long()
 
@@ -284,26 +295,23 @@ class CoCActorCritic(nn.Module):
             ]
             all_false = ~idx_mask.any(dim=-1, keepdim=True)
             idx_mask = idx_mask | (
-                all_false & F.one_hot(torch.zeros(B, dtype=torch.long, device=device), 10).bool()
+                all_false
+                & F.one_hot(torch.zeros(B, dtype=torch.long, device=device), 10).bool()
             )
             idx_logits = idx_logits.masked_fill(~idx_mask, NEG_INF)
 
         idx_dist = Categorical(logits=idx_logits)
         if action is None:
-            chosen_idx = idx_logits.argmax(dim=-1) if deterministic else idx_dist.sample()
+            chosen_idx = (
+                idx_logits.argmax(dim=-1) if deterministic else idx_dist.sample()
+            )
         else:
             chosen_idx = action[:, 1].long()
 
         # 3. Troop Deployment Fraction Distribution (bins in [0.0, 0.25, 0.50, 0.75, 1.00])
         idx_onehot = F.one_hot(chosen_idx.clamp(0, 9), num_classes=10).float()
         frac_cond_emb = torch.cat([cond_emb, idx_onehot], dim=-1)
-        wave_prior = torch.tensor(
-            [-0.8, 0.7, 0.9, 0.4, 0.0], device=device, dtype=obs.dtype
-        )
-        frac_logits = (
-            1.4 * torch.tanh(self.deploy_fraction_head(frac_cond_emb) / 3.0)
-            + wave_prior
-        )
+        frac_logits = 1.4 * torch.tanh(self.deploy_fraction_head(frac_cond_emb) / 3.0)
         frac_dist = Categorical(logits=frac_logits)
         if action is None:
             chosen_frac_bin = (
@@ -320,19 +328,14 @@ class CoCActorCritic(nn.Module):
         )
         raw_tile_logits = self.tile_conv_head(fused_spatial).reshape(B, 2500)
         is_spell = (chosen_type == 6).float().unsqueeze(-1)
-        threat_field = (
-            0.6 * obs[:, 0:1] + 1.8 * obs[:, 1:2] + 6.0 * obs[:, 2:3]
-        )
-        breach_stage1 = F.avg_pool2d(
-            threat_field, kernel_size=15, stride=1, padding=7
-        )
+        threat_field = 0.6 * obs[:, 0:1] + 1.8 * obs[:, 1:2] + 6.0 * obs[:, 2:3]
+        breach_stage1 = F.avg_pool2d(threat_field, kernel_size=15, stride=1, padding=7)
         breach_prox = F.avg_pool2d(
             breach_stage1, kernel_size=15, stride=1, padding=7
         ).reshape(B, 2500)
         non_th_defenses = obs[:, 1:2] * (1.0 - obs[:, 2:3])
         combat_focus = F.avg_pool2d(
-            1.2 * non_th_defenses
-            + 3.0 * (obs[:, 5:6] + obs[:, 6:7]),
+            1.2 * non_th_defenses + 3.0 * (obs[:, 5:6] + obs[:, 6:7]),
             kernel_size=7,
             stride=1,
             padding=3,
@@ -356,7 +359,9 @@ class CoCActorCritic(nn.Module):
             near_buildings = (
                 F.max_pool2d(buildings_alive, kernel_size=7, stride=1, padding=3) > 0.01
             )
-            active_combat_zone = (near_allies & near_buildings & not_th_halo).reshape(B, 2500)
+            active_combat_zone = (near_allies & near_buildings & not_th_halo).reshape(
+                B, 2500
+            )
             has_combat_tiles = active_combat_zone.any(dim=-1, keepdim=True)
             fallback_zone = (near_allies & near_buildings).reshape(B, 2500)
             has_fallback = fallback_zone.any(dim=-1, keepdim=True)
@@ -379,7 +384,9 @@ class CoCActorCritic(nn.Module):
 
         tile_dist = Categorical(logits=tile_logits)
         if action is None:
-            chosen_tile = tile_logits.argmax(dim=-1) if deterministic else tile_dist.sample()
+            chosen_tile = (
+                tile_logits.argmax(dim=-1) if deterministic else tile_dist.sample()
+            )
             tile_x = chosen_tile % 50
             tile_y = torch.div(chosen_tile, 50, rounding_mode="floor")
             out_action = torch.stack(
@@ -394,11 +401,17 @@ class CoCActorCritic(nn.Module):
         # 5. Joint Log-Probability, Entropy, and Critic Value
         # Sub-actions only contribute to log_prob and entropy when active for `chosen_type`.
         uses_idx = (
-            (chosen_type == 1) | (chosen_type == 2) | (chosen_type == 3) | (chosen_type == 6)
+            (chosen_type == 1)
+            | (chosen_type == 2)
+            | (chosen_type == 3)
+            | (chosen_type == 6)
         ).float()
         uses_frac = (chosen_type == 1).float()
         uses_tile = (
-            (chosen_type == 1) | (chosen_type == 2) | (chosen_type == 4) | (chosen_type == 6)
+            (chosen_type == 1)
+            | (chosen_type == 2)
+            | (chosen_type == 4)
+            | (chosen_type == 6)
         ).float()
 
         log_prob = (
@@ -439,4 +452,3 @@ class CoCActorCritic(nn.Module):
             "deploy_fraction": frac_bins_tensor[chosen_frac_bin].detach(),
         }
         return out_action, log_prob, entropy, value, diagnostics
-

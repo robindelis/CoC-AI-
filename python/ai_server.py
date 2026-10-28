@@ -159,9 +159,9 @@ def get_ai_status() -> Dict[str, Any]:
             "best_reward": round(float(ckpt.get("best_reward", 0.0)), 3),
         }
 
-    if _training_state.get("matchup_stats") is None:
+    if not _training_state.get("matchup_stats") or not _training_state["matchup_stats"].get("army_stats"):
         _training_state["matchup_stats"] = compute_matchup_stats(
-            history=_training_state["history"],
+            history=_training_state.get("history", []),
         )
 
     return {

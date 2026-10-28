@@ -6,7 +6,7 @@ status: "superseded"
 total_episodes: 30102
 best_pct: 100
 best_stars: 3
-updated_at: "2026-10-28 19:44:04"
+updated_at: "2026-10-29 00:23:43"
 tags:
   - coc-rl
   - ppo
@@ -56,6 +56,8 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 | `5` | **Friendly Ground HP** | `min(sum(HP_ground) / 5000, 1.0)` | Allied ground troop mass and density |
 | `6` | **Friendly Air HP** | `min(sum(HP_air) / 5000, 1.0)` | Allied air troop mass and density |
 | `7` | **Active Spell Field** | `min(remaining_ticks / 300, 1.0)` | Active Rage, Heal, Freeze, Overgrowth aura |
+| `8` | **Allied Tactical Archetype** | `max phi(u) in [0, 1]` | Unit identity: Swarm (0.1) vs Ranged Core (0.6) vs Tank (0.7) vs Healer (0.81) vs Hero (0.98) |
+| `9` | **Enemy Tactical Archetype** | `max phi(u) in [0, 1]` | Defending CC, Heroes, Guardians, Ground Skeletons (0.10) vs Air Skeletons (0.28) |
 
 ---
 
@@ -72,7 +74,7 @@ The network parameterizes a factorized multi-discrete policy:
 
 ## 3. Stacked CNN Architecture
 
-![Stacked CNN Computation Graph](../assets/architectures/v1_architecture.png)
+![Stacked CNN Computation Graph](../assets/architectures/v2_architecture.png)
 
 ---
 
@@ -94,10 +96,10 @@ $$R_t = 0.35 \cdot \Delta \%_{\text{destr}} + 15.0 \cdot \Delta \text{HP}_{\text
 
 | Attack Composition | **Central Box** | **Offset Diamond** | **Anti-Hydra Ring** | **Anti-Fireball** | **Compact Teaser** | **Avg Destruction** | **3★ Rate** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **TH18 Thrower + Healer + Totem Smash** | `72% (1★)` | `68% (2★)` | `66% (1★)` | `69% (1★)` | `67% (2★)` | **68.4%** | **0.0%** |
-| **TH18 Dragon Duke Charge Hydra** | `44% (0★)` | `57% (1★)` | `59% (1★)` | `63% (1★)` | `66% (2★)` | **57.8%** | **0.0%** |
-| **TH18 Fireball Super Bowler & Meteor Golem Smash** | `60% (1★)` | `51% (2★)` | `58% (1★)` | `54% (1★)` | `59% (2★)` | **56.4%** | **0.0%** |
-| **Base Defense Rate (Avg)** | **58.7% (0.67★)** | **58.7% (1.67★)** | **61.0% (1.0★)** | **62.0% (1.0★)** | **64.0% (2.0★)** | **Overall: 60.9%** | — |
+| **TH18 Thrower + Healer + Totem Smash** | `28% (0★)` | `33% (1★)` | `40% (1★)` | `28% (0★)` | `39% (1★)` | **33.6%** | **0.0%** |
+| **TH18 Dragon Duke Charge Hydra** | `26% (0★)` | `18% (0★)` | `34% (0★)` | `36% (0★)` | `52% (2★)` | **33.2%** | **0.0%** |
+| **TH18 Fireball Super Bowler & Meteor Golem Smash** | `15% (0★)` | `16% (0★)` | `32% (0★)` | `29% (0★)` | `28% (1★)` | **24.0%** | **0.0%** |
+| **Base Defense Rate (Avg)** | **23.0% (0.0★)** | **22.3% (0.33★)** | **35.3% (0.33★)** | **31.0% (0.0★)** | **39.7% (1.33★)** | **Overall: 30.3%** | — |
 
 ---
 

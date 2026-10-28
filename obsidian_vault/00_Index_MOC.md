@@ -39,5 +39,6 @@ Open the interactive 2D whiteboard visualizer presenting side-by-side architectu
 ### 2. Spatial & Tensor Encodings (`encodings/`)
 - [[encodings/Unit_Type_Spatial_Encoding|Hierarchical Tactical-Archetype Spatial Encoding (Ch 8 & Ch 9)]]
 
-### 3. Empirical Benchmark Logs (`experiments/`)
+### 3. Empirical Benchmark Logs & AI Training Diagnostics (`experiments/`)
 - [[experiments/Experiment_Log_And_Benchmarks|Master Experiment Log & Model Checkpoint Comparison]]
+- [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Telemetry Architecture & PPO Pathology Fixes]]

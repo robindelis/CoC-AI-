@@ -17,11 +17,14 @@ import {
   stopAIPpoTraining,
 } from './aiClient';
 import {
+  AIArmyStat,
   AIInspectResponse,
+  AIMatchupStats,
   AIRolloutResponse,
   AIRolloutStep,
   AIServerStatus,
   AITrainingEpisodeRecord,
+  AIVillageStat,
   MatchupMode,
   SavedModelMeta,
   SLOT_TYPE_LABELS,
@@ -57,6 +60,9 @@ interface AIStudioViewProps {
   ) => void;
 }
 
+const ARMY_SHORT = ['Thrower Smash', 'Duke Hydra', 'Fireball Bowlers'];
+const ARMY_COLORS = ['#38bdf8', '#4ade80', '#facc15'];
+
 const VILLAGE_SHORT = [
   'Central Box',
   'Offset Diamond',
@@ -64,6 +70,169 @@ const VILLAGE_SHORT = [
   'Anti-Fireball',
   'Teaser Killzone',
 ];
+const VILLAGE_COLORS = ['#38bdf8', '#f87171', '#c084fc', '#fb923c', '#4ade80'];
+
+interface EntityTrendBin {
+  ep: number;
+  values: number[];
+}
+
+function binEntityPerformance(
+  history: AITrainingEpisodeRecord[],
+  key: 'army_idx' | 'village_idx',
+  numEntities: number,
+  maxBins = 35
+): EntityTrendBin[] {
+  if (history.length === 0) return [];
+  const n = history.length;
+  const binSize = Math.max(1, Math.ceil(n / maxBins));
+  const bins: EntityTrendBin[] = [];
+
+  const entityPcts: number[][] = Array.from({ length: numEntities }, () => []);
+
+  for (let i = 0; i < n; i += binSize) {
+    const slice = history.slice(i, Math.min(n, i + binSize));
+    for (const rec of slice) {
+      const idx = rec[key];
+      if (idx != null && idx >= 0 && idx < numEntities) {
+        entityPcts[idx].push(rec.destruction_pct);
+      }
+    }
+
+    const values = entityPcts.map((arr) => {
+      if (arr.length === 0) return 0;
+      const recent = arr.slice(-15);
+      return Number(
+        (recent.reduce((a, b) => a + b, 0) / recent.length).toFixed(1)
+      );
+    });
+
+    bins.push({
+      ep: slice[slice.length - 1].episode,
+      values,
+    });
+  }
+
+  return bins;
+}
+
+function computeLocalMatchupStats(
+  history: AITrainingEpisodeRecord[],
+  layouts: VillageLayout[],
+  armies: ArmyLoadout[]
+): AIMatchupStats {
+  const armyNames = [
+    'Thrower + Healer Smash',
+    'Dragon Duke Hydra',
+    'Fireball Super Bowlers',
+  ];
+  const villageNames = [
+    'Central Box Legends',
+    'Offset Diamond (Hot Candle)',
+    'Anti-Hydra Air Ring',
+    'Anti-Fireball Wide Spread',
+    'Teaser War Killzone',
+  ];
+  const totalEps = history.length;
+
+  const armyStats: AIArmyStat[] = armyNames.map((name, idx) => {
+    const full = armies[idx]?.name ?? name;
+    const recs = history.filter((r) => r.army_idx === idx);
+    const n = recs.length;
+    const recentRecs = recs.slice(-50);
+    const avgPct =
+      n > 0
+        ? Number((recs.reduce((a, b) => a + b.destruction_pct, 0) / n).toFixed(1))
+        : 0;
+    const recentPct =
+      recentRecs.length > 0
+        ? Number(
+            (
+              recentRecs.reduce((a, b) => a + b.destruction_pct, 0) /
+              recentRecs.length
+            ).toFixed(1)
+          )
+        : avgPct;
+    const peak = recs.reduce((m, e) => Math.max(m, e.destruction_pct), 0);
+    const avgStars =
+      n > 0
+        ? Number((recs.reduce((a, b) => a + b.stars, 0) / n).toFixed(2))
+        : 0;
+    const avgReward =
+      n > 0
+        ? Number((recs.reduce((a, b) => a + (b.reward ?? 0), 0) / n).toFixed(2))
+        : 0;
+    const triples = recs.filter((e) => e.stars === 3).length;
+    const usagePct =
+      totalEps > 0
+        ? Number(((n / totalEps) * 100).toFixed(1))
+        : Number((100 / Math.max(1, armyNames.length)).toFixed(1));
+
+    return {
+      army_idx: idx,
+      name: ARMY_SHORT[idx] ?? name,
+      full_name: full,
+      episodes: n,
+      usage_pct: usagePct,
+      avg_pct: avgPct,
+      recent_avg_pct: recentPct,
+      peak_pct: peak,
+      avg_stars: avgStars,
+      avg_reward: avgReward,
+      triple_rate: n > 0 ? Number(((triples / n) * 100).toFixed(1)) : 0,
+    };
+  });
+
+  const villageStats: AIVillageStat[] = villageNames.map((name, idx) => {
+    const full = layouts[idx]?.name ?? name;
+    const recs = history.filter((r) => r.village_idx === idx);
+    const n = recs.length;
+    const recentRecs = recs.slice(-50);
+    const avgPct =
+      n > 0
+        ? Number((recs.reduce((a, b) => a + b.destruction_pct, 0) / n).toFixed(1))
+        : 0;
+    const recentPct =
+      recentRecs.length > 0
+        ? Number(
+            (
+              recentRecs.reduce((a, b) => a + b.destruction_pct, 0) /
+              recentRecs.length
+            ).toFixed(1)
+          )
+        : avgPct;
+    const peak = recs.reduce((m, e) => Math.max(m, e.destruction_pct), 0);
+    const avgStars =
+      n > 0
+        ? Number((recs.reduce((a, b) => a + b.stars, 0) / n).toFixed(2))
+        : 0;
+    const triples = recs.filter((e) => e.stars === 3).length;
+    const usagePct =
+      totalEps > 0
+        ? Number(((n / totalEps) * 100).toFixed(1))
+        : Number((100 / Math.max(1, villageNames.length)).toFixed(1));
+
+    return {
+      village_idx: idx,
+      name: VILLAGE_SHORT[idx] ?? name,
+      full_name: full,
+      episodes: n,
+      usage_pct: usagePct,
+      avg_pct: avgPct,
+      recent_avg_pct: recentPct,
+      peak_pct: peak,
+      avg_stars: avgStars,
+      triple_rate: n > 0 ? Number(((triples / n) * 100).toFixed(1)) : 0,
+    };
+  });
+
+  return {
+    armies: armyNames,
+    villages: villageNames,
+    army_stats: armyStats,
+    village_stats: villageStats,
+  };
+}
 
 interface BinnedPoint {
   epStart: number;
@@ -247,6 +416,8 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   const [fitYAxis, setFitYAxis] = useState<boolean>(false);
   const [mainChartRef, mainChartWidth] = useContainerWidth(960);
   const [pacingChartRef, pacingChartWidth] = useContainerWidth(380);
+  const [armyChartRef, armyChartWidth] = useContainerWidth(380);
+  const [villageChartRef, villageChartWidth] = useContainerWidth(380);
 
   // Army and Village Presets selection for Training
   const [allArmies, setAllArmies] = useState<ArmyLoadout[]>(() => catalog.preset_armies);
@@ -497,8 +668,23 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
 
   const isTraining = Boolean(serverStatus?.training?.is_training);
   const history = serverStatus?.training?.history ?? [];
-  const matchupStats = serverStatus?.training?.matchup_stats;
   const savedModels = serverStatus?.saved_models ?? [];
+
+  const matchupStats = useMemo(() => {
+    if (serverStatus?.training?.matchup_stats?.army_stats?.length) {
+      return serverStatus.training.matchup_stats;
+    }
+    return computeLocalMatchupStats(history, catalog.preset_layouts, allArmies);
+  }, [serverStatus?.training?.matchup_stats, history, catalog.preset_layouts, allArmies]);
+
+  const armyTrends = useMemo(
+    () => binEntityPerformance(history, 'army_idx', 3, 35),
+    [history]
+  );
+  const villageTrends = useMemo(
+    () => binEntityPerformance(history, 'village_idx', 5, 35),
+    [history]
+  );
 
   const binned = useMemo(() => binTrainingHistory(history, 75), [history]);
 
@@ -1401,10 +1587,99 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
         {/* BOTTOM 3-COLUMN LIVE ANALYTICS GRID */}
         <div className="ai-analytics-grid">
           {/* COL 1: ARMY USAGE & PERFORMANCE STATS */}
-          <section className="ai-card">
+          <section className="ai-card" ref={armyChartRef}>
             <div className="ai-card-header">
-              <h3>⚔️ Army Usage & Performance (3 Meta Armies)</h3>
+              <h3>⚔️ Army Performance (3 Meta Armies)</h3>
+              <div className="ai-chart-legend" style={{ fontSize: '0.72rem' }}>
+                {ARMY_SHORT.map((name, i) => (
+                  <span key={i} title={matchupStats.armies?.[i] ?? name}>
+                    <i className="ai-dot" style={{ background: ARMY_COLORS[i] }} />
+                    {name.split(' ')[0]}
+                  </span>
+                ))}
+              </div>
             </div>
+
+            <svg
+              viewBox={`0 0 ${armyChartWidth} 115`}
+              className="ai-svg-chart"
+              style={{ height: 115, marginBottom: 8 }}
+            >
+              {[25, 50, 75, 100].map((pct) => {
+                const y = 115 - 10 - (pct / 100) * (115 - 20);
+                return (
+                  <g key={pct}>
+                    <line
+                      x1={32}
+                      y1={y}
+                      x2={armyChartWidth - 14}
+                      y2={y}
+                      stroke="#1e293b"
+                      strokeDasharray={pct === 100 ? undefined : '3 3'}
+                    />
+                    <text x={4} y={y + 3} fill="#64748b" fontSize="8.5" fontFamily="monospace">
+                      {pct}%
+                    </text>
+                  </g>
+                );
+              })}
+              {armyTrends.length > 0 ? (
+                <>
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <polyline
+                      key={i}
+                      fill="none"
+                      stroke={ARMY_COLORS[i]}
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      points={buildLinePoints(
+                        armyTrends.map((b) => b.values[i]),
+                        armyChartWidth,
+                        115,
+                        0,
+                        100,
+                        32,
+                        10
+                      )}
+                    />
+                  ))}
+                  {[0, 0.5, 1].map((frac, idx) => {
+                    const bIdx = Math.min(
+                      armyTrends.length - 1,
+                      Math.floor(frac * (armyTrends.length - 1))
+                    );
+                    const b = armyTrends[bIdx];
+                    const x = 32 + frac * (armyChartWidth - 46);
+                    return (
+                      <text
+                        key={idx}
+                        x={x}
+                        y={112}
+                        textAnchor="middle"
+                        fill="#64748b"
+                        fontSize="8.5"
+                        fontFamily="monospace"
+                      >
+                        Ep {b.ep}
+                      </text>
+                    );
+                  })}
+                </>
+              ) : (
+                <text
+                  x={armyChartWidth / 2}
+                  y="60"
+                  textAnchor="middle"
+                  fill="#64748b"
+                  fontSize="11"
+                  fontFamily="monospace"
+                >
+                  Start training to stream Army mastery curves
+                </text>
+              )}
+            </svg>
+
             <table className="ai-matrix-table">
               <thead>
                 <tr>
@@ -1420,7 +1695,12 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
               <tbody>
                 {(matchupStats?.army_stats ?? []).map((st) => (
                   <tr key={st.army_idx}>
-                    <td title={st.full_name}>{st.name}</td>
+                    <td title={st.full_name}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <i className="ai-dot" style={{ background: ARMY_COLORS[st.army_idx] ?? '#facc15' }} />
+                        {st.name}
+                      </span>
+                    </td>
                     <td style={{ color: '#38bdf8', fontWeight: 700 }}>
                       {st.usage_pct ?? 0}%
                     </td>
@@ -1440,10 +1720,99 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
           </section>
 
           {/* COL 2: VILLAGE MATCHUP STATS */}
-          <section className="ai-card">
+          <section className="ai-card" ref={villageChartRef}>
             <div className="ai-card-header">
-              <h3>🏰 Village Matchup Performance (5 Villages)</h3>
+              <h3>🏰 Village Performance (5 Villages)</h3>
+              <div className="ai-chart-legend" style={{ fontSize: '0.72rem' }}>
+                {VILLAGE_SHORT.map((name, i) => (
+                  <span key={i} title={matchupStats.villages?.[i] ?? name}>
+                    <i className="ai-dot" style={{ background: VILLAGE_COLORS[i] }} />
+                    V{i + 1}
+                  </span>
+                ))}
+              </div>
             </div>
+
+            <svg
+              viewBox={`0 0 ${villageChartWidth} 115`}
+              className="ai-svg-chart"
+              style={{ height: 115, marginBottom: 8 }}
+            >
+              {[25, 50, 75, 100].map((pct) => {
+                const y = 115 - 10 - (pct / 100) * (115 - 20);
+                return (
+                  <g key={pct}>
+                    <line
+                      x1={32}
+                      y1={y}
+                      x2={villageChartWidth - 14}
+                      y2={y}
+                      stroke="#1e293b"
+                      strokeDasharray={pct === 100 ? undefined : '3 3'}
+                    />
+                    <text x={4} y={y + 3} fill="#64748b" fontSize="8.5" fontFamily="monospace">
+                      {pct}%
+                    </text>
+                  </g>
+                );
+              })}
+              {villageTrends.length > 0 ? (
+                <>
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <polyline
+                      key={i}
+                      fill="none"
+                      stroke={VILLAGE_COLORS[i]}
+                      strokeWidth="2.0"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      points={buildLinePoints(
+                        villageTrends.map((b) => b.values[i]),
+                        villageChartWidth,
+                        115,
+                        0,
+                        100,
+                        32,
+                        10
+                      )}
+                    />
+                  ))}
+                  {[0, 0.5, 1].map((frac, idx) => {
+                    const bIdx = Math.min(
+                      villageTrends.length - 1,
+                      Math.floor(frac * (villageTrends.length - 1))
+                    );
+                    const b = villageTrends[bIdx];
+                    const x = 32 + frac * (villageChartWidth - 46);
+                    return (
+                      <text
+                        key={idx}
+                        x={x}
+                        y={112}
+                        textAnchor="middle"
+                        fill="#64748b"
+                        fontSize="8.5"
+                        fontFamily="monospace"
+                      >
+                        Ep {b.ep}
+                      </text>
+                    );
+                  })}
+                </>
+              ) : (
+                <text
+                  x={villageChartWidth / 2}
+                  y="60"
+                  textAnchor="middle"
+                  fill="#64748b"
+                  fontSize="11"
+                  fontFamily="monospace"
+                >
+                  Start training to stream Village defense curves
+                </text>
+              )}
+            </svg>
+
             <table className="ai-matrix-table">
               <thead>
                 <tr>
@@ -1460,7 +1829,10 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                 {(matchupStats?.village_stats ?? []).map((st) => (
                   <tr key={st.village_idx}>
                     <td title={st.full_name}>
-                      V{st.village_idx + 1}: {VILLAGE_SHORT[st.village_idx] ?? st.name}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <i className="ai-dot" style={{ background: VILLAGE_COLORS[st.village_idx] ?? '#4ade80' }} />
+                        V{st.village_idx + 1}: {VILLAGE_SHORT[st.village_idx] ?? st.name}
+                      </span>
                     </td>
                     <td style={{ color: '#4ade80', fontWeight: 700 }}>
                       {st.usage_pct ?? 0}%
