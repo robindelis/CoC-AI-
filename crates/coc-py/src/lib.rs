@@ -136,6 +136,8 @@ impl PyBattleEnv {
     ///                3 = Hero Ability `slot_idx`, 4 = Siege Machine, 5 = Pop Siege, 6 = Spell slot `slot_idx`
     /// - `tile_x`, `tile_y`: in `0..50`
     /// - `ticks_per_step`: how many simulation ticks (0.1s each) to advance per RL action
+    /// - `deploy_fraction`: in `[0.0, 1.0]`, fraction of remaining troops of `slot_idx` to deploy at once (0 -> min 1 troop, 0.5 -> half, 1.0 -> all)
+    #[pyo3(signature = (slot_type, slot_idx, tile_x, tile_y, ticks_per_step, deploy_fraction=1.0))]
     pub fn step_discrete(
         &mut self,
         slot_type: u8,
@@ -143,19 +145,27 @@ impl PyBattleEnv {
         tile_x: u8,
         tile_y: u8,
         ticks_per_step: u32,
+        deploy_fraction: f32,
     ) -> (Vec<f32>, f32, bool, u8, u8) {
         let x = (tile_x.min(49) as f32) + 0.5;
         let y = (tile_y.min(49) as f32) + 0.5;
+        let frac = deploy_fraction.clamp(0.0, 1.0);
 
         let action = match slot_type {
             1 => self
                 .engine
                 .remaining_troops
                 .get(slot_idx)
-                .map(|&(tid, _)| BattleAction::DeployTroop {
-                    troop_id: tid,
-                    x,
-                    y,
+                .map(|&(tid, avail)| {
+                    let count = ((avail as f32 * frac).round() as u16)
+                        .max(1)
+                        .min(avail.max(1));
+                    BattleAction::DeployTroopBatch {
+                        troop_id: tid,
+                        x,
+                        y,
+                        count,
+                    }
                 })
                 .unwrap_or(BattleAction::NoOp),
             2 => self

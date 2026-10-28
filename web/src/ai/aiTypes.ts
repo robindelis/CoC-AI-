@@ -161,6 +161,7 @@ export interface AIInspectResponse {
   tile_heatmap: number[][];
   slot_type_probs: number[];
   slot_idx_probs: number[];
+  deploy_fraction_probs?: number[];
   value: number;
   entropy: number;
   suggested_action: {
@@ -168,6 +169,7 @@ export interface AIInspectResponse {
     slot_idx: number;
     tile_x: number;
     tile_y: number;
+    deploy_fraction?: number;
   };
   attacker_selector?: {
     recommended_army_idx: number;
@@ -191,6 +193,8 @@ export interface AIRolloutStep {
   slot_idx: number;
   tile_x: number;
   tile_y: number;
+  deploy_fraction?: number;
+  deploy_count?: number;
   battle_action: unknown | null;
   value: number;
   entropy: number;
@@ -237,7 +241,9 @@ export const SPATIAL_CHANNELS = [
   { id: 5, label: 'Ch 5 • Ground Attackers', color: '#38bdf8' },
   { id: 6, label: 'Ch 6 • Air Attackers', color: '#c084fc' },
   { id: 7, label: 'Ch 7 • Active Spells', color: '#fb923c' },
-  { id: 8, label: 'Policy Tile Heatmap', color: '#f59e0b' },
+  { id: 8, label: 'Ch 8 • Allied Unit Types φ(u)', color: '#14b8a6' },
+  { id: 9, label: 'Ch 9 • Enemy CC / Hero / Skeleton Types φ(u)', color: '#f43f5e' },
+  { id: 10, label: 'Policy Tile Heatmap', color: '#f59e0b' },
 ] as const;
 
 export const SLOT_TYPE_LABELS = [

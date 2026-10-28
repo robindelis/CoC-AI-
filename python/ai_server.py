@@ -179,7 +179,7 @@ def get_ai_status() -> Dict[str, Any]:
                 "params": army_sel_params,
             },
             "live_attacker": {
-                "name": "Attacker 2: Live Controller (CNN+64d → 7×10×50×50)",
+                "name": "Attacker 2: Live Controller (CNN+64d → 7×10×5×50×50)",
                 "params": live_params,
             },
             "defender_selector": {
@@ -280,6 +280,10 @@ def inspect_policy_and_tensors(req: InspectRequest) -> Dict[str, Any]:
     army_idx = int(chosen_army_t.item())
     vil_idx = int(chosen_vil_t.item())
 
+    fraction_bins = (0.0, 0.25, 0.50, 0.75, 1.00)
+    frac_bin = int(act[4]) if len(act) >= 5 else 4
+    deploy_fraction = fraction_bins[max(0, min(len(fraction_bins) - 1, frac_bin))]
+
     model_armies = atk_ckpt.get("armies", [])
     model_villages = atk_ckpt.get("villages", [])
 
@@ -288,6 +292,11 @@ def inspect_policy_and_tensors(req: InspectRequest) -> Dict[str, Any]:
         "tile_heatmap": diag["tile_heatmap"].squeeze(0).cpu().tolist(),
         "slot_type_probs": diag["slot_type_probs"].squeeze(0).cpu().tolist(),
         "slot_idx_probs": diag["slot_idx_probs"].squeeze(0).cpu().tolist(),
+        "deploy_fraction_probs": (
+            diag["deploy_fraction_probs"].squeeze(0).cpu().tolist()
+            if "deploy_fraction_probs" in diag
+            else [0.1, 0.15, 0.25, 0.2, 0.3]
+        ),
         "value": round(float(value_t.item()), 4),
         "entropy": round(float(entropy_t.item()), 4),
         "suggested_action": {
@@ -295,6 +304,7 @@ def inspect_policy_and_tensors(req: InspectRequest) -> Dict[str, Any]:
             "slot_idx": int(act[1]),
             "tile_x": int(act[2]),
             "tile_y": int(act[3]),
+            "deploy_fraction": round(float(deploy_fraction), 2),
         },
         "model_meta": {
             "filename": req.model_file or "latest_attacker.pt",

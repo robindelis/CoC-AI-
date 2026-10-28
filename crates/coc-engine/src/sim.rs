@@ -322,6 +322,12 @@ pub enum VisualEvent {
 pub enum BattleAction {
     NoOp,
     DeployTroop { troop_id: TroopId, x: f32, y: f32 },
+    DeployTroopBatch {
+        troop_id: TroopId,
+        x: f32,
+        y: f32,
+        count: u16,
+    },
     DeployHero { hero_id: HeroId, x: f32, y: f32 },
     ActivateHeroAbility { hero_id: HeroId },
     DeploySiege { x: f32, y: f32 },
@@ -650,20 +656,14 @@ impl BattleEngine {
         match action {
             BattleAction::NoOp => true,
             BattleAction::DeployTroop { troop_id, x, y } => {
-                if !self.can_deploy_at(x, y) {
-                    return false;
-                }
-                let Some(entry) = self
-                    .remaining_troops
-                    .iter_mut()
-                    .find(|(id, c)| *id == troop_id && *c > 0)
-                else {
-                    return false;
-                };
-                entry.1 -= 1;
-                self.spawn_troop_unit(troop_id, Team::Attacker, x, y, None);
-                true
+                self.deploy_troop_count(troop_id, x, y, 1) > 0
             }
+            BattleAction::DeployTroopBatch {
+                troop_id,
+                x,
+                y,
+                count,
+            } => self.deploy_troop_count(troop_id, x, y, count) > 0,
             BattleAction::DeployHero { hero_id, x, y } => {
                 if !self.can_deploy_at(x, y) {
                     return false;
@@ -736,6 +736,44 @@ impl BattleEngine {
                 true
             }
         }
+    }
+
+    pub fn deploy_troop_count(
+        &mut self,
+        troop_id: TroopId,
+        x: f32,
+        y: f32,
+        requested_count: u16,
+    ) -> u16 {
+        if !self.can_deploy_at(x, y) {
+            return 0;
+        }
+        let Some(entry) = self
+            .remaining_troops
+            .iter_mut()
+            .find(|(id, c)| *id == troop_id && *c > 0)
+        else {
+            return 0;
+        };
+        let to_spawn = requested_count.max(1).min(entry.1);
+        entry.1 -= to_spawn;
+        for i in 0..to_spawn {
+            let angle = (i as f32) * 2.3999631; // golden angle spread
+            let r = if i == 0 {
+                0.0
+            } else {
+                0.15 * ((i as f32).sqrt()).min(0.42)
+            };
+            let sx = (x + r * angle.cos()).clamp(0.5, 49.5);
+            let sy = (y + r * angle.sin()).clamp(0.5, 49.5);
+            let (fx, fy) = if self.can_deploy_at(sx, sy) {
+                (sx, sy)
+            } else {
+                (x, y)
+            };
+            self.spawn_troop_unit(troop_id, Team::Attacker, fx, fy, None);
+        }
+        to_spawn
     }
 
     pub fn spawn_troop_unit(
@@ -6265,7 +6303,97 @@ impl BattleEngine {
         }
     }
 
-    /// Extracts an 8-channel 50x50 spatial tensor flattened `[8 * 50 * 50]` for RL agents:
+    /// Maps any live `SimUnit` (Attacker or Defender) to a structured Hierarchical Tactical-Archetype
+    /// signature `phi(u) in (0.0, 1.0]` suitable for 2D Convolutional Neural Network filters.
+    ///
+    /// Why not raw enum integers (1..65)?
+    /// 1. Arbitrary integer orderings impose meaningless linear magnitudes in `Conv2d` dot products.
+    /// 2. Summing or averaging integer IDs when multiple units share a tile corrupts unit identity.
+    /// 3. Ground Skeletons (`TrapMode::SkeletonGround` / Witch) and Air Skeletons (`TrapMode::SkeletonAir`)
+    ///    both use `TroopId::Skeleton` in `sim.rs`, differing by `u.is_air`.
+    ///
+    /// By grouping tactical roles into contiguous bands of `(0, 1]` and taking the per-tile maximum
+    /// `max_{u at (x,y)} phi(u)` (while Ch 5 & Ch 6 already carry summed Ground/Air HP density),
+    /// `Conv2d` kernels can cleanly separate swarms, ranged cores, heavy tanks, healers, heroes,
+    /// and strictly distinguish Ground Skeletons (`0.10`) from Air Skeletons (`0.28`).
+    pub fn unit_type_signature(u: &SimUnit) -> f32 {
+        match u.kind {
+            UnitKind::Totem => 0.14,
+            UnitKind::Pet(_) => 0.93,
+            UnitKind::Hero(hid) => match hid {
+                HeroId::MinionPrince | HeroId::DragonDuke => 0.99,
+                HeroId::BarbarianKing
+                | HeroId::ArcherQueen
+                | HeroId::GrandWarden
+                | HeroId::RoyalChampion => 0.96,
+            },
+            UnitKind::Troop(tid) => match tid {
+                // CRITICAL: Ground Skeleton (0.10) vs Air Skeleton (0.28) are strictly separated!
+                TroopId::Skeleton => {
+                    if u.is_air {
+                        0.28
+                    } else {
+                        0.10
+                    }
+                }
+                TroopId::ArmoredSkeleton => 0.12,
+                TroopId::Yetimite
+                | TroopId::Firemite
+                | TroopId::Frostmite
+                | TroopId::Booger
+                | TroopId::Snake => 0.14,
+                TroopId::Barbarian
+                | TroopId::SuperBarbarian
+                | TroopId::Goblin
+                | TroopId::SneakyGoblin
+                | TroopId::Miner
+                | TroopId::HogRider => 0.18,
+                TroopId::WallBreaker | TroopId::SuperWallBreaker | TroopId::Headhunter => 0.22,
+                TroopId::Bat => 0.32,
+                TroopId::Minion
+                | TroopId::SuperMinion
+                | TroopId::BabyDragon
+                | TroopId::InfernoDragon => 0.36,
+                TroopId::Balloon | TroopId::RocketBalloon | TroopId::DragonRider => 0.40,
+                TroopId::Archer
+                | TroopId::SuperArcher
+                | TroopId::Wizard
+                | TroopId::SuperWizard => 0.46,
+                TroopId::Witch
+                | TroopId::SuperWitch
+                | TroopId::ApprenticeWarden
+                | TroopId::Druid
+                | TroopId::Furnace => 0.52,
+                TroopId::Valkyrie
+                | TroopId::SuperValkyrie
+                | TroopId::Bowler
+                | TroopId::SuperBowler
+                | TroopId::SuperMiner => 0.56,
+                TroopId::Thrower
+                | TroopId::Yeti
+                | TroopId::SuperYeti
+                | TroopId::ElectroTitan => 0.60,
+                TroopId::Giant | TroopId::SuperGiant | TroopId::DruidBear => 0.66,
+                TroopId::IceGolem | TroopId::Golem => 0.70,
+                TroopId::RootRider | TroopId::Pekka => 0.74,
+                TroopId::GuardianLogger
+                | TroopId::GuardianLongshot
+                | TroopId::GuardianSmasher => 0.78,
+                TroopId::Healer => 0.81,
+                TroopId::Dragon | TroopId::SuperDragon | TroopId::ElectroDragon => 0.85,
+                TroopId::LavaHound | TroopId::IceHound => 0.89,
+                TroopId::WallWrecker
+                | TroopId::BattleBlimp
+                | TroopId::StoneSlammer
+                | TroopId::SiegeBarracks
+                | TroopId::LogLauncher
+                | TroopId::FlameFlinger
+                | TroopId::BattleDrill => 0.91,
+            },
+        }
+    }
+
+    /// Extracts a 10-channel 50x50 spatial tensor flattened `[10 * 50 * 50]` for RL agents:
     /// Ch 0: Building HP normalized (0..1)
     /// Ch 1: Defense DPS normalized (0..1)
     /// Ch 2: Town Hall indicator (0 or 1)
@@ -6274,8 +6402,11 @@ impl BattleEngine {
     /// Ch 5: Attacking Ground unit HP density
     /// Ch 6: Attacking Air unit HP density
     /// Ch 7: Active Spell zone indicator
+    /// Ch 8: Allied Unit Type Signature `max_{u in Attacker(x,y)} phi(u) in [0, 1]`
+    /// Ch 9: Enemy Unit Type Signature `max_{u in Defender(x,y)} phi(u) in [0, 1]`
+    ///       (Defending CC troops, defending Heroes, TH18 Guardians, and Ground [0.10] vs Air [0.28] Skeletons)
     pub fn extract_spatial_observation(&self) -> Vec<f32> {
-        let mut obs = vec![0.0f32; 8 * 50 * 50];
+        let mut obs = vec![0.0f32; 10 * 50 * 50];
         let idx = |ch: usize, y: usize, x: usize| ch * 2500 + y * 50 + x;
 
         for b in &self.buildings {
@@ -6316,11 +6447,22 @@ impl BattleEngine {
         }
 
         for u in &self.units {
-            if u.alive && u.team == Team::Attacker {
-                let x = (u.x.floor() as i32).clamp(0, 49) as usize;
-                let y = (u.y.floor() as i32).clamp(0, 49) as usize;
+            if !u.alive {
+                continue;
+            }
+            let x = (u.x.floor() as i32).clamp(0, 49) as usize;
+            let y = (u.y.floor() as i32).clamp(0, 49) as usize;
+            let sig = Self::unit_type_signature(u);
+            if u.team == Team::Attacker {
                 let ch = if u.is_air { 6 } else { 5 };
                 obs[idx(ch, y, x)] = (obs[idx(ch, y, x)] + u.hp / 5000.0).min(1.0);
+                if sig > obs[idx(8, y, x)] {
+                    obs[idx(8, y, x)] = sig;
+                }
+            } else {
+                if sig > obs[idx(9, y, x)] {
+                    obs[idx(9, y, x)] = sig;
+                }
             }
         }
 

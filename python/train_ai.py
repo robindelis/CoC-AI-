@@ -197,6 +197,33 @@ def resolve_model_path(model_file: Optional[str]) -> Optional[str]:
     return None
 
 
+def _load_state_dict_flexible(model: torch.nn.Module, saved_sd: Dict[str, Any]) -> None:
+    """
+    Loads `saved_sd` into `model` while migrating any legacy 8-channel stem conv weights
+    (`(32, 8, 3, 3)`) into the first 8 channels of the 10-channel stem (`(32, 10, 3, 3)`).
+    """
+    current_sd = model.state_dict()
+    filtered_sd: Dict[str, Any] = {}
+    for k, v in saved_sd.items():
+        if k not in current_sd:
+            continue
+        cur_t = current_sd[k]
+        if hasattr(v, "shape") and v.shape == cur_t.shape:
+            filtered_sd[k] = v
+        elif (
+            hasattr(v, "shape")
+            and len(v.shape) == 4
+            and len(cur_t.shape) == 4
+            and v.shape[0] == cur_t.shape[0]
+            and v.shape[2:] == cur_t.shape[2:]
+            and v.shape[1] < cur_t.shape[1]
+        ):
+            migrated = cur_t.clone()
+            migrated[:, : v.shape[1], :, :] = v.to(migrated.device, dtype=migrated.dtype)
+            filtered_sd[k] = migrated
+    model.load_state_dict(filtered_sd, strict=False)
+
+
 def load_all_models(
     device: torch.device,
     attacker_model_file: Optional[str] = "latest_attacker.pt",
@@ -212,14 +239,13 @@ def load_all_models(
         except Exception:
             attacker_ckpt_meta = {}
 
-    live_attacker = CoCActorCritic(in_channels=8, army_context_dim=64).to(device)
+    live_attacker = CoCActorCritic(in_channels=10, army_context_dim=64).to(device)
 
-    if "model_state_dict" in attacker_ckpt_meta:
+    if "model_state_dict" in attacker_ckpt_meta and isinstance(attacker_ckpt_meta["model_state_dict"], dict):
         try:
-            live_attacker.load_state_dict(attacker_ckpt_meta["model_state_dict"], strict=False)
+            _load_state_dict_flexible(live_attacker, attacker_ckpt_meta["model_state_dict"])
         except Exception:
             pass
-
 
     if num_armies is None:
         if "armies" in attacker_ckpt_meta and isinstance(attacker_ckpt_meta["armies"], list):
@@ -232,7 +258,7 @@ def load_all_models(
         else:
             num_villages = 5
 
-    army_selector = AttackerArmySelectorNet(in_channels=8, num_armies=num_armies).to(device)
+    army_selector = AttackerArmySelectorNet(in_channels=10, num_armies=num_armies).to(device)
     defender_selector = DefenderVillageSelectorNet(army_context_dim=64, num_villages=num_villages).to(device)
 
     for model, path in (
@@ -242,8 +268,8 @@ def load_all_models(
         if os.path.exists(path):
             try:
                 ckpt = torch.load(path, map_location=device, weights_only=False)
-                if "model_state_dict" in ckpt:
-                    model.load_state_dict(ckpt["model_state_dict"], strict=False)
+                if "model_state_dict" in ckpt and isinstance(ckpt["model_state_dict"], dict):
+                    _load_state_dict_flexible(model, ckpt["model_state_dict"])
             except Exception:
                 pass
 
@@ -437,6 +463,8 @@ def _discrete_action_to_battle_action_dict(
     slot_idx: int,
     tile_x: int,
     tile_y: int,
+    deploy_count: int = 1,
+    deploy_fraction: float = 1.0,
 ) -> Optional[Any]:
     x = min(49, max(0, int(tile_x))) + 0.5
     y = min(49, max(0, int(tile_y))) + 0.5
@@ -445,7 +473,15 @@ def _discrete_action_to_battle_action_dict(
     spells = army_dict.get("spells", [])
 
     if slot_type == 1 and 0 <= slot_idx < len(troops):
-        return {"DeployTroop": {"troop_id": troops[slot_idx][0], "x": x, "y": y}}
+        return {
+            "DeployTroop": {
+                "troop_id": troops[slot_idx][0],
+                "x": x,
+                "y": y,
+                "count": max(1, int(deploy_count)),
+                "deploy_fraction": round(float(deploy_fraction), 2),
+            }
+        }
     if slot_type == 2 and 0 <= slot_idx < len(heroes):
         return {"DeployHero": {"hero_id": heroes[slot_idx][0], "x": x, "y": y}}
     if slot_type == 3 and 0 <= slot_idx < len(heroes):
@@ -479,6 +515,8 @@ def simulate_model_rollout(
     live_attacker.eval()
 
     army_dict = json.loads(army_json)
+    remaining_slot_counts = [int(c) for _, c in army_dict.get("troops", [])]
+    fraction_bins = (0.0, 0.25, 0.50, 0.75, 1.00)
     env = CoCAttackerEnv(
         layout_json=layout_json,
         army_json=army_json,
@@ -511,11 +549,26 @@ def simulate_model_rollout(
 
         act = action_t.squeeze(0).cpu().tolist()
         s_type, s_idx, tx, ty = int(act[0]), int(act[1]), int(act[2]), int(act[3])
+        frac_bin = int(act[4]) if len(act) >= 5 else 4
+        deploy_fraction = fraction_bins[max(0, min(len(fraction_bins) - 1, frac_bin))]
+        deploy_count = 1
+        if s_type == 1 and 0 <= s_idx < len(remaining_slot_counts):
+            avail = remaining_slot_counts[s_idx]
+            if avail > 0:
+                deploy_count = max(1, min(avail, int(round(avail * deploy_fraction))))
+                remaining_slot_counts[s_idx] = max(0, avail - deploy_count)
+
         if s_type == 0:
             noop_steps += 1
 
         battle_action_obj = _discrete_action_to_battle_action_dict(
-            army_dict, s_type, s_idx, tx, ty
+            army_dict,
+            s_type,
+            s_idx,
+            tx,
+            ty,
+            deploy_count=deploy_count,
+            deploy_fraction=deploy_fraction,
         )
         slot_probs = [
             round(float(p), 3) for p in diag["slot_type_probs"].squeeze(0).cpu().tolist()
@@ -529,6 +582,8 @@ def simulate_model_rollout(
                 "slot_idx": s_idx,
                 "tile_x": tx,
                 "tile_y": ty,
+                "deploy_fraction": round(float(deploy_fraction), 2),
+                "deploy_count": int(deploy_count),
                 "battle_action": battle_action_obj,
                 "value": round(float(value_t.item()), 3),
                 "entropy": round(float(entropy_t.item()), 3),
@@ -537,7 +592,7 @@ def simulate_model_rollout(
         )
 
         next_obs_np, _, terminated, truncated, next_info = env.step(
-            np.array([s_type, s_idx, tx, ty], dtype=np.int64)
+            np.array([s_type, s_idx, tx, ty, frac_bin], dtype=np.int64)
         )
         done = bool(terminated or truncated)
         total_reward += compute_custom_reward(next_info)

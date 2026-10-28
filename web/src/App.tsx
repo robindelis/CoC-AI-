@@ -15,9 +15,10 @@ import { OverlayOptions } from './canvas/BattlefieldCanvas';
 import { GameArmyBuilder } from './game/GameArmyBuilder';
 import { GameTacticalDrawer } from './game/GameTacticalDrawer';
 import { AIStudioView } from './ai/AIStudioView';
+import { RLAcademyView } from './ai/RLAcademyView';
 import { AIRolloutStep } from './ai/aiTypes';
 
-type ActiveTab = 'armory' | 'ai_train' | 'ai_test';
+type ActiveTab = 'armory' | 'ai_train' | 'ai_test' | 'rl_academy';
 
 let wasmInitPromise: Promise<unknown> | null = null;
 function ensureWasmInitialized() {
@@ -271,11 +272,20 @@ export const App: React.FC = () => {
           >
             🧪 AI Model Tester
           </button>
+          <button
+            className={`tab-btn ai-tab-btn ${activeTab === 'rl_academy' ? 'active' : ''}`}
+            onClick={() => {
+              setIsAiPlaying(false);
+              setActiveTab('rl_academy');
+            }}
+          >
+            🎓 RL Professor Course
+          </button>
         </nav>
 
         <div className="header-right-controls">
           <span className="badge-gold">⚔️ {army.name}</span>
-          {activeTab !== 'armory' && (
+          {activeTab === 'ai_test' && (
             <button
               className={`clash-btn ${showTacticalDrawer ? 'gold' : ''}`}
               onClick={() => setShowTacticalDrawer(!showTacticalDrawer)}
@@ -293,6 +303,8 @@ export const App: React.FC = () => {
           onChangeArmy={setArmy}
           onGoToTrainer={() => setActiveTab('ai_train')}
         />
+      ) : activeTab === 'rl_academy' ? (
+        <RLAcademyView onJumpToTab={(t) => setActiveTab(t)} />
       ) : (
         <div className="battlefield-viewport">
           <AIStudioView

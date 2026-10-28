@@ -395,15 +395,15 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
         online: true,
         device: 'cuda:0',
         device_name: 'PyTorch Actor-Critic Engine (TH18)',
-        param_count: 942180,
+        param_count: 977905,
         models_info: {
           attacker_selector: {
             name: 'Attacker 1: Army Selector (8×50×50 → 3 Armies)',
             params: 18420,
           },
           live_attacker: {
-            name: 'Attacker 2: Live Controller (CNN+64d → 7×10×50×50)',
-            params: 908531,
+            name: 'Attacker 2: Live Controller (CNN+64d → 7×10×5×50×50)',
+            params: 944256,
           },
           defender_selector: {
             name: 'Defender: Village Selector (64d Army → 5 Villages)',
@@ -497,12 +497,12 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
       const sess = new WasmBattleSession(layoutJson, armyJson);
       const flatObs = sess.extract_spatial_observation();
       const channels: number[][][] = [];
-      for (let ch = 0; ch < 8; ch++) {
+      for (let ch = 0; ch < 10; ch++) {
         const grid: number[][] = [];
         for (let y = 0; y < 50; y++) {
           const row: number[] = [];
           for (let x = 0; x < 50; x++) {
-            row.push(flatObs[ch * 2500 + y * 50 + x]);
+            row.push(flatObs[ch * 2500 + y * 50 + x] ?? 0);
           }
           grid.push(row);
         }
@@ -534,6 +534,7 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
         tile_heatmap: tileHeatmap,
         slot_type_probs: [0.06, 0.44, 0.21, 0.08, 0.09, 0.02, 0.1],
         slot_idx_probs: [0.28, 0.22, 0.15, 0.11, 0.08, 0.06, 0.04, 0.03, 0.02, 0.01],
+        deploy_fraction_probs: [0.05, 0.12, 0.28, 0.18, 0.37],
         value: 16.42,
         entropy: 2.18,
         suggested_action: {
@@ -541,6 +542,7 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           slot_idx: 0,
           tile_x: 2,
           tile_y: 22,
+          deploy_fraction: 1.0,
         },
         model_meta: modelMeta,
         attacker_selector: {
@@ -577,12 +579,26 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
       const schedule: AIRolloutStep[] = [];
       let stepIdx = 0;
 
-      // Build tactical rollout schedule deploying funnel, siege, heroes, main army, spells, abilities
+      // Build tactical rollout schedule using deploy_fraction ∈ {0.5, 1.0} so multi-unit stacks
+      // (like 14 Throwers) deploy in 1-2 waves instead of 14 separate 0.64s actions!
       for (let slotIdx = 0; slotIdx < army.troops.length; slotIdx++) {
-        const [tid, count] = army.troops[slotIdx];
-        for (let i = 0; i < count; i++) {
-          const y = Number((15.5 + ((i * 1.3 + slotIdx * 1.7) % 18.0)).toFixed(2));
-          const act = { DeployTroop: { troop_id: tid, x: 1.5, y } };
+        const [tid, totalCount] = army.troops[slotIdx];
+        let rem = totalCount;
+        const waves = totalCount >= 6 ? [0.5, 1.0] : [1.0];
+        for (let w = 0; w < waves.length && rem > 0; w++) {
+          const frac = waves[w];
+          const deployCount = Math.max(1, Math.min(rem, Math.round(rem * frac)));
+          rem -= deployCount;
+          const y = Number((17.5 + ((slotIdx * 2.7 + w * 4.5) % 14.0)).toFixed(2));
+          const act = {
+            DeployTroop: {
+              troop_id: tid,
+              x: 1.5,
+              y,
+              count: deployCount,
+              deploy_fraction: frac,
+            },
+          };
           sess.apply_action_json(JSON.stringify(act));
           sess.step_ticks(ticksPerStep);
           schedule.push({
@@ -592,8 +608,10 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
             slot_idx: slotIdx,
             tile_x: 1,
             tile_y: Math.floor(y),
+            deploy_fraction: frac,
+            deploy_count: deployCount,
             battle_action: act,
-            value: Number((12.5 + stepIdx * 0.12).toFixed(2)),
+            value: Number((12.5 + stepIdx * 0.25).toFixed(2)),
             entropy: 1.92,
             noop_prob: 0.08,
           });

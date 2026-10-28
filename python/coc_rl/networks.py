@@ -19,13 +19,15 @@ NEG_INF = -1e8
 
 class CoCSpatialEncoder(nn.Module):
     """
-    Dual-pathway Spatial CNN Backbone for the 8x50x50 Village Observation Grid.
+    Dual-pathway Spatial CNN Backbone for the 10x50x50 Village Observation Grid.
 
-    Input tensor `obs` has shape (B, 8, 50, 50):
-      - Ch 0: Building HP (normalized)       - Ch 4: No-Deploy Red Zone mask
-      - Ch 1: Defense DPS threat             - Ch 5: Ground attacker HP density
-      - Ch 2: Town Hall 18 footprint         - Ch 6: Air attacker HP density
-      - Ch 3: Wall HP (normalized)           - Ch 7: Active Spell zones
+    Input tensor `obs` has shape (B, 10, 50, 50):
+      - Ch 0: Building HP (normalized)       - Ch 5: Ground attacker HP density
+      - Ch 1: Defense DPS threat             - Ch 6: Air attacker HP density
+      - Ch 2: Town Hall 18 footprint         - Ch 7: Active Spell zones
+      - Ch 3: Wall HP (normalized)           - Ch 8: Allied Unit Type Signature phi(u) in [0, 1]
+      - Ch 4: No-Deploy Red Zone mask        - Ch 9: Enemy Unit Type Signature phi(u) in [0, 1]
+                                                     (CC, Heroes, Guardians, Ground vs Air Skeletons)
 
     Outputs two complementary representations:
       1. `spatial_features`: (B, 64, 50, 50) full-resolution feature map preserving exact
@@ -36,11 +38,12 @@ class CoCSpatialEncoder(nn.Module):
 
     def __init__(
         self,
-        in_channels: int = 8,
+        in_channels: int = 10,
         spatial_dim: int = 64,
         embed_dim: int = 256,
     ):
         super().__init__()
+        self.in_channels = in_channels
         self.spatial_dim = spatial_dim
         self.embed_dim = embed_dim
 
@@ -81,10 +84,30 @@ class CoCSpatialEncoder(nn.Module):
         )
 
     def forward(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        if obs.shape[1] < self.in_channels:
+            pad_ch = self.in_channels - obs.shape[1]
+            obs = F.pad(obs, (0, 0, 0, 0, 0, pad_ch))
+        elif obs.shape[1] > self.in_channels:
+            obs = obs[:, : self.in_channels]
         h = self.spatial_stem(obs)
         spatial_features = F.silu(h + self.context_res(h))
         global_embedding = self.global_tower(spatial_features)
         return spatial_features, global_embedding
+
+
+DEPLOY_FRACTION_BINS: Tuple[float, ...] = (0.0, 0.25, 0.50, 0.75, 1.00)
+
+
+def fraction_bin_to_value(bin_idx: int) -> float:
+    idx = max(0, min(len(DEPLOY_FRACTION_BINS) - 1, int(bin_idx)))
+    return float(DEPLOY_FRACTION_BINS[idx])
+
+
+def compute_deploy_count(avail_count: int, deploy_fraction: float) -> int:
+    if avail_count <= 0:
+        return 0
+    frac = max(0.0, min(1.0, float(deploy_fraction)))
+    return max(1, min(int(avail_count), int(round(avail_count * frac))))
 
 
 class CoCActorCritic(nn.Module):
@@ -93,19 +116,27 @@ class CoCActorCritic(nn.Module):
 
     Fuses the (B, 8, 50, 50) spatial battlefield tensor with the (B, 64) army context vector
     (encoding remaining troops, heroes, hero equipment, pets, siege machine, and spells)
-    to parameterize a factorized policy over MultiDiscrete([7, 10, 50, 50]):
+    to parameterize a factorized policy over MultiDiscrete([7, 10, 50, 50, 5]):
 
-      1. `slot_type` (7 choices): 0=NoOp, 1=Troop, 2=Hero, 3=HeroAbility, 4=Siege, 5=PopSiege, 6=Spell
-      2. `slot_idx`  (10 choices): Loadout slot index, conditioned on the chosen `slot_type`
-      3. `tile_xy`   (2500 tiles): Flattened (tile_y * 50 + tile_x) deployment coordinate,
-                                   conditioned on both the 50x50 spatial map and chosen `slot_type`
-      4. `value`     (scalar):     Critic state-value estimate V(s)
+      1. `slot_type`       (7 choices):  0=NoOp, 1=Troop, 2=Hero, 3=HeroAbility, 4=Siege, 5=PopSiege, 6=Spell
+      2. `slot_idx`        (10 choices): Loadout slot index, conditioned on the chosen `slot_type`
+      3. `deploy_fraction` (5 bins in [0, 1]): Fraction of remaining available troops of `slot_idx` to deploy
+                                         at once (0.0 -> min 1 troop, 0.25 -> 25%, 0.50 -> 50%, 0.75 -> 75%, 1.00 -> all)
+      4. `tile_xy`         (2500 tiles): Flattened (tile_y * 50 + tile_x) deployment coordinate,
+                                         conditioned on both the 50x50 spatial map and chosen `slot_type`
+      5. `value`           (scalar):     Critic state-value estimate V(s)
     """
 
-    def __init__(self, in_channels: int = 8, army_context_dim: int = 64):
+    def __init__(
+        self,
+        in_channels: int = 10,
+        army_context_dim: int = 64,
+        num_fraction_bins: int = 5,
+    ):
         super().__init__()
         self.in_channels = in_channels
         self.army_context_dim = army_context_dim
+        self.num_fraction_bins = num_fraction_bins
 
         # Dual-pathway CNN backbone
         self.encoder = CoCSpatialEncoder(
@@ -133,7 +164,15 @@ class CoCActorCritic(nn.Module):
             nn.Linear(128, 10),
         )
 
-        # Head 3: Spatial Tile Pointer (projects conditioned embedding onto the 64x50x50 map)
+        # Head 3: Troop Deployment Fraction logits (bins in [0.0, 0.25, 0.50, 0.75, 1.00]),
+        # conditioned on global_emb + one_hot(slot_type) + one_hot(slot_idx)
+        self.deploy_fraction_head = nn.Sequential(
+            nn.Linear(embed_dim + 7 + 10, 128),
+            nn.SiLU(),
+            nn.Linear(128, num_fraction_bins),
+        )
+
+        # Head 4: Spatial Tile Pointer (projects conditioned embedding onto the 64x50x50 map)
         self.tile_cond_proj = nn.Linear(embed_dim + 7, spatial_dim)
         self.tile_conv_head = nn.Sequential(
             nn.Conv2d(spatial_dim, 32, kernel_size=3, padding=1),
@@ -141,7 +180,7 @@ class CoCActorCritic(nn.Module):
             nn.Conv2d(32, 1, kernel_size=1),
         )
 
-        # Head 4: State-Value Critic V(s)
+        # Head 5: State-Value Critic V(s)
         self.critic_head = nn.Sequential(
             nn.Linear(embed_dim, 128),
             nn.SiLU(),
@@ -169,18 +208,25 @@ class CoCActorCritic(nn.Module):
 
         # 2. Conditioned Slot Index
         idx_logits = self.slot_idx_head(cond_emb)
+        chosen_idx = idx_logits.argmax(dim=-1)
+        idx_onehot = F.one_hot(chosen_idx.clamp(0, 9), num_classes=10).float()
 
-        # 3. Conditioned 50x50 Spatial Tile Pointer
+        # 3. Conditioned Troop Deployment Fraction (in [0, 1])
+        frac_cond_emb = torch.cat([cond_emb, idx_onehot], dim=-1)
+        fraction_logits = self.deploy_fraction_head(frac_cond_emb)
+
+        # 4. Conditioned 50x50 Spatial Tile Pointer
         cond_spatial = self.tile_cond_proj(cond_emb).unsqueeze(-1).unsqueeze(-1)
         fused_spatial = F.silu(spatial_feat + cond_spatial)
         tile_logits = self.tile_conv_head(fused_spatial).reshape(B, 2500)
 
-        # 4. Critic Value V(s)
+        # 5. Critic Value V(s)
         value = self.critic_head(global_emb).squeeze(-1)
 
         return {
             "type_logits": type_logits,
             "idx_logits": idx_logits,
+            "fraction_logits": fraction_logits,
             "tile_logits": tile_logits,
             "value": value,
         }
@@ -194,7 +240,7 @@ class CoCActorCritic(nn.Module):
         army_context: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
         """
-        Samples or evaluates a factorized action `[slot_type, slot_idx, tile_x, tile_y]`
+        Samples or evaluates a factorized action `[slot_type, slot_idx, tile_x, tile_y, frac_bin]`
         with invalid-action logit masking, returning `(action, log_prob, entropy, value, diagnostics)`.
         """
         B = obs.shape[0]
@@ -243,7 +289,21 @@ class CoCActorCritic(nn.Module):
         else:
             chosen_idx = action[:, 1].long()
 
-        # 3. Spatial Tile Distribution (50x50 = 2500 tiles)
+        # 3. Troop Deployment Fraction Distribution (bins in [0.0, 0.25, 0.50, 0.75, 1.00])
+        idx_onehot = F.one_hot(chosen_idx.clamp(0, 9), num_classes=10).float()
+        frac_cond_emb = torch.cat([cond_emb, idx_onehot], dim=-1)
+        frac_logits = self.deploy_fraction_head(frac_cond_emb)
+        frac_dist = Categorical(logits=frac_logits)
+        if action is None:
+            chosen_frac_bin = (
+                frac_logits.argmax(dim=-1) if deterministic else frac_dist.sample()
+            )
+        elif action.shape[-1] >= 5:
+            chosen_frac_bin = action[:, 4].long().clamp(0, self.num_fraction_bins - 1)
+        else:
+            chosen_frac_bin = frac_logits.argmax(dim=-1)
+
+        # 4. Spatial Tile Distribution (50x50 = 2500 tiles)
         # Troop (1), Hero (2), and Siege (4) deployments must respect the village no-deploy red zone;
         # Spells (6) can be cast anywhere on the 50x50 map.
         cond_spatial = self.tile_cond_proj(cond_emb).unsqueeze(-1).unsqueeze(-1)
@@ -265,18 +325,26 @@ class CoCActorCritic(nn.Module):
             chosen_tile = tile_logits.argmax(dim=-1) if deterministic else tile_dist.sample()
             tile_x = chosen_tile % 50
             tile_y = torch.div(chosen_tile, 50, rounding_mode="floor")
-            out_action = torch.stack([chosen_type, chosen_idx, tile_x, tile_y], dim=-1)
+            out_action = torch.stack(
+                [chosen_type, chosen_idx, tile_x, tile_y, chosen_frac_bin], dim=-1
+            )
         else:
             tile_x = action[:, 2].long().clamp(0, 49)
             tile_y = action[:, 3].long().clamp(0, 49)
             chosen_tile = tile_y * 50 + tile_x
-            out_action = action.long()
+            if action.shape[-1] >= 5:
+                out_action = action.long()
+            else:
+                out_action = torch.stack(
+                    [chosen_type, chosen_idx, tile_x, tile_y, chosen_frac_bin], dim=-1
+                )
 
-        # 4. Joint Log-Probability, Entropy, and Critic Value
+        # 5. Joint Log-Probability, Entropy, and Critic Value
         # Sub-actions only contribute to log_prob and entropy when active for `chosen_type`.
         uses_idx = (
             (chosen_type == 1) | (chosen_type == 2) | (chosen_type == 3) | (chosen_type == 6)
         ).float()
+        uses_frac = (chosen_type == 1).float()
         uses_tile = (
             (chosen_type == 1) | (chosen_type == 2) | (chosen_type == 4) | (chosen_type == 6)
         ).float()
@@ -284,18 +352,25 @@ class CoCActorCritic(nn.Module):
         log_prob = (
             type_dist.log_prob(chosen_type)
             + uses_idx * idx_dist.log_prob(chosen_idx)
+            + uses_frac * frac_dist.log_prob(chosen_frac_bin)
             + uses_tile * tile_dist.log_prob(chosen_tile)
         )
         entropy = (
             type_dist.entropy()
             + uses_idx * idx_dist.entropy()
+            + uses_frac * frac_dist.entropy()
             + uses_tile * tile_dist.entropy()
         )
         value = self.critic_head(global_emb).squeeze(-1)
 
+        frac_bins_tensor = torch.tensor(
+            DEPLOY_FRACTION_BINS, device=device, dtype=torch.float32
+        )
         diagnostics = {
             "slot_type_probs": type_dist.probs.detach(),
             "slot_idx_probs": idx_dist.probs.detach(),
+            "deploy_fraction_probs": frac_dist.probs.detach(),
+            "deploy_fraction": frac_bins_tensor[chosen_frac_bin].detach(),
             "tile_heatmap": tile_dist.probs.detach().reshape(B, 50, 50),
         }
         return out_action, log_prob, entropy, value, diagnostics
@@ -304,11 +379,11 @@ class CoCActorCritic(nn.Module):
 class AttackerArmySelectorNet(nn.Module):
     """
     Pre-Battle Attacker Army Selector:
-    Encodes the enemy village layout `(B, 8, 50, 50)` via `CoCSpatialEncoder` and outputs
+    Encodes the enemy village layout `(B, 10, 50, 50)` via `CoCSpatialEncoder` and outputs
     a categorical distribution over the available TH18 Meta Armies plus value `V(layout)`.
     """
 
-    def __init__(self, in_channels: int = 8, num_armies: int = 3):
+    def __init__(self, in_channels: int = 10, num_armies: int = 3):
         super().__init__()
         self.num_armies = num_armies
         self.encoder = CoCSpatialEncoder(in_channels=in_channels, spatial_dim=64, embed_dim=256)

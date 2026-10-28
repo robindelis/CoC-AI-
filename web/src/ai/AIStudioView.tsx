@@ -219,7 +219,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
 }) => {
   const [serverStatus, setServerStatus] = useState<AIServerStatus | null>(null);
   const [inspectData, setInspectData] = useState<AIInspectResponse | null>(null);
-  const [selectedChannel, setSelectedChannel] = useState<number>(8);
+  const [selectedChannel, setSelectedChannel] = useState<number>(10);
 
   // Trainer state
   const [trainingMode, setTrainingMode] = useState<TrainingMode>('live_attacker');
@@ -350,11 +350,11 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
     ctx.fillRect(0, 0, size, size);
 
     let grid50x50: number[][] | null = null;
-    if (selectedChannel === 8 && inspectData?.tile_heatmap) {
+    if (selectedChannel === 10 && inspectData?.tile_heatmap) {
       grid50x50 = inspectData.tile_heatmap;
     } else {
       const localFlat = extractLocalObservation();
-      if (localFlat && localFlat.length === 8 * 50 * 50) {
+      if (localFlat && localFlat.length >= (selectedChannel + 1) * 2500) {
         const offset = selectedChannel * 2500;
         grid50x50 = Array.from({ length: 50 }, (_, y) =>
           Array.from({ length: 50 }, (_, x) => localFlat[offset + y * 50 + x])
@@ -379,7 +379,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
     for (let y = 0; y < 50; y++) {
       for (let x = 0; x < 50; x++) {
         const raw = grid50x50[y][x];
-        const norm = selectedChannel === 8 ? raw / maxVal : Math.min(1, raw);
+        const norm = selectedChannel === 10 ? raw / maxVal : Math.min(1, raw);
         if (norm <= 0.01) continue;
         ctx.globalAlpha = Math.max(0.15, norm);
         ctx.fillStyle = chMeta.color;
@@ -1936,6 +1936,9 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                     <span>t={s.tick}</span>
                     <span style={{ color: '#fde047' }}>
                       {SLOT_TYPE_LABELS[s.slot_type] ?? 'Action'} #{s.slot_idx}
+                      {s.slot_type === 1 && s.deploy_count
+                        ? ` (×${s.deploy_count} • α=${Math.round((s.deploy_fraction ?? 1) * 100)}%)`
+                        : ''}
                     </span>
                     <span>
                       ({s.tile_x}, {s.tile_y})

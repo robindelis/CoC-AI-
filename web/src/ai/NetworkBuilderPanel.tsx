@@ -24,12 +24,12 @@ const STATIC_LAYERS: StaticLayerRow[] = [
     stage: 'spatial',
     type: 'Conv2d + GroupNorm + SiLU',
     short: 'Conv2d',
-    desc: '32 filters, 3×3, s=1, p=1, GroupNorm(4), SiLU',
-    inputShape: [8, 50, 50],
+    desc: '32 filters, 3×3, s=1, p=1, GroupNorm(4), SiLU (10-ch input incl. Allied & Enemy Unit Types)',
+    inputShape: [10, 50, 50],
     outputShape: [32, 50, 50],
     receptiveField: 3,
-    params: 2368,
-    macs: 5760000,
+    params: 2976,
+    macs: 7200000,
     color: '#2563eb',
     border: '#60a5fa',
     coneLabel: '3×3',
@@ -183,6 +183,20 @@ const STATIC_LAYERS: StaticLayerRow[] = [
     border: '#38bdf8',
   },
   {
+    id: 'head_deploy_fraction',
+    stage: 'heads',
+    type: 'deploy_fraction_head',
+    short: 'FracHead',
+    desc: 'MLP(273 → 128 → 5 Troop Fraction Bins α ∈ [0,1], SiLU)',
+    inputShape: [273],
+    outputShape: [5],
+    receptiveField: 50,
+    params: 35725,
+    macs: 35584,
+    color: '#9333ea',
+    border: '#c084fc',
+  },
+  {
     id: 'head_tile_conv',
     stage: 'heads',
     type: 'tile_conv_head',
@@ -212,12 +226,12 @@ const STATIC_LAYERS: StaticLayerRow[] = [
   },
 ];
 
-const TOTAL_PARAMS = 908531;
-const TOTAL_MACS = 336227288;
-const ESTIMATED_VRAM_MB = 10.4;
+const TOTAL_PARAMS = 944256;
+const TOTAL_MACS = 336262872;
+const ESTIMATED_VRAM_MB = 10.6;
 const SPATIAL_PCT = 10;
-const GLOBAL_PCT = 76;
-const HEAD_PCT = 14;
+const GLOBAL_PCT = 73;
+const HEAD_PCT = 17;
 
 const PYTORCH_MODEL_CODE = `class CoCSpatialEncoder(nn.Module):
     def __init__(self, in_channels: int = 8, spatial_dim: int = 64, embed_dim: int = 256):
@@ -269,6 +283,9 @@ class CoCActorCritic(nn.Module):
         self.slot_type_head = nn.Linear(256, 7)
         self.slot_idx_head = nn.Sequential(
             nn.Linear(256 + 7, 128), nn.SiLU(), nn.Linear(128, 10)
+        )
+        self.deploy_fraction_head = nn.Sequential(
+            nn.Linear(256 + 7 + 10, 128), nn.SiLU(), nn.Linear(128, 5)
         )
         self.tile_cond_proj = nn.Linear(256 + 7, 64)
         self.tile_conv_head = nn.Sequential(
@@ -822,51 +839,67 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                   'rgba(56, 189, 248, 0.22)',
                   '#38bdf8'
                 )}
-                <g transform={`translate(${headsX - 36}, ${topBranchY - 58})`}>
+                <g transform={`translate(${headsX - 36}, ${topBranchY - 76})`}>
                   <rect
-                    width={118}
-                    height={34}
+                    width={126}
+                    height={32}
                     rx={6}
                     fill="#1e293b"
                     stroke="#facc15"
                     strokeWidth={1.5}
                   />
-                  <text x={59} y={15} textAnchor="middle" fill="#fde047" fontSize={9.5} fontWeight={800}>
+                  <text x={63} y={14} textAnchor="middle" fill="#fde047" fontSize={9.2} fontWeight={800}>
                     Action Type (7)
                   </text>
-                  <text x={59} y={27} textAnchor="middle" fill="#cbd5e1" fontSize={8.5}>
+                  <text x={63} y={25} textAnchor="middle" fill="#cbd5e1" fontSize={8.2}>
                     NoOp / Troop / Spell...
                   </text>
 
                   <rect
-                    y={42}
-                    width={118}
-                    height={34}
+                    y={38}
+                    width={126}
+                    height={32}
                     rx={6}
                     fill="#1e293b"
                     stroke="#38bdf8"
                     strokeWidth={1.5}
                   />
-                  <text x={59} y={57} textAnchor="middle" fill="#38bdf8" fontSize={9.5} fontWeight={800}>
+                  <text x={63} y={52} textAnchor="middle" fill="#38bdf8" fontSize={9.2} fontWeight={800}>
                     Slot Index (10)
                   </text>
-                  <text x={59} y={69} textAnchor="middle" fill="#cbd5e1" fontSize={8.5}>
+                  <text x={63} y={63} textAnchor="middle" fill="#cbd5e1" fontSize={8.2}>
                     Conditioned on Type
                   </text>
 
                   <rect
-                    y={84}
-                    width={118}
-                    height={34}
+                    y={76}
+                    width={126}
+                    height={32}
+                    rx={6}
+                    fill="#1e293b"
+                    stroke="#c084fc"
+                    strokeWidth={1.5}
+                  />
+                  <text x={63} y={90} textAnchor="middle" fill="#c084fc" fontSize={9.2} fontWeight={800}>
+                    Deploy Frac α∈[0,1] (5)
+                  </text>
+                  <text x={63} y={101} textAnchor="middle" fill="#cbd5e1" fontSize={8.2}>
+                    1 unit / 25% / 50% / 75% / All
+                  </text>
+
+                  <rect
+                    y={114}
+                    width={126}
+                    height={32}
                     rx={6}
                     fill="#1e293b"
                     stroke="#4ade80"
                     strokeWidth={1.5}
                   />
-                  <text x={59} y={99} textAnchor="middle" fill="#4ade80" fontSize={9.5} fontWeight={800}>
+                  <text x={63} y={128} textAnchor="middle" fill="#4ade80" fontSize={9.2} fontWeight={800}>
                     Critic Value V(s) (1)
                   </text>
-                  <text x={59} y={111} textAnchor="middle" fill="#cbd5e1" fontSize={8.5}>
+                  <text x={63} y={139} textAnchor="middle" fill="#cbd5e1" fontSize={8.2}>
                     Expected Return
                   </text>
                 </g>

@@ -14,7 +14,7 @@ class CoCAttackerEnv(gym.Env):
     Gymnasium RL Environment for training an AI to attack a max-level Town Hall 18 village.
 
     Observation Space:
-        Box(0.0, 1.0, shape=(8, 50, 50), dtype=np.float32)
+        Box(0.0, 1.0, shape=(10, 50, 50), dtype=np.float32)
         - Channel 0: Live Building HP normalized (0..1)
         - Channel 1: Defense DPS threat normalized (0..1)
         - Channel 2: Town Hall 18 mask (0 or 1)
@@ -23,9 +23,11 @@ class CoCAttackerEnv(gym.Env):
         - Channel 5: Attacking Ground unit HP density
         - Channel 6: Attacking Air unit HP density
         - Channel 7: Active Spell zone indicator
+        - Channel 8: Allied Unit Type Signature phi(u) in [0, 1]
+        - Channel 9: Enemy Unit Type Signature phi(u) in [0, 1] (CC, Heroes, Guardians, Ground vs Air Skeletons)
 
     Action Space:
-        MultiDiscrete([7, 10, 50, 50]):
+        MultiDiscrete([7, 10, 50, 50, 5]):
         - slot_type:
             0 = NoOp
             1 = Deploy Troop from slot_idx
@@ -37,6 +39,7 @@ class CoCAttackerEnv(gym.Env):
         - slot_idx: index into army loadout (0..9)
         - tile_x: target x coordinate (0..49)
         - tile_y: target y coordinate (0..49)
+        - deploy_fraction_bin: 0..4 -> (0.0, 0.25, 0.50, 0.75, 1.00)
     """
 
     metadata = {"render_modes": ["json"]}
@@ -55,9 +58,10 @@ class CoCAttackerEnv(gym.Env):
         self._prev_dmg = 0.0
         self._prev_th_destroyed = False
         self.observation_space = spaces.Box(
-            low=0.0, high=1.0, shape=(8, 50, 50), dtype=np.float32
+            low=0.0, high=1.0, shape=(10, 50, 50), dtype=np.float32
         )
-        self.action_space = spaces.MultiDiscrete([7, 10, 50, 50])
+        self.action_space = spaces.MultiDiscrete([7, 10, 50, 50, 5])
+        self.fraction_bins = (0.0, 0.25, 0.50, 0.75, 1.00)
 
     def get_action_masks(self) -> Dict[str, np.ndarray]:
         slot_type_mask, slot_idx_masks, valid_deploy_mask = self._sim.get_action_masks()
@@ -87,7 +91,9 @@ class CoCAttackerEnv(gym.Env):
         self._prev_stars = 0
         self._prev_dmg = 0.0
         self._prev_th_destroyed = False
-        obs = np.asarray(raw_obs, dtype=np.float32).reshape((8, 50, 50))
+        obs = np.asarray(raw_obs, dtype=np.float32).reshape((-1, 50, 50))
+        if obs.shape[0] < 10:
+            obs = np.pad(obs, ((0, 10 - obs.shape[0]), (0, 0), (0, 0)))
         return obs, {
             "destruction_pct": 0,
             "stars": 0,
@@ -109,6 +115,14 @@ class CoCAttackerEnv(gym.Env):
         slot_idx = int(action[1])
         tile_x = int(action[2])
         tile_y = int(action[3])
+        if len(action) >= 5:
+            frac_val = float(action[4])
+            if frac_val in (0.0, 1.0, 2.0, 3.0, 4.0) and float(frac_val).is_integer() and int(frac_val) < len(self.fraction_bins):
+                deploy_fraction = self.fraction_bins[int(frac_val)]
+            else:
+                deploy_fraction = max(0.0, min(1.0, frac_val))
+        else:
+            deploy_fraction = 1.0
 
         masks_before = self.get_action_masks()
         tile_flat = tile_y * 50 + tile_x
@@ -129,7 +143,7 @@ class CoCAttackerEnv(gym.Env):
         invalid_action = not (is_valid_type and is_valid_idx and is_valid_tile)
 
         raw_obs, reward, done, destruction_pct, stars = self._sim.step_discrete(
-            slot_type, slot_idx, tile_x, tile_y, self.ticks_per_step
+            slot_type, slot_idx, tile_x, tile_y, self.ticks_per_step, deploy_fraction
         )
         dmg_total, hp_pool, th_destroyed, tick = self._sim.get_reward_telemetry()
 
@@ -144,7 +158,9 @@ class CoCAttackerEnv(gym.Env):
         self._prev_dmg = float(dmg_total)
         self._prev_th_destroyed = bool(th_destroyed)
 
-        obs = np.asarray(raw_obs, dtype=np.float32).reshape((8, 50, 50))
+        obs = np.asarray(raw_obs, dtype=np.float32).reshape((-1, 50, 50))
+        if obs.shape[0] < 10:
+            obs = np.pad(obs, ((0, 10 - obs.shape[0]), (0, 0), (0, 0)))
         info = {
             "destruction_pct": int(destruction_pct),
             "stars": int(stars),
@@ -154,6 +170,7 @@ class CoCAttackerEnv(gym.Env):
             "th_just_destroyed": th_just_destroyed,
             "time_remaining_ratio": time_rem_ratio,
             "invalid_action": invalid_action,
+            "deploy_fraction": deploy_fraction,
             "tick": int(tick),
             "action_masks": self.get_action_masks(),
             "army_context": self.get_army_context(),
@@ -175,7 +192,9 @@ class CoCAttackerEnv(gym.Env):
         self._prev_dmg = float(dmg_total)
         self._prev_th_destroyed = bool(th_destroyed)
 
-        obs = np.asarray(raw_obs, dtype=np.float32).reshape((8, 50, 50))
+        obs = np.asarray(raw_obs, dtype=np.float32).reshape((-1, 50, 50))
+        if obs.shape[0] < 10:
+            obs = np.pad(obs, ((0, 10 - obs.shape[0]), (0, 0), (0, 0)))
         info = {
             "destruction_pct": int(destruction_pct),
             "stars": int(stars),

@@ -23,7 +23,6 @@ lerna-debug.log*
 
 # --- WebAssembly Build Artifacts ---
 wasm-pkg/
-web/src/wasm-pkg/
 
 # --- Python & Environments ---
 __pycache__/
