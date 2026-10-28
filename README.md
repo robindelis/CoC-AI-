@@ -49,7 +49,7 @@ The web-based **AI Studio** (`web/src/ai/`) connects directly to the PyTorch CUD
 
 ### 1. Neural Network Architecture Visualizer & Block Builder
 Interactive visual exploration of the Town Hall 18 Dual-Pathway ResNet actor-critic network:
-* **3D Feature Map Pipeline**: Traces the 8×50×50 village grid observation through the spatial stem (Conv2D, GroupNorm, SiLU, dilated ResBlocks) and global pooling tower into factorized policy and value heads.
+* **3D Feature Map Pipeline**: Traces the 10×50×50 village grid observation through the spatial stem (Conv2D, GroupNorm, SiLU, dilated ResBlocks) and global pooling tower into factorized policy and value heads.
 * **Architecture Metrics**: Live calculations of receptive field coverage (11×11 spatial, 50×50 global), parameter counts (908k parameters), compute requirements (336M MACs), and memory footprints.
 * **Interactive Tuning**: On-the-fly adjustment of layer types, channel dimensions, kernel sizes, dilation, and normalization, with automatic PyTorch `nn.Module` code generation.
 

@@ -38,7 +38,7 @@ TRAINED_MODELS_DIR = os.path.join(REPO_ROOT, "trained_models")
 # Default Channel & Output Definitions
 # ---------------------------------------------------------------------------
 
-CHANNELS_V1 = [
+CHANNELS = [
     ("0", "Building HP Ratio", "hp / max_hp across footprint", "Base destruction tracking & target durability"),
     ("1", "Defense DPS Threat", "min(DPS / 1000, 1.0)", "Identifies lethal zones (Monolith, Eagle, Inferno)"),
     ("2", "Town Hall 18 Mask", "1.0 on TH18 tiles, 0.0 elsewhere", "Pinpoints Town Hall for the crucial 2nd Star"),
@@ -47,9 +47,6 @@ CHANNELS_V1 = [
     ("5", "Friendly Ground HP", "min(sum(HP_ground) / 5000, 1.0)", "Allied ground troop mass and density"),
     ("6", "Friendly Air HP", "min(sum(HP_air) / 5000, 1.0)", "Allied air troop mass and density"),
     ("7", "Active Spell Field", "min(remaining_ticks / 300, 1.0)", "Active Rage, Heal, Freeze, Overgrowth aura"),
-]
-
-CHANNELS_V2 = CHANNELS_V1 + [
     ("8", "Allied Tactical Archetype", "max phi(u) in [0, 1]", "Unit identity: Swarm (0.1) vs Ranged Core (0.6) vs Tank (0.7) vs Healer (0.81) vs Hero (0.98)"),
     ("9", "Enemy Tactical Archetype", "max phi(u) in [0, 1]", "Defending CC, Heroes, Guardians, Ground Skeletons (0.10) vs Air Skeletons (0.28)"),
 ]
@@ -107,54 +104,17 @@ def save_eval_cache(cache: Dict[str, Any]) -> None:
 
 
 def init_default_registry() -> Dict[str, Any]:
-    """Initializes standard baseline models from existing workspace checkpoints."""
+    """Initializes standard model registry from existing workspace checkpoints."""
     reg = {
         "version": "1.0",
         "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "models": {
-            "v1_baseline_8ch": {
-                "id": "v1_baseline_8ch",
-                "name": "v1.0 — Baseline 8-Channel Single-Deploy",
-                "arch_version": "1.0",
-                "status": "superseded",
-                "superseded_by": "v2_archetype_10ch",
-                "in_channels": 8,
-                "has_deploy_fraction": False,
-                "action_heads": ["slot_type (7)", "slot_idx (10)", "tile_xy (2500)", "critic_value (1)"],
-                "total_episodes": 30102,
-                "latest_checkpoint": "attacker_ep30102_100pct_3star.pt",
-                "best_pct": 100,
-                "best_stars": 3,
-                "best_reward": 101.75,
-                "hyperparams": {
-                    "lr": 0.0003,
-                    "batch_episodes": 4,
-                    "minibatch_size": 64,
-                    "ppo_epochs": 4,
-                    "ticks_per_step": 8,
-                    "gamma": 0.99,
-                    "gae_lambda": 0.95,
-                    "clip_coef": 0.2,
-                    "ent_coef": 0.015,
-                    "matchup_mode": "random",
-                },
-                "sessions": [
-                    {"session_id": 1, "start_ep": 0, "end_ep": 2400, "episodes": 2400, "checkpoint": "attacker_ep2400_86pct_2star.pt", "best_pct": 86, "best_stars": 2, "notes": "Initial training: learned perimeter drop and basic breach"},
-                    {"session_id": 2, "start_ep": 2400, "end_ep": 3824, "episodes": 1424, "checkpoint": "attacker_ep3824_86pct_2star.pt", "best_pct": 86, "best_stars": 2, "notes": "Resumed: batch size tuning (batch=8)"},
-                    {"session_id": 3, "start_ep": 3824, "end_ep": 6514, "episodes": 2690, "checkpoint": "attacker_ep6514_87pct_2star.pt", "best_pct": 87, "best_stars": 2, "notes": "Resumed: core breach funnel stabilization"},
-                    {"session_id": 4, "start_ep": 6514, "end_ep": 10208, "episodes": 3694, "checkpoint": "attacker_ep10208_97pct_2star.pt", "best_pct": 97, "best_stars": 2, "notes": "Resumed: 97% 2-star convergence"},
-                    {"session_id": 5, "start_ep": 10208, "end_ep": 15216, "episodes": 5008, "checkpoint": "attacker_ep15216_97pct_2star.pt", "best_pct": 97, "best_stars": 2, "notes": "Resumed: spell placement micro refinement"},
-                    {"session_id": 6, "start_ep": 15216, "end_ep": 30102, "episodes": 14886, "checkpoint": "attacker_ep30102_100pct_3star.pt", "best_pct": 100, "best_stars": 3, "notes": "Resumed: full 100% 3-star wipe convergence"},
-                ],
-                "history_points": [],
-            },
             "v2_archetype_10ch": {
                 "id": "v2_archetype_10ch",
                 "name": "v2.0 — 10-Channel Archetype & Batch-Deploy Fraction",
                 "arch_version": "2.0",
                 "status": "active",
                 "in_channels": 10,
-                "has_deploy_fraction": True,
                 "action_heads": ["slot_type (7)", "slot_idx (10)", "deploy_fraction (5)", "tile_xy (2500)", "critic_value (1)"],
                 "total_episodes": 924,
                 "latest_checkpoint": "latest_attacker.pt",
@@ -623,7 +583,6 @@ def generate_ai_diagnostics_chart(out_png_path: str) -> str:
 
 def generate_stacked_cnn_svg(
     in_channels: int = 10,
-    has_deploy_fraction: bool = True,
     out_svg_path: Optional[str] = None,
     out_png_path: Optional[str] = None,
 ) -> Dict[str, str]:
@@ -719,8 +678,7 @@ def generate_stacked_cnn_svg(
         return f'<g><polygon points="{pts}" fill="{color}" stroke="{stroke}" stroke-width="0.9" stroke-opacity="0.65"/>{lbl}</g>'
 
     # 0. Input Grid
-    in_sub = "Village + Archetypes" if in_channels == 10 else "Village Tensor"
-    elements.append(cuboid(start_x, stem_y, in_channels, 50, 50, "#0284c7", "#38bdf8", "Input Grid", f"{in_channels}×50×50", in_sub))
+    elements.append(cuboid(start_x, stem_y, in_channels, 50, 50, "#0284c7", "#38bdf8", "Input Grid", f"{in_channels}×50×50", "Village + Archetypes"))
 
     # 1. Spatial Stem (S1, S2, S3)
     elements.append(filter_cone(start_x, stem_y, start_x + step_x, stem_y, "3×3"))
@@ -765,10 +723,9 @@ def generate_stacked_cnn_svg(
     pills: List[Tuple[str, str, str, str]] = [
         ("Action Type (7)", "NoOp / Troop / Spell...", "#facc15", "#fde047"),
         ("Slot Index (10)", "Conditioned on Type", "#38bdf8", "#38bdf8"),
+        ("Deploy Frac α∈[0,1] (5)", "1 unit / 25% / 50% / 75% / All", "#c084fc", "#e9d5ff"),
+        ("Critic Value V(s) (1)", "Expected Return", "#4ade80", "#86efac"),
     ]
-    if has_deploy_fraction:
-        pills.append(("Deploy Frac α∈[0,1] (5)", "1 unit / 25% / 50% / 75% / All", "#c084fc", "#e9d5ff"))
-    pills.append(("Critic Value V(s) (1)", "Expected Return", "#4ade80", "#86efac"))
 
     pills_start_y = top_branch_y - (len(pills) * 19)
     pill_group: List[str] = []
@@ -819,21 +776,15 @@ def generate_stacked_cnn_svg(
 
 
 def ensure_all_architecture_diagrams() -> Dict[str, str]:
-    """Ensures both v1 (8-ch) and v2 (10-ch) 3D stacked CNN images exist in the vault."""
+    """Ensures the 10-channel 3D stacked CNN image exists in the vault."""
     ensure_dirs()
-    v1_svg = os.path.join(ARCH_ASSETS_DIR, "v1_architecture.svg")
-    v1_png = os.path.join(ARCH_ASSETS_DIR, "v1_architecture.png")
     v2_svg = os.path.join(ARCH_ASSETS_DIR, "v2_architecture.svg")
     v2_png = os.path.join(ARCH_ASSETS_DIR, "v2_architecture.png")
 
-    # Generate exact 3D isometric stacked CNN diagrams
-    generate_stacked_cnn_svg(in_channels=8, has_deploy_fraction=False, out_svg_path=v1_svg, out_png_path=v1_png)
-    generate_stacked_cnn_svg(in_channels=10, has_deploy_fraction=True, out_svg_path=v2_svg, out_png_path=v2_png)
+    generate_stacked_cnn_svg(in_channels=10, out_svg_path=v2_svg, out_png_path=v2_png)
 
     return {
-        "v1_png": os.path.relpath(v1_png, VAULT_DIR),
         "v2_png": os.path.relpath(v2_png, VAULT_DIR),
-        "v1_svg": os.path.relpath(v1_svg, VAULT_DIR),
         "v2_svg": os.path.relpath(v2_svg, VAULT_DIR),
     }
 
@@ -849,7 +800,7 @@ def generate_model_markdown_note(
 ) -> str:
     """Generates a complete standalone Markdown document for an architecture run."""
     in_channels = model_info.get("in_channels", 10)
-    channels_table = CHANNELS_V2 if in_channels == 10 else CHANNELS_V1
+    channels_table = CHANNELS
     matrix_md = format_matrix_markdown(eval_data)
     total_episodes = model_info.get("total_episodes", 0)
     sessions = model_info.get("sessions", [])
@@ -896,7 +847,7 @@ def generate_model_markdown_note(
     ]
     hp_table = "\n".join(hp_lines)
 
-    arch_img = "v2_architecture.png" if in_channels == 10 else "v1_architecture.png"
+    arch_img = "v2_architecture.png"
     chart_img = f"{model_id}_training_curves.png"
 
     note_content = f"""---
@@ -1093,7 +1044,7 @@ This canvas dynamically tracks our neural network architectures, spatial observa
     group_width = 1500
     group_height = 3480
     gap = 100
-    model_keys = ["v1_baseline_8ch", "v2_archetype_10ch"]
+    model_keys = ["v2_archetype_10ch"]
 
     # Also include any newly registered models
     for k in models.keys():
@@ -1171,8 +1122,7 @@ This canvas dynamically tracks our neural network architectures, spatial observa
         })
 
         # 3. Input Observation Space Card (Generously sized to fit all 10 channels without scrolling)
-        ch_list = CHANNELS_V2 if in_ch == 10 else CHANNELS_V1
-        ch_rows = [f"| `{ch}` | **{name}** | `{norm}` |" for ch, name, norm, _ in ch_list]
+        ch_rows = [f"| `{ch}` | **{name}** | `{norm}` |" for ch, name, norm, _ in CHANNELS]
         nodes.append({
             "id": f"{mid}-inputs",
             "type": "text",
@@ -1208,8 +1158,7 @@ Factorized Multi-Discrete Action Space:
 - **Critic Head**: `Linear(256 -> 1)` scalar state-value estimate $V(s) \\in \\mathbb{{R}}$.
 
 #### Deployment Dynamics:
-- **v1.0 Rate**: $1\\times$ unit per step ($0.64\\text{{s}}$ delay per unit; 14 Throwers took $8.96\\text{{s}}$).
-- **v2.0 Rate**: Multi-unit wave drop via `deploy_fraction_head` ($\\alpha \\in \\{{0.0, 0.25, 0.50, 0.75, 1.00\\}}$), dropping full squads in a single $0.64\\text{{s}}$ step!""",
+- Multi-unit wave drop via `deploy_fraction_head` ($\\alpha \\in \\{{0.0, 0.25, 0.50, 0.75, 1.00\\}}$), dropping full squads in a single $0.64\\text{{s}}$ step!""",
         })
 
         # 5. Reward Function Card (Generously sized to prevent scrolling)
@@ -1225,7 +1174,7 @@ Factorized Multi-Discrete Action Space:
         })
 
         # 6. Stacked CNN Architecture Image Card (Full Width 3D Volumetric Neural Block Diagram)
-        arch_img_file = f"assets/architectures/{'v2_architecture.png' if in_ch == 10 else 'v1_architecture.png'}"
+        arch_img_file = "assets/architectures/v2_architecture.png"
         nodes.append({
             "id": f"{mid}-arch-img",
             "type": "file",
@@ -1293,17 +1242,6 @@ Deterministic rollout benchmarks evaluated across all 3 Meta Compositions agains
 | **Entropy Coefficient** | `{hp.get('ent_coef', 0.015)}` | Exploration incentive preventing early deployment collapse |
 | **Matchup Sampling Mode** | `{hp.get('matchup_mode', 'random')}` | Sampling distribution across reference compositions and base layouts |""",
         })
-
-    # Inter-model evolution edge (v1 -> v2)
-    edges.append({
-        "id": "edge-v1-to-v2",
-        "fromNode": "group-v1_baseline_8ch",
-        "fromSide": "right",
-        "toNode": "group-v2_archetype_10ch",
-        "toSide": "left",
-        "color": "4",
-        "label": "Architectural Upgrade: +Ch 8/9 Unit Archetypes & +Deploy-Fraction Head",
-    })
 
     # AI Training Diagnostics & Telemetry Suite Section (Below v2 Group)
     diag_y = group_height + 80
@@ -1388,37 +1326,16 @@ def update_or_register_training_run(
     is_resuming = bool(resumed_from and resumed_from not in ("scratch", "none", "new"))
     total_cum_eps = base_episodes + new_episodes
 
-    # Check architecture of the checkpoint
-    in_channels = 10
-    has_deploy_fraction = True
-    try:
-        sd = torch.load(checkpoint_path, map_location="cpu")
-        if isinstance(sd, dict) and "model_state_dict" in sd:
-            msd = sd["model_state_dict"]
-            stem = msd.get("encoder.spatial_stem.0.weight", msd.get("spatial_stem.0.weight", None))
-            if stem is not None:
-                in_channels = stem.shape[1]
-            has_deploy_fraction = any("deploy_fraction" in k for k in msd.keys())
-    except Exception:
-        pass
+    target_model_id = "v2_archetype_10ch"
 
-    # Determine which model lineage this belongs to
-    target_model_id = None
-    if in_channels == 8 or not has_deploy_fraction:
-        target_model_id = "v1_baseline_8ch"
-    else:
-        target_model_id = "v2_archetype_10ch"
-
-    # If it is a completely separate model name (e.g. user created custom save_name), we can identify it
     models = registry.setdefault("models", {})
     if target_model_id not in models:
         models[target_model_id] = {
             "id": target_model_id,
             "name": f"Model {target_model_id}",
-            "arch_version": "2.0" if in_channels == 10 else "1.0",
+            "arch_version": "2.0",
             "status": "active",
-            "in_channels": in_channels,
-            "has_deploy_fraction": has_deploy_fraction,
+            "in_channels": 10,
             "total_episodes": total_cum_eps,
             "latest_checkpoint": ckpt_name,
             "best_pct": best_pct,

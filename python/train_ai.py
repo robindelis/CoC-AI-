@@ -28,7 +28,6 @@ from coc_rl import (
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 TRAINED_MODELS_DIR = os.path.join(REPO_ROOT, "trained_models")
-CHECKPOINT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "checkpoints")
 
 DEFAULT_CKPT_PATH = os.path.join(TRAINED_MODELS_DIR, "latest_attacker.pt")
 CUSTOM_ARMIES_PATH = os.path.join(TRAINED_MODELS_DIR, "custom_armies.json")
@@ -50,15 +49,6 @@ VILLAGE_SHORT_NAMES = [
 
 def ensure_trained_models_dir() -> None:
     os.makedirs(TRAINED_MODELS_DIR, exist_ok=True)
-    os.makedirs(CHECKPOINT_DIR, exist_ok=True)
-    legacy_latest = os.path.join(CHECKPOINT_DIR, "latest_attacker.pt")
-    if os.path.exists(legacy_latest) and not os.path.exists(DEFAULT_CKPT_PATH):
-        try:
-            import shutil
-
-            shutil.copy2(legacy_latest, DEFAULT_CKPT_PATH)
-        except Exception:
-            pass
 
 
 def list_custom_armies() -> List[Dict[str, Any]]:
@@ -198,33 +188,6 @@ def resolve_model_path(model_file: Optional[str]) -> Optional[str]:
     return None
 
 
-def _load_state_dict_flexible(model: torch.nn.Module, saved_sd: Dict[str, Any]) -> None:
-    """
-    Loads `saved_sd` into `model` while migrating any legacy 8-channel stem conv weights
-    (`(32, 8, 3, 3)`) into the first 8 channels of the 10-channel stem (`(32, 10, 3, 3)`).
-    """
-    current_sd = model.state_dict()
-    filtered_sd: Dict[str, Any] = {}
-    for k, v in saved_sd.items():
-        if k not in current_sd:
-            continue
-        cur_t = current_sd[k]
-        if hasattr(v, "shape") and v.shape == cur_t.shape:
-            filtered_sd[k] = v
-        elif (
-            hasattr(v, "shape")
-            and len(v.shape) == 4
-            and len(cur_t.shape) == 4
-            and v.shape[0] == cur_t.shape[0]
-            and v.shape[2:] == cur_t.shape[2:]
-            and v.shape[1] < cur_t.shape[1]
-        ):
-            migrated = cur_t.clone()
-            migrated[:, : v.shape[1], :, :] = v.to(migrated.device, dtype=migrated.dtype)
-            filtered_sd[k] = migrated
-    model.load_state_dict(filtered_sd, strict=False)
-
-
 def load_attacker_model(
     device: torch.device,
     attacker_model_file: Optional[str] = "latest_attacker.pt",
@@ -242,7 +205,7 @@ def load_attacker_model(
 
     if "model_state_dict" in attacker_ckpt_meta and isinstance(attacker_ckpt_meta["model_state_dict"], dict):
         try:
-            _load_state_dict_flexible(live_attacker, attacker_ckpt_meta["model_state_dict"])
+            live_attacker.load_state_dict(attacker_ckpt_meta["model_state_dict"])
         except Exception:
             pass
 
@@ -473,7 +436,7 @@ def simulate_model_rollout(
 
         act = action_t.squeeze(0).cpu().tolist()
         s_type, s_idx, tx, ty = int(act[0]), int(act[1]), int(act[2]), int(act[3])
-        frac_bin = int(act[4]) if len(act) >= 5 else 4
+        frac_bin = int(act[4])
         deploy_fraction = fraction_bins[max(0, min(len(fraction_bins) - 1, frac_bin))]
         deploy_count = 1
         if s_type == 1 and 0 <= s_idx < len(remaining_slot_counts):
@@ -568,7 +531,6 @@ def train_pytorch_ppo(
     clip_coef: float = 0.2,
     ent_coef: float = 0.015,
     ppo_epochs: int = 4,
-    use_reference: bool = False,
     curriculum_deploy: bool = True,
     matchup_mode: str = "random",
     resume_from: Optional[str] = "latest_attacker.pt",
@@ -730,7 +692,6 @@ def train_pytorch_ppo(
             "villages": layouts,
             "army_names": army_names,
             "village_names": village_names,
-            "use_reference": use_reference,
         }
         torch.save(payload, path)
 
@@ -1100,17 +1061,17 @@ def run_attacker_benchmark() -> None:
         tx, ty = random.choice(west_breach_tiles)
         if step_idx < 36:
             slot_type = 1
-            action = np.array([slot_type, step_idx % 6, tx, ty], dtype=np.int64)
+            action = np.array([slot_type, step_idx % 6, tx, ty, 4], dtype=np.int64)
         elif 36 <= step_idx < 40:
-            action = np.array([2, step_idx - 36, 1, 21 + (step_idx - 36) * 2], dtype=np.int64)
+            action = np.array([2, step_idx - 36, 1, 21 + (step_idx - 36) * 2, 4], dtype=np.int64)
         elif step_idx == 40:
-            action = np.array([4, 0, 1, 24], dtype=np.int64)
+            action = np.array([4, 0, 1, 24, 4], dtype=np.int64)
         elif step_idx in (48, 60, 75, 90, 105, 120):
-            action = np.array([6, (step_idx // 15) % 4, 21, 24], dtype=np.int64)
+            action = np.array([6, (step_idx // 15) % 4, 21, 24, 4], dtype=np.int64)
         elif step_idx in (65, 66, 67, 68):
-            action = np.array([3, step_idx - 65, 24, 24], dtype=np.int64)
+            action = np.array([3, step_idx - 65, 24, 24, 4], dtype=np.int64)
         else:
-            action = np.array([0, 0, 0, 0], dtype=np.int64)
+            action = np.array([0, 0, 0, 0, 0], dtype=np.int64)
 
         obs, reward, terminated, truncated, info = env.step(action)
         total_reward += reward
@@ -1154,7 +1115,6 @@ if __name__ == "__main__":
         default=None,
         help="Optional filename to save in trained_models/",
     )
-    parser.add_argument("--use-reference", action="store_true", help="Use reference_solution.py")
     args = parser.parse_args()
 
     if args.train_ppo:
@@ -1179,7 +1139,6 @@ if __name__ == "__main__":
             matchup_mode=args.matchup,
             resume_from=args.resume_from,
             save_name=args.save_name,
-            use_reference=args.use_reference,
             on_episode_callback=log_ep,
         )
     else:

@@ -34,8 +34,8 @@ def run_all_verifications(verbose: bool = False) -> Dict[str, Any]:
     # Check Lab 1: CoCSpatialEncoder
     # -------------------------------------------------------------------------
     try:
-        encoder = student_lab.CoCSpatialEncoder(in_channels=8, spatial_dim=64, embed_dim=256).to(device)
-        dummy_obs = torch.rand(4, 8, 50, 50, device=device)
+        encoder = student_lab.CoCSpatialEncoder(in_channels=10, spatial_dim=64, embed_dim=256).to(device)
+        dummy_obs = torch.rand(4, 10, 50, 50, device=device)
         spatial_feat, global_emb = encoder(dummy_obs)
 
         assert spatial_feat.shape == (4, 64, 50, 50), (
@@ -67,9 +67,9 @@ def run_all_verifications(verbose: bool = False) -> Dict[str, Any]:
     # Check Lab 2: CoCActorCritic & Invalid-Action Masking
     # -------------------------------------------------------------------------
     try:
-        ac = student_lab.CoCActorCritic(in_channels=8).to(device)
+        ac = student_lab.CoCActorCritic(in_channels=10).to(device)
         B = 4
-        dummy_obs = torch.rand(B, 8, 50, 50, device=device)
+        dummy_obs = torch.rand(B, 10, 50, 50, device=device)
 
         # Construct strict action mask where ONLY slot_type=1 (Troop), slot_idx=2, and tile=1234 are valid
         slot_type_mask = torch.zeros(B, 7, dtype=torch.bool, device=device)
@@ -183,11 +183,11 @@ def run_all_verifications(verbose: bool = False) -> Dict[str, Any]:
     # Check Lab 4: Clipped PPO Update Step on GPU
     # -------------------------------------------------------------------------
     try:
-        ac = student_lab.CoCActorCritic(in_channels=8).to(device)
+        ac = student_lab.CoCActorCritic(in_channels=10).to(device)
         optimizer = torch.optim.Adam(ac.parameters(), lr=3e-4)
 
         B = 8
-        obs_b = torch.rand(B, 8, 50, 50, device=device)
+        obs_b = torch.rand(B, 10, 50, 50, device=device)
         with torch.no_grad():
             actions_b, old_logprobs_b, _, values_b, _ = ac.get_action_and_value(obs_b)
 

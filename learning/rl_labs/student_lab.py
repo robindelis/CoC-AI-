@@ -11,7 +11,7 @@ attacking a max-level Town Hall 18 village.
 
 HOW THIS WORKBOOK IS STRUCTURED:
   - LAB 1: Spatial CNN Backbone (`CoCSpatialEncoder`)
-           Map the `(B, 8, 50, 50)` battlefield grid into both a `(B, 64, 50, 50)`
+           Map the `(B, 10, 50, 50)` battlefield grid into both a `(B, 64, 50, 50)`
            full-resolution spatial feature map and a `(B, 256)` global tactical vector.
   - LAB 2: Factorized Actor-Critic & Invalid-Action Masking (`CoCActorCritic`)
            Predict `slot_type` (0..6), `slot_idx` (0..9), and a `50x50` deployment
@@ -45,7 +45,7 @@ NEG_INF = -1e8
 # =============================================================================
 # LAB 1: SPATIAL PERCEPTION BACKBONE (`CoCSpatialEncoder`)
 # =============================================================================
-# Input Tensor `obs` has shape `(B, 8, 50, 50)` where:
+# Input Tensor `obs` has shape `(B, 10, 50, 50)` where:
 #   - Ch 0: Live Building HP normalized (0..1)
 #   - Ch 1: Defense DPS Threat normalized (0..1)
 #   - Ch 2: Town Hall 18 binary mask (0 or 1)
@@ -54,6 +54,8 @@ NEG_INF = -1e8
 #   - Ch 5: Attacking Ground unit HP density
 #   - Ch 6: Attacking Air unit HP density
 #   - Ch 7: Active Spell zone indicator
+#   - Ch 8: Allied Unit Type Signature phi(u) in [0, 1]
+#   - Ch 9: Enemy Unit Type Signature phi(u) in [0, 1]
 #
 # WHY TWO OUTPUTS? (ARCHITECTURAL JUSTIFICATION):
 #   - Choosing *what* to deploy (`slot_type`, `slot_idx`) and estimating state
@@ -90,7 +92,7 @@ NEG_INF = -1e8
 #       the 256-D global tactical vector with `LayerNorm` for stable Actor/Critic inputs.
 # =============================================================================
 class CoCSpatialEncoder(nn.Module):
-    def __init__(self, in_channels: int = 8, spatial_dim: int = 64, embed_dim: int = 256):
+    def __init__(self, in_channels: int = 10, spatial_dim: int = 64, embed_dim: int = 256):
         super().__init__()
         self.spatial_dim = spatial_dim
         self.embed_dim = embed_dim
@@ -132,7 +134,7 @@ class CoCSpatialEncoder(nn.Module):
     def forward(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Contract:
-            obs: (B, 8, 50, 50) float32
+            obs: (B, 10, 50, 50) float32
         Returns:
             spatial_features: (B, 64, 50, 50) float32
             global_embedding: (B, 256) float32
@@ -195,7 +197,7 @@ class CoCSpatialEncoder(nn.Module):
 #     the policy gradient. Zeroing them out when unused keeps credit assignment clean.
 # =============================================================================
 class CoCActorCritic(nn.Module):
-    def __init__(self, in_channels: int = 8):
+    def __init__(self, in_channels: int = 10):
         super().__init__()
         self.encoder = CoCSpatialEncoder(in_channels=in_channels, spatial_dim=64, embed_dim=256)
 

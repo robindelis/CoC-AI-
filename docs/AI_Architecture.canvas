@@ -28,7 +28,7 @@
       "width": 600,
       "height": 380,
       "color": "5",
-      "text": "### Input: Spatial Observation Tensor `(B, 8, 50, 50)`\nExtracted in `BattleEngine::extract_spatial_observation()` (`float32` in `[0.0, 1.0]`):\n\n| Ch | Feature | Normalization |\n| :- | :--- | :--- |\n| `0` | **Live Building HP** | `hp / 11000.0` across footprint |\n| `1` | **Defense DPS Threat** | `dps / 750.0` across footprint |\n| `2` | **Town Hall 18 Mask** | `1.0` on TH18 tiles, `0.0` elsewhere |\n| `3` | **Live Wall HP** | `hp / max_hp` on `1x1` wall tiles |\n| `4` | **No-Deploy Red Zone** | `1.0` = blocked red zone, `0.0` = valid green tile |\n| `5` | **Ground Attacker HP** | Cumulative ground unit `hp / 5000.0` per tile |\n| `6` | **Air Attacker HP** | Cumulative air unit `hp / 5000.0` per tile |\n| `7` | **Active Spell Zones** | `1.0` at active spell centers |"
+      "text": "### Input: Spatial Observation Tensor `(B, 10, 50, 50)`\nExtracted in `BattleEngine::extract_spatial_observation()` (`float32` in `[0.0, 1.0]`):\n\n| Ch | Feature | Normalization |\n| :- | :--- | :--- |\n| `0` | **Live Building HP** | `hp / 11000.0` across footprint |\n| `1` | **Defense DPS Threat** | `dps / 750.0` across footprint |\n| `2` | **Town Hall 18 Mask** | `1.0` on TH18 tiles, `0.0` elsewhere |\n| `3` | **Live Wall HP** | `hp / max_hp` on `1x1` wall tiles |\n| `4` | **No-Deploy Red Zone** | `1.0` = blocked red zone, `0.0` = valid green tile |\n| `5` | **Ground Attacker HP** | Cumulative ground unit `hp / 5000.0` per tile |\n| `6` | **Air Attacker HP** | Cumulative air unit `hp / 5000.0` per tile |\n| `7` | **Active Spell Zones** | `1.0` at active spell centers |\n| `8` | **Allied Tactical Archetype** | `max phi(u) in [0.0, 1.0]` |\n| `9` | **Enemy Tactical Archetype** | `max phi(u) in [0.0, 1.0]` |"
     },
     {
       "id": "action-masks",
@@ -58,7 +58,7 @@
       "width": 600,
       "height": 250,
       "color": "4",
-      "text": "### 2A. Spatial Stem (`self.spatial_stem`)\n**File**: `python/coc_rl/networks.py` (`CoCSpatialEncoder`)\nPreserves full `50x50` grid coordinates for tile-accurate targeting:\n\n```text\nInput: (B, 8, 50, 50)\n  -> Conv2d(8 -> 32, k=3, pad=1, bias=False)\n  -> GroupNorm(4, 32) + SiLU()\n  -> Conv2d(32 -> 64, k=3, pad=1, bias=False)\n  -> GroupNorm(8, 64) + SiLU()\nOutput h: (B, 64, 50, 50)\n```"
+      "text": "### 2A. Spatial Stem (`self.spatial_stem`)\n**File**: `python/coc_rl/networks.py` (`CoCSpatialEncoder`)\nPreserves full `50x50` grid coordinates for tile-accurate targeting:\n\n```text\nInput: (B, 10, 50, 50)\n  -> Conv2d(10 -> 32, k=3, pad=1, bias=False)\n  -> GroupNorm(4, 32) + SiLU()\n  -> Conv2d(32 -> 64, k=3, pad=1, bias=False)\n  -> GroupNorm(8, 64) + SiLU()\nOutput h: (B, 64, 50, 50)\n```"
     },
     {
       "id": "context-res",
@@ -260,7 +260,7 @@
       "toSide": "left",
       "toEnd": "arrow",
       "color": "4",
-      "label": "obs (B, 8, 50, 50)"
+      "label": "obs (B, 10, 50, 50)"
     },
     {
       "id": "e-stem-res",

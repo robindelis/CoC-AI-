@@ -271,7 +271,7 @@ def inspect_policy_and_tensors(req: InspectRequest) -> Dict[str, Any]:
     act = action_t.squeeze(0).cpu().tolist()
 
     fraction_bins = (0.0, 0.25, 0.50, 0.75, 1.00)
-    frac_bin = int(act[4]) if len(act) >= 5 else 4
+    frac_bin = int(act[4])
     deploy_fraction = fraction_bins[max(0, min(len(fraction_bins) - 1, frac_bin))]
 
     model_armies = atk_ckpt.get("armies", [])
@@ -282,11 +282,7 @@ def inspect_policy_and_tensors(req: InspectRequest) -> Dict[str, Any]:
         "tile_heatmap": diag["tile_heatmap"].squeeze(0).cpu().tolist(),
         "slot_type_probs": diag["slot_type_probs"].squeeze(0).cpu().tolist(),
         "slot_idx_probs": diag["slot_idx_probs"].squeeze(0).cpu().tolist(),
-        "deploy_fraction_probs": (
-            diag["deploy_fraction_probs"].squeeze(0).cpu().tolist()
-            if "deploy_fraction_probs" in diag
-            else [0.1, 0.15, 0.25, 0.2, 0.3]
-        ),
+        "deploy_fraction_probs": diag["deploy_fraction_probs"].squeeze(0).cpu().tolist(),
         "value": round(float(value_t.item()), 4),
         "entropy": round(float(entropy_t.item()), 4),
         "suggested_action": {

@@ -2,108 +2,12 @@
   "version": "1.0",
   "updated_at": "2026-10-28 16:22:37",
   "models": {
-    "v1_baseline_8ch": {
-      "id": "v1_baseline_8ch",
-      "name": "v1.0 \u2014 Baseline 8-Channel Single-Deploy",
-      "arch_version": "1.0",
-      "status": "superseded",
-      "superseded_by": "v2_archetype_10ch",
-      "in_channels": 8,
-      "has_deploy_fraction": false,
-      "action_heads": [
-        "slot_type (7)",
-        "slot_idx (10)",
-        "tile_xy (2500)",
-        "critic_value (1)"
-      ],
-      "total_episodes": 30102,
-      "latest_checkpoint": "attacker_ep30102_100pct_3star.pt",
-      "best_pct": 100,
-      "best_stars": 3,
-      "best_reward": 101.75,
-      "hyperparams": {
-        "lr": 0.0003,
-        "batch_episodes": 4,
-        "minibatch_size": 64,
-        "ppo_epochs": 4,
-        "ticks_per_step": 8,
-        "gamma": 0.99,
-        "gae_lambda": 0.95,
-        "clip_coef": 0.2,
-        "ent_coef": 0.015,
-        "matchup_mode": "random"
-      },
-      "sessions": [
-        {
-          "session_id": 1,
-          "start_ep": 0,
-          "end_ep": 2400,
-          "episodes": 2400,
-          "checkpoint": "attacker_ep2400_86pct_2star.pt",
-          "best_pct": 86,
-          "best_stars": 2,
-          "notes": "Initial training: learned perimeter drop and basic breach"
-        },
-        {
-          "session_id": 2,
-          "start_ep": 2400,
-          "end_ep": 3824,
-          "episodes": 1424,
-          "checkpoint": "attacker_ep3824_86pct_2star.pt",
-          "best_pct": 86,
-          "best_stars": 2,
-          "notes": "Resumed: batch size tuning (batch=8)"
-        },
-        {
-          "session_id": 3,
-          "start_ep": 3824,
-          "end_ep": 6514,
-          "episodes": 2690,
-          "checkpoint": "attacker_ep6514_87pct_2star.pt",
-          "best_pct": 87,
-          "best_stars": 2,
-          "notes": "Resumed: core breach funnel stabilization"
-        },
-        {
-          "session_id": 4,
-          "start_ep": 6514,
-          "end_ep": 10208,
-          "episodes": 3694,
-          "checkpoint": "attacker_ep10208_97pct_2star.pt",
-          "best_pct": 97,
-          "best_stars": 2,
-          "notes": "Resumed: 97% 2-star convergence"
-        },
-        {
-          "session_id": 5,
-          "start_ep": 10208,
-          "end_ep": 15216,
-          "episodes": 5008,
-          "checkpoint": "attacker_ep15216_97pct_2star.pt",
-          "best_pct": 97,
-          "best_stars": 2,
-          "notes": "Resumed: spell placement micro refinement"
-        },
-        {
-          "session_id": 6,
-          "start_ep": 15216,
-          "end_ep": 30102,
-          "episodes": 14886,
-          "checkpoint": "attacker_ep30102_100pct_3star.pt",
-          "best_pct": 100,
-          "best_stars": 3,
-          "notes": "Resumed: full 100% 3-star wipe convergence"
-        }
-      ],
-      "history_points": []
-    },
     "v2_archetype_10ch": {
       "id": "v2_archetype_10ch",
       "name": "v2.0 \u2014 10-Channel Archetype & Batch-Deploy Fraction",
       "arch_version": "2.0",
       "status": "active",
       "in_channels": 10,
-      "has_deploy_fraction": true,
       "action_heads": [
         "slot_type (7)",
         "slot_idx (10)",

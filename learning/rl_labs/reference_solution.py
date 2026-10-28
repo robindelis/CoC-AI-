@@ -1,7 +1,7 @@
 """
 Reference PyTorch Implementation for the Clash of Clans TH18 Deep RL Curriculum.
 Covers all 4 Labs:
-  - Lab 1: CoCSpatialEncoder (8x50x50 Spatial CNN Backbone)
+  - Lab 1: CoCSpatialEncoder (10x50x50 Spatial CNN Backbone)
   - Lab 2: CoCActorCritic (Factorized Multi-Discrete Policy + Spatial Pointer + Action Masking)
   - Lab 3: compute_custom_reward & compute_gae (Reward Shaping & Generalized Advantage Estimation)
   - Lab 4: ppo_update_step (Clipped Proximal Policy Optimization Update on GPU)
@@ -19,13 +19,13 @@ NEG_INF = -1e8
 
 class CoCSpatialEncoder(nn.Module):
     """
-    Lab 1 Reference: Dual-pathway Spatial CNN Backbone for the 8x50x50 Village Grid.
+    Lab 1 Reference: Dual-pathway Spatial CNN Backbone for the 10x50x50 Village Grid.
     Produces:
       1. `spatial_features`: (B, 64, 50, 50) full-resolution feature map for tile-level targeting
       2. `global_embedding`: (B, 256) compact tactical summary vector for action-type & critic heads
     """
 
-    def __init__(self, in_channels: int = 8, spatial_dim: int = 64, embed_dim: int = 256):
+    def __init__(self, in_channels: int = 10, spatial_dim: int = 64, embed_dim: int = 256):
         super().__init__()
         self.spatial_dim = spatial_dim
         self.embed_dim = embed_dim
@@ -81,7 +81,7 @@ class CoCActorCritic(nn.Module):
       - tile_xy   (0..2499): Flattened (tile_y * 50 + tile_x) coordinate on the 50x50 map
     """
 
-    def __init__(self, in_channels: int = 8):
+    def __init__(self, in_channels: int = 10):
         super().__init__()
         self.encoder = CoCSpatialEncoder(in_channels=in_channels, spatial_dim=64, embed_dim=256)
 
@@ -117,7 +117,7 @@ class CoCActorCritic(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
         """
         Args:
-            obs: (B, 8, 50, 50) float32 tensor
+            obs: (B, 10, 50, 50) float32 tensor
             masks: optional dict with:
                 - "slot_type": (B, 7) bool
                 - "slot_idx": (B, 7, 10) bool

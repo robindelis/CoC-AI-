@@ -172,9 +172,7 @@ class CoCAttackerEnv(gym.Env):
         self._last_spell_tick = -999
         self._last_ability_tick = -999
         self._deploy_coords = []
-        obs = np.asarray(raw_obs, dtype=np.float32).reshape((-1, 50, 50))
-        if obs.shape[0] < 10:
-            obs = np.pad(obs, ((0, 10 - obs.shape[0]), (0, 0), (0, 0)))
+        obs = np.asarray(raw_obs, dtype=np.float32).reshape((10, 50, 50))
         masks_now = self.get_action_masks()
         return obs, {
             "destruction_pct": 0,
@@ -198,14 +196,11 @@ class CoCAttackerEnv(gym.Env):
         slot_idx = int(action[1])
         tile_x = int(action[2])
         tile_y = int(action[3])
-        if len(action) >= 5:
-            frac_val = float(action[4])
-            if frac_val in (0.0, 1.0, 2.0, 3.0, 4.0) and float(frac_val).is_integer() and int(frac_val) < len(self.fraction_bins):
-                deploy_fraction = self.fraction_bins[int(frac_val)]
-            else:
-                deploy_fraction = max(0.0, min(1.0, frac_val))
+        frac_val = float(action[4])
+        if frac_val in (0.0, 1.0, 2.0, 3.0, 4.0) and float(frac_val).is_integer() and int(frac_val) < len(self.fraction_bins):
+            deploy_fraction = self.fraction_bins[int(frac_val)]
         else:
-            deploy_fraction = 1.0
+            deploy_fraction = max(0.0, min(1.0, frac_val))
 
         masks_before = self.get_action_masks()
         tile_flat = tile_y * 50 + tile_x
@@ -263,9 +258,7 @@ class CoCAttackerEnv(gym.Env):
         self._prev_dmg = float(dmg_total)
         self._prev_th_destroyed = bool(th_destroyed)
 
-        obs = np.asarray(raw_obs, dtype=np.float32).reshape((-1, 50, 50))
-        if obs.shape[0] < 10:
-            obs = np.pad(obs, ((0, 10 - obs.shape[0]), (0, 0), (0, 0)))
+        obs = np.asarray(raw_obs, dtype=np.float32).reshape((10, 50, 50))
         masks_now = self.get_action_masks()
         info = {
             "destruction_pct": int(destruction_pct),
@@ -303,9 +296,7 @@ class CoCAttackerEnv(gym.Env):
         self._prev_dmg = float(dmg_total)
         self._prev_th_destroyed = bool(th_destroyed)
 
-        obs = np.asarray(raw_obs, dtype=np.float32).reshape((-1, 50, 50))
-        if obs.shape[0] < 10:
-            obs = np.pad(obs, ((0, 10 - obs.shape[0]), (0, 0), (0, 0)))
+        obs = np.asarray(raw_obs, dtype=np.float32).reshape((10, 50, 50))
         masks_now = self.get_action_masks()
         info = {
             "destruction_pct": int(destruction_pct),
