@@ -2846,5 +2846,361 @@
       "TH18 Anti-Fireball Wide Spread (3 Single Infernos)",
       "TH18 Teaser War Base (Double Rage Towers + Killzone)"
     ]
+  },
+  "attacker_ep4_88pct_2star.pt_1793211125": {
+    "model_file": "attacker_ep4_88pct_2star.pt",
+    "updated_at": "2026-10-28 19:12:26",
+    "matrix": [
+      [
+        {
+          "destruction_pct": 59,
+          "stars": 1,
+          "total_reward": 43.07,
+          "steps_run": 63,
+          "noop_pct": 42.9
+        },
+        {
+          "destruction_pct": 33,
+          "stars": 1,
+          "total_reward": 43.62,
+          "steps_run": 84,
+          "noop_pct": 57.1
+        },
+        {
+          "destruction_pct": 42,
+          "stars": 0,
+          "total_reward": 23.35,
+          "steps_run": 88,
+          "noop_pct": 60.2
+        },
+        {
+          "destruction_pct": 28,
+          "stars": 1,
+          "total_reward": 42.48,
+          "steps_run": 71,
+          "noop_pct": 50.7
+        },
+        {
+          "destruction_pct": 55,
+          "stars": 2,
+          "total_reward": 67.64,
+          "steps_run": 120,
+          "noop_pct": 70.0
+        }
+      ],
+      [
+        {
+          "destruction_pct": 59,
+          "stars": 1,
+          "total_reward": 41.26,
+          "steps_run": 78,
+          "noop_pct": 53.8
+        },
+        {
+          "destruction_pct": 48,
+          "stars": 0,
+          "total_reward": 23.93,
+          "steps_run": 68,
+          "noop_pct": 55.9
+        },
+        {
+          "destruction_pct": 64,
+          "stars": 2,
+          "total_reward": 70.81,
+          "steps_run": 120,
+          "noop_pct": 75.0
+        },
+        {
+          "destruction_pct": 52,
+          "stars": 2,
+          "total_reward": 65.83,
+          "steps_run": 114,
+          "noop_pct": 73.7
+        },
+        {
+          "destruction_pct": 57,
+          "stars": 2,
+          "total_reward": 66.9,
+          "steps_run": 94,
+          "noop_pct": 67.0
+        }
+      ],
+      [
+        {
+          "destruction_pct": 50,
+          "stars": 1,
+          "total_reward": 37.67,
+          "steps_run": 75,
+          "noop_pct": 56.0
+        },
+        {
+          "destruction_pct": 42,
+          "stars": 1,
+          "total_reward": 48.64,
+          "steps_run": 94,
+          "noop_pct": 66.0
+        },
+        {
+          "destruction_pct": 55,
+          "stars": 1,
+          "total_reward": 40.99,
+          "steps_run": 109,
+          "noop_pct": 70.6
+        },
+        {
+          "destruction_pct": 32,
+          "stars": 1,
+          "total_reward": 45.18,
+          "steps_run": 68,
+          "noop_pct": 52.9
+        },
+        {
+          "destruction_pct": 51,
+          "stars": 2,
+          "total_reward": 64.51,
+          "steps_run": 72,
+          "noop_pct": 55.6
+        }
+      ]
+    ],
+    "comp_stats": [
+      {
+        "name": "TH18 Thrower + Healer + Totem Smash (Meta)",
+        "avg_pct": 43.4,
+        "avg_stars": 1.0,
+        "three_star_rate": 0.0
+      },
+      {
+        "name": "TH18 Dragon Duke Charge Hydra (Meta)",
+        "avg_pct": 56.0,
+        "avg_stars": 1.4,
+        "three_star_rate": 0.0
+      },
+      {
+        "name": "TH18 Fireball Super Bowler & Meteor Golem Smash (Meta)",
+        "avg_pct": 46.0,
+        "avg_stars": 1.2,
+        "three_star_rate": 0.0
+      }
+    ],
+    "village_stats": [
+      {
+        "name": "TH18 Central Box Legends (Cake-A-Pult + Smasher)",
+        "avg_pct": 56.0,
+        "avg_stars": 1.0
+      },
+      {
+        "name": "TH18 Offset Diamond (Hot Candle + Longshot)",
+        "avg_pct": 41.0,
+        "avg_stars": 0.67
+      },
+      {
+        "name": "TH18 Anti-Hydra Air Ring (4 Air X-Bows + Sweepers)",
+        "avg_pct": 53.7,
+        "avg_stars": 1.0
+      },
+      {
+        "name": "TH18 Anti-Fireball Wide Spread (3 Single Infernos)",
+        "avg_pct": 37.3,
+        "avg_stars": 1.33
+      },
+      {
+        "name": "TH18 Teaser War Base (Double Rage Towers + Killzone)",
+        "avg_pct": 54.3,
+        "avg_stars": 2.0
+      }
+    ],
+    "overall_avg_pct": 48.5,
+    "overall_avg_stars": 1.2,
+    "armies": [
+      "TH18 Thrower + Healer + Totem Smash (Meta)",
+      "TH18 Dragon Duke Charge Hydra (Meta)",
+      "TH18 Fireball Super Bowler & Meteor Golem Smash (Meta)"
+    ],
+    "villages": [
+      "TH18 Central Box Legends (Cake-A-Pult + Smasher)",
+      "TH18 Offset Diamond (Hot Candle + Longshot)",
+      "TH18 Anti-Hydra Air Ring (4 Air X-Bows + Sweepers)",
+      "TH18 Anti-Fireball Wide Spread (3 Single Infernos)",
+      "TH18 Teaser War Base (Double Rage Towers + Killzone)"
+    ]
+  },
+  "attacker_ep5786_100pct_3star.pt_1793213666": {
+    "model_file": "attacker_ep5786_100pct_3star.pt",
+    "updated_at": "2026-10-28 19:54:39",
+    "matrix": [
+      [
+        {
+          "destruction_pct": 59,
+          "stars": 2,
+          "total_reward": 69.98,
+          "steps_run": 38,
+          "noop_pct": 0.0
+        },
+        {
+          "destruction_pct": 87,
+          "stars": 2,
+          "total_reward": 83.3,
+          "steps_run": 38,
+          "noop_pct": 0.0
+        },
+        {
+          "destruction_pct": 81,
+          "stars": 2,
+          "total_reward": 80.75,
+          "steps_run": 38,
+          "noop_pct": 0.0
+        },
+        {
+          "destruction_pct": 100,
+          "stars": 3,
+          "total_reward": 101.92,
+          "steps_run": 38,
+          "noop_pct": 0.0
+        },
+        {
+          "destruction_pct": 67,
+          "stars": 2,
+          "total_reward": 73.79,
+          "steps_run": 38,
+          "noop_pct": 0.0
+        }
+      ],
+      [
+        {
+          "destruction_pct": 48,
+          "stars": 0,
+          "total_reward": 24.95,
+          "steps_run": 37,
+          "noop_pct": 0.0
+        },
+        {
+          "destruction_pct": 58,
+          "stars": 1,
+          "total_reward": 42.39,
+          "steps_run": 36,
+          "noop_pct": 0.0
+        },
+        {
+          "destruction_pct": 55,
+          "stars": 1,
+          "total_reward": 40.43,
+          "steps_run": 37,
+          "noop_pct": 0.0
+        },
+        {
+          "destruction_pct": 100,
+          "stars": 3,
+          "total_reward": 100.47,
+          "steps_run": 37,
+          "noop_pct": 0.0
+        },
+        {
+          "destruction_pct": 58,
+          "stars": 2,
+          "total_reward": 68.43,
+          "steps_run": 37,
+          "noop_pct": 0.0
+        }
+      ],
+      [
+        {
+          "destruction_pct": 100,
+          "stars": 3,
+          "total_reward": 101.77,
+          "steps_run": 69,
+          "noop_pct": 49.3
+        },
+        {
+          "destruction_pct": 33,
+          "stars": 1,
+          "total_reward": 44.63,
+          "steps_run": 34,
+          "noop_pct": 0.0
+        },
+        {
+          "destruction_pct": 48,
+          "stars": 1,
+          "total_reward": 52.74,
+          "steps_run": 97,
+          "noop_pct": 63.9
+        },
+        {
+          "destruction_pct": 60,
+          "stars": 2,
+          "total_reward": 70.99,
+          "steps_run": 120,
+          "noop_pct": 70.8
+        },
+        {
+          "destruction_pct": 68,
+          "stars": 2,
+          "total_reward": 74.17,
+          "steps_run": 94,
+          "noop_pct": 62.8
+        }
+      ]
+    ],
+    "comp_stats": [
+      {
+        "name": "TH18 Thrower + Healer + Totem Smash (Meta)",
+        "avg_pct": 78.8,
+        "avg_stars": 2.2,
+        "three_star_rate": 20.0
+      },
+      {
+        "name": "TH18 Dragon Duke Charge Hydra (Meta)",
+        "avg_pct": 63.8,
+        "avg_stars": 1.4,
+        "three_star_rate": 20.0
+      },
+      {
+        "name": "TH18 Fireball Super Bowler & Meteor Golem Smash (Meta)",
+        "avg_pct": 61.8,
+        "avg_stars": 1.8,
+        "three_star_rate": 20.0
+      }
+    ],
+    "village_stats": [
+      {
+        "name": "TH18 Central Box Legends (Cake-A-Pult + Smasher)",
+        "avg_pct": 69.0,
+        "avg_stars": 1.67
+      },
+      {
+        "name": "TH18 Offset Diamond (Hot Candle + Longshot)",
+        "avg_pct": 59.3,
+        "avg_stars": 1.33
+      },
+      {
+        "name": "TH18 Anti-Hydra Air Ring (4 Air X-Bows + Sweepers)",
+        "avg_pct": 61.3,
+        "avg_stars": 1.33
+      },
+      {
+        "name": "TH18 Anti-Fireball Wide Spread (3 Single Infernos)",
+        "avg_pct": 86.7,
+        "avg_stars": 2.67
+      },
+      {
+        "name": "TH18 Teaser War Base (Double Rage Towers + Killzone)",
+        "avg_pct": 64.3,
+        "avg_stars": 2.0
+      }
+    ],
+    "overall_avg_pct": 68.1,
+    "overall_avg_stars": 1.8,
+    "armies": [
+      "TH18 Thrower + Healer + Totem Smash (Meta)",
+      "TH18 Dragon Duke Charge Hydra (Meta)",
+      "TH18 Fireball Super Bowler & Meteor Golem Smash (Meta)"
+    ],
+    "villages": [
+      "TH18 Central Box Legends (Cake-A-Pult + Smasher)",
+      "TH18 Offset Diamond (Hot Candle + Longshot)",
+      "TH18 Anti-Hydra Air Ring (4 Air X-Bows + Sweepers)",
+      "TH18 Anti-Fireball Wide Spread (3 Single Infernos)",
+      "TH18 Teaser War Base (Double Rage Towers + Killzone)"
+    ]
   }
 }

@@ -889,6 +889,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
           architectureSpec={serverStatus?.architecture_spec}
           architectureHash={serverStatus?.architecture_hash}
           activeCheckpoint={resumeFrom !== 'scratch' ? resumeFrom : undefined}
+          history={history}
         />
 
         {/* 6-KPI LIVE SUMMARY STRIP */}

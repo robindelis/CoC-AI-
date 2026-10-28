@@ -3,10 +3,10 @@ title: "v2.0 — 10-Channel Archetype & Batch-Deploy Fraction"
 model_id: "v2_archetype_10ch"
 arch_version: "2.0"
 status: "active"
-total_episodes: 8938
+total_episodes: 5786
 best_pct: 100
 best_stars: 3
-updated_at: "2026-10-28 19:06:17"
+updated_at: "2026-10-28 19:54:33"
 tags:
   - coc-rl
   - ppo
@@ -25,9 +25,9 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 - **Model Identifier**: `v2_archetype_10ch`
 - **Architecture Version**: `v2.0`
 - **Active Status**: **ACTIVE**
-- **Total Episodes Trained**: **`8,938`** (Cumulative across **15** training sessions)
+- **Total Episodes Trained**: **`5,786`** (Cumulative across **17** training sessions)
 - **Peak Combat Performance**: **`100%` (3★)** (Best dense return: `+127.8575248226292`)
-- **Latest Checkpoint**: `trained_models/attacker_ep8938_100pct_3star.pt`
+- **Latest Checkpoint**: `trained_models/attacker_ep5786_100pct_3star.pt`
 
 ### 🔄 Resumed Training Sessions History
 | Session # | Start Ep | End Ep | Episodes Added | Checkpoint File | Peak % | Stars | Notes |
@@ -47,6 +47,8 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 | **#13** | `8,770` | `8,950` | `+180` | `attacker_ep8950_100pct_3star.pt` | `100%` | `3★` | Resumed training (+180 ep from attacker_ep8770_90pct_2star.pt) |
 | **#14** | `8,770` | `8,878` | `+108` | `attacker_ep8878_100pct_3star.pt` | `98%` | `2★` | Resumed training (+108 ep from attacker_ep8770_90pct_2star.pt) |
 | **#15** | `8,878` | `8,938` | `+60` | `attacker_ep8938_100pct_3star.pt` | `100%` | `3★` | Resumed training (+60 ep from latest_attacker.pt) |
+| **#16** | `0` | `4` | `+4` | `attacker_ep4_88pct_2star.pt` | `88%` | `2★` | Initial training (4 ep) |
+| **#17** | `0` | `5,786` | `+5,786` | `attacker_ep5786_100pct_3star.pt` | `100%` | `3★` | Initial training (5,786 ep) |
 
 ---
 
@@ -108,10 +110,10 @@ $$R_t = 0.50 \cdot \Delta \%_{\text{destr}} + 16.6667 \cdot \Delta \text{stars} 
 
 | Attack Composition | **Central Box** | **Offset Diamond** | **Anti-Hydra Ring** | **Anti-Fireball** | **Compact Teaser** | **Avg Destruction** | **3★ Rate** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **TH18 Thrower + Healer + Totem Smash** | `59% (2★)` | `76% (2★)` | `79% (2★)` | `64% (2★)` | `67% (2★)` | **69.0%** | **0.0%** |
-| **TH18 Dragon Duke Charge Hydra** | `43% (0★)` | `22% (0★)` | `52% (1★)` | `22% (0★)` | `70% (2★)` | **41.8%** | **0.0%** |
-| **TH18 Fireball Super Bowler & Meteor Golem Smash** | `31% (0★)` | `48% (1★)` | `70% (1★)` | `46% (0★)` | `57% (2★)` | **50.4%** | **0.0%** |
-| **Base Defense Rate (Avg)** | **44.3% (0.67★)** | **48.7% (1.0★)** | **67.0% (1.33★)** | **44.0% (0.67★)** | **64.7% (2.0★)** | **Overall: 53.7%** | — |
+| **TH18 Thrower + Healer + Totem Smash** | `59% (2★)` | `87% (2★)` | `81% (2★)` | `100% (3★)` | `67% (2★)` | **78.8%** | **20.0%** |
+| **TH18 Dragon Duke Charge Hydra** | `48% (0★)` | `58% (1★)` | `55% (1★)` | `100% (3★)` | `58% (2★)` | **63.8%** | **20.0%** |
+| **TH18 Fireball Super Bowler & Meteor Golem Smash** | `100% (3★)` | `33% (1★)` | `48% (1★)` | `60% (2★)` | `68% (2★)` | **61.8%** | **20.0%** |
+| **Base Defense Rate (Avg)** | **69.0% (1.67★)** | **59.3% (1.33★)** | **61.3% (1.33★)** | **86.7% (2.67★)** | **64.3% (2.0★)** | **Overall: 68.1%** | — |
 
 ---
 
@@ -134,4 +136,4 @@ $$R_t = 0.50 \cdot \Delta \%_{\text{destr}} + 16.6667 \cdot \Delta \text{stars} 
 | **GAE ($\lambda$)** | `0.95` | Generalized Advantage Estimation smoothing |
 | **Clip Coefficient** | `0.2` | PPO surrogate objective clipping range |
 | **Entropy Coefficient** | `0.015` | Exploration policy entropy bonus |
-| **Total Training Episodes** | **`8,938`** | **Cumulative episodes across all resumed sessions** |
+| **Total Training Episodes** | **`5,786`** | **Cumulative episodes across all resumed sessions** |

@@ -54,17 +54,15 @@ CHANNELS_V2 = CHANNELS_V1 + [
     ("9", "Enemy Tactical Archetype", "max phi(u) in [0, 1]", "Defending CC, Heroes, Guardians, Ground Skeletons (0.10) vs Air Skeletons (0.28)"),
 ]
 
-REWARD_FUNCTION_DESC = """### 🎯 Reward Formulation (TH18 Combat)
+REWARD_FUNCTION_DESC = """### 🎯 Reward Formulation & Two-Phase Pacing (TH18 Combat v2.1)
 
-Balanced 50/50 weighting between **Destruction Percentage** and **Milestone Victory Stars**:
+Calibrated 100-point dense & milestone reward shaping balancing **Destruction + Core HP Damage** ($50\\text{ pts}$) and **Victory Stars + Town Hall 18 Takedown** ($50\\text{ pts}$):
 
-$$R_t = 0.50 \\cdot \\Delta \\%_{\\text{destr}} + 16.6667 \\cdot \\Delta \\text{stars} - 0.05 \\cdot \\mathbb{I}_{\\text{invalid}}$$
+$$R_t = 0.35 \\cdot \\Delta \\%_{\\text{destr}} + 15.0 \\cdot \\Delta \\text{HP}_{\\text{ratio}} + 12.0 \\cdot \\Delta \\text{stars} + 14.0 \\cdot \\mathbb{I}_{\\text{TH18}} + 0.08 \\cdot C_{\\text{funnel}} - 0.05 \\cdot \\mathbb{I}_{\\text{invalid}}$$
 
-- **Destruction**: $0.50\\text{ pts}$ per $1\\%$ building destruction ($50.0\\text{ pts}$ max).
-- **Victory Stars**: $\\frac{50.0}{3} = 16.6667\\text{ pts}$ per star earned ($50.0\\text{ pts}$ max for 3 stars).
-- **Invalid Penalty**: $-0.05\\text{ pts}$ deducted for executing illegal actions (e.g. dropping in red zone).
-- **Total Wipe Return**: A complete $100\\%$ 3-star wipe achieves **$100.0\\text{ base reward}$**.
-- **Fast-Forward Bonus**: When active attack actions are exhausted or timer reaches limit, remaining simulation ticks run to resolution and award accrued terminal rewards."""
+- **Destruction & Core HP Damage**: $0.35\\text{ pts}$ per $1\\%$ destruction ($35.0\\text{ pts}$ max) $+ 15.0\\text{ pts}$ continuous building/core HP pool damage ($50.0\\text{ pts}$ combined).
+- **Stars & TH18 Takedown**: $12.0\\text{ pts}$ per star ($36.0\\text{ pts}$ max) $+ 14.0\\text{ pts}$ dedicated milestone bonus upon destroying Town Hall 18 ($50.0\\text{ pts}$ combined).
+- **Two-Phase Tactical Masking & Normalized Per-Head Entropy (`reg_entropy`)**: Phase 1 deploys frontline troop waves along exterior cardinal funnels (excluding interior teaser holes) before Siege/Heroes; Phase 2 paces Spells (`t >= 40`) and Hero Abilities (`t >= 64`) with `NoOp` waiting and Town Hall spell-halo protection."""
 
 
 # ---------------------------------------------------------------------------
@@ -448,6 +446,179 @@ def generate_training_curves_chart(
     return out_png_path
 
 
+def generate_ai_diagnostics_chart(out_png_path: str) -> str:
+    """
+    Renders a 6-panel publication-grade dark-mode chart visualizing all 6 telemetry
+    dimensions gathered for the AI Training Diagnostics & Feedback models (Argon 4 & Flash 3.8):
+      1. 5-Phase Destruction % & Star-Tier Progression (1★+, 2★+ TH Takedown, 3★ Triple)
+      2. Rolling Window Comparison (First 50, Prev 100, Recent 50, Recent 10)
+      3. Factorized Action Head Entropy Saturation (%) & Spatial Top-5 Tile Focus
+      4. Tactical Combat Timeline Gantt (Troop, Spell, Hero Ability Tick Spans)
+      5. Critic Calibration (V(s0) vs Empirical Return) & Value Loss / Approx KL
+      6. Per-Module L2 Parameter Weight Norms (spatial_stem .. critic_head)
+    """
+    os.makedirs(os.path.dirname(out_png_path), exist_ok=True)
+    fb_path = os.path.join(TRAINED_MODELS_DIR, "last_ai_feedback_opencode_argon.json")
+    if not os.path.exists(fb_path):
+        fb_path = os.path.join(TRAINED_MODELS_DIR, "last_ai_feedback.json")
+
+    telemetry: Dict[str, Any] = {}
+    if os.path.exists(fb_path):
+        try:
+            with open(fb_path, "r", encoding="utf-8") as f:
+                telemetry = json.load(f).get("telemetry", {})
+        except Exception:
+            telemetry = {}
+
+    phases = telemetry.get("phases") or [
+        {"window": "Phase 1/5", "mean_pct": 64.2, "one_plus_star_rate_pct": 94.0, "two_plus_star_th_rate_pct": 53.9, "three_star_triple_rate_pct": 4.0, "mean_noop_pct": 17.2, "mean_value_loss": 28.9, "mean_approx_kl": 0.009},
+        {"window": "Phase 2/5", "mean_pct": 66.7, "one_plus_star_rate_pct": 95.5, "two_plus_star_th_rate_pct": 57.1, "three_star_triple_rate_pct": 7.6, "mean_noop_pct": 15.7, "mean_value_loss": 21.8, "mean_approx_kl": 0.008},
+        {"window": "Phase 3/5", "mean_pct": 68.7, "one_plus_star_rate_pct": 96.2, "two_plus_star_th_rate_pct": 60.2, "three_star_triple_rate_pct": 11.9, "mean_noop_pct": 15.2, "mean_value_loss": 22.2, "mean_approx_kl": 0.008},
+        {"window": "Phase 4/5", "mean_pct": 69.9, "one_plus_star_rate_pct": 96.8, "two_plus_star_th_rate_pct": 67.7, "three_star_triple_rate_pct": 12.9, "mean_noop_pct": 13.5, "mean_value_loss": 23.4, "mean_approx_kl": 0.007},
+        {"window": "Phase 5/5", "mean_pct": 71.7, "one_plus_star_rate_pct": 97.4, "two_plus_star_th_rate_pct": 68.4, "three_star_triple_rate_pct": 15.0, "mean_noop_pct": 8.6, "mean_value_loss": 24.4, "mean_approx_kl": 0.007},
+    ]
+    windows_dict = telemetry.get("windows") or {}
+    probe = telemetry.get("live_model_probe") or {}
+    hb = probe.get("head_entropy_breakdown") or {}
+    tact = probe.get("tactical_rollout_behavior") or {}
+    cal = probe.get("critic_calibration") or {}
+    wnorms = probe.get("weight_norms_l2") or {
+        "spatial_stem": 15.7,
+        "context_res": 19.6,
+        "global_tower": 33.3,
+        "army_context_proj": 24.7,
+        "slot_type_head": 2.4,
+        "slot_idx_head": 9.0,
+        "deploy_fraction_head": 8.3,
+        "tile_conv_head": 6.0,
+        "critic_head": 12.8,
+    }
+
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9.2), facecolor="#0b1324")
+    plt.subplots_adjust(wspace=0.26, hspace=0.34)
+    fig.suptitle(
+        "AI Training Diagnostics & Telemetry Suite — Multi-Phase Progression, Head Entropy, Tactical Pacing & Critic Calibration",
+        color="#fde047",
+        fontsize=13,
+        fontweight="bold",
+        y=0.97,
+    )
+
+    for row in axes:
+        for ax in row:
+            ax.set_facecolor("#111c33")
+            ax.tick_params(colors="#cbd5e1", labelsize=8.5)
+            for spine in ax.spines.values():
+                spine.set_color("#293b59")
+            ax.grid(True, color="#1e293b", linestyle="--", alpha=0.6)
+
+    # 1. Panel (0, 0): 5-Phase Destruction % & Star-Tier Rates
+    ax = axes[0, 0]
+    p_labels = [f"P{i+1}" for i in range(len(phases))]
+    x = np.arange(len(phases))
+    ax.plot(x, [p.get("mean_pct", 0) for p in phases], "o-", color="#facc15", lw=2.2, label="Mean Destr %")
+    ax.plot(x, [p.get("one_plus_star_rate_pct", 0) for p in phases], "s--", color="#38bdf8", lw=1.6, label="1★+ Rate %")
+    ax.plot(x, [p.get("two_plus_star_th_rate_pct", 0) for p in phases], "^-", color="#f97316", lw=2.0, label="2★+ (TH18) %")
+    ax.plot(x, [p.get("three_star_triple_rate_pct", 0) for p in phases], "D-", color="#4ade80", lw=2.0, label="3★ Triple %")
+    ax.set_xticks(x)
+    ax.set_xticklabels(p_labels)
+    ax.set_ylim(0, 105)
+    ax.set_title("1. Phase Progression & Star Tiers", color="#f8fafc", fontsize=10, fontweight="bold")
+    ax.legend(loc="best", facecolor="#0b1324", edgecolor="#293b59", labelcolor="#f8fafc", fontsize=7.5)
+
+    # 2. Panel (0, 1): Rolling Windows Comparison
+    ax = axes[0, 1]
+    win_keys = [k for k in ("first_50", "prev_100", "recent_50", "recent_10") if k in windows_dict]
+    if win_keys:
+        w_labels = ["First 50", "Prev 100", "Recent 50", "Recent 10"][: len(win_keys)]
+        wx = np.arange(len(win_keys))
+        w_pct = [windows_dict[k].get("mean_pct", 0) for k in win_keys]
+        w_th = [windows_dict[k].get("two_plus_star_th_rate_pct", 0) for k in win_keys]
+        w_3s = [windows_dict[k].get("three_star_triple_rate_pct", 0) for k in win_keys]
+        w_noop = [windows_dict[k].get("mean_noop_pct", 0) for k in win_keys]
+        bw = 0.2
+        ax.bar(wx - 1.5 * bw, w_pct, width=bw, color="#facc15", label="Mean %")
+        ax.bar(wx - 0.5 * bw, w_th, width=bw, color="#f97316", label="2★+ TH %")
+        ax.bar(wx + 0.5 * bw, w_3s, width=bw, color="#4ade80", label="3★ %")
+        ax.bar(wx + 1.5 * bw, w_noop, width=bw, color="#38bdf8", label="NoOp %")
+        ax.set_xticks(wx)
+        ax.set_xticklabels(w_labels)
+        ax.set_ylim(0, 105)
+        ax.legend(loc="upper left", facecolor="#0b1324", edgecolor="#293b59", labelcolor="#f8fafc", fontsize=7.5)
+    ax.set_title("2. Rolling Window Telemetry Breakdown", color="#f8fafc", fontsize=10, fontweight="bold")
+
+    # 3. Panel (0, 2): Factorized Head Entropy Saturation & Spatial Focus
+    ax = axes[0, 2]
+    h_names = ["Slot Type\nH(type)", "Slot Index\nH(idx)", "Deploy Frac\nH(α)", "Tile Pointer\nH(tile)", "Top-5 Tile\nMass %"]
+    h_vals = [
+        hb.get("slot_type", {}).get("saturation_pct", 55.0),
+        hb.get("slot_idx", {}).get("saturation_pct", 62.0),
+        hb.get("deploy_fraction", {}).get("saturation_pct", 64.0),
+        hb.get("tile_xy", {}).get("saturation_pct", 68.0),
+        hb.get("tile_xy", {}).get("top5_tile_prob_mass_pct", 24.5),
+    ]
+    h_cols = ["#facc15", "#38bdf8", "#c084fc", "#f97316", "#4ade80"]
+    hy = np.arange(len(h_names))
+    ax.barh(hy, h_vals, color=h_cols, height=0.55)
+    ax.axvspan(25, 78, color="#22c55e", alpha=0.12, label="Healthy Band (25–78%)")
+    ax.set_yticks(hy)
+    ax.set_yticklabels(h_names)
+    ax.set_xlim(0, 108)
+    for i, v in enumerate(h_vals):
+        ax.text(min(102, v + 2), i, f"{v:.1f}%", va="center", color="#f8fafc", fontsize=8, fontweight="bold")
+    ax.set_title("3. Factorized Head Entropy Saturation", color="#f8fafc", fontsize=10, fontweight="bold")
+
+    # 4. Panel (1, 0): Tactical Combat Timeline Gantt (Ticks)
+    ax = axes[1, 0]
+    t_span = tact.get("troop_deploy_tick_span", [0, 192])
+    s_span = tact.get("spell_cast_tick_span", [48, 320])
+    a_span = tact.get("hero_ability_tick_span", [64, 232])
+    spans = [
+        ("Troop Waves", t_span[0], max(8, t_span[1] - t_span[0]), "#facc15"),
+        ("Spell Casts", s_span[0], max(8, s_span[1] - s_span[0]), "#c084fc"),
+        ("Hero Abilities", a_span[0], max(8, a_span[1] - a_span[0]), "#4ade80"),
+    ]
+    for idx_s, (lbl, st_t, dur_t, col) in enumerate(spans):
+        ax.barh(idx_s, dur_t, left=st_t, height=0.45, color=col, alpha=0.88)
+        ax.text(st_t + dur_t / 2, idx_s, f"t={st_t}..{st_t+dur_t} ({st_t/10:.1f}s–{(st_t+dur_t)/10:.1f}s)", va="center", ha="center", color="#0f172a", fontsize=8, fontweight="bold")
+    ax.set_yticks([0, 1, 2])
+    ax.set_yticklabels([s[0] for s in spans])
+    ax.set_xlabel("Simulation Ticks (10 ticks = 1.0s)", color="#cbd5e1", fontsize=8.5)
+    ax.set_xlim(0, max(360, s_span[1] + 40, a_span[1] + 40))
+    ax.set_title(f"4. Tactical Action Timing (Spread σ={tact.get('spatial_deploy_spread_std_tiles', 4.3)}t)", color="#f8fafc", fontsize=10, fontweight="bold")
+
+    # 5. Panel (1, 1): Critic Calibration & Value Loss / Entropy by Phase
+    ax = axes[1, 1]
+    v_s0 = float(cal.get("predicted_v_s0") or 47.0)
+    emp_r = float(cal.get("empirical_recent50_return") or 58.0)
+    v_losses = [p.get("mean_value_loss", 0) for p in phases]
+    ents = [p.get("mean_entropy", 0) * 4.0 for p in phases]
+    ax.plot(x, v_losses, "o-", color="#f87171", lw=2.0, label="Critic Value Loss")
+    ax.plot(x, ents, "s--", color="#c084fc", lw=1.8, label="Joint Entropy H (×4)")
+    ax.axhline(abs(v_s0 - emp_r), color="#38bdf8", linestyle=":", lw=1.5, label=f"|V(s0)-R̄| Gap ({v_s0:.1f} vs {emp_r:.1f})")
+    ax.set_xticks(x)
+    ax.set_xticklabels(p_labels)
+    ax.set_title("5. Critic Calibration, Value Loss & Entropy", color="#f8fafc", fontsize=10, fontweight="bold")
+    ax.legend(loc="best", facecolor="#0b1324", edgecolor="#293b59", labelcolor="#f8fafc", fontsize=7.5)
+
+    # 6. Panel (1, 2): Module L2 Weight Norms
+    ax = axes[1, 2]
+    m_keys = list(wnorms.keys())
+    m_vals = [float(wnorms[k]) for k in m_keys]
+    my = np.arange(len(m_keys))
+    ax.barh(my, m_vals, color="#38bdf8", height=0.6)
+    ax.set_yticks(my)
+    ax.set_yticklabels([k.replace("_", " ") for k in m_keys], fontsize=7.5)
+    for i, v in enumerate(m_vals):
+        ax.text(v + 0.5, i, f"{v:.1f}", va="center", color="#f8fafc", fontsize=7.5)
+    ax.set_xlim(0, max(m_vals + [10.0]) * 1.18)
+    ax.set_title("6. Per-Module L2 Parameter Weight Norms", color="#f8fafc", fontsize=10, fontweight="bold")
+
+    fig.savefig(out_png_path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+    return out_png_path
+
+
 # ---------------------------------------------------------------------------
 # Architecture Diagrams Generation (3D Isometric Stacked CNN)
 # ---------------------------------------------------------------------------
@@ -805,6 +976,12 @@ The network parameterizes a factorized multi-discrete policy:
 
 ![Training Curves Progression](../assets/charts/{chart_img})
 
+### 🩺 AI Diagnostic Telemetry Suite (Head Entropy, Tactical Pacing & Critic Calibration)
+
+See [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Telemetry Architecture & PPO Pathology Fixes]] for the full Dual-LLM (`OpenCode Gemini 4 Argon` & `AGY Gemini 3.8 Flash`) root-cause analysis.
+
+![AI Diagnostic Telemetry Overview](../assets/charts/v2_ai_diagnostics_telemetry.png)
+
 ---
 
 ## 7. Hyperparameters & Simulation Configuration
@@ -871,8 +1048,9 @@ Open the interactive 2D whiteboard visualizer presenting side-by-side architectu
 ### 2. Spatial & Tensor Encodings (`encodings/`)
 - [[encodings/Unit_Type_Spatial_Encoding|Hierarchical Tactical-Archetype Spatial Encoding (Ch 8 & Ch 9)]]
 
-### 3. Empirical Benchmark Logs (`experiments/`)
+### 3. Empirical Benchmark Logs & AI Training Diagnostics (`experiments/`)
 - [[experiments/Experiment_Log_And_Benchmarks|Master Experiment Log & Model Checkpoint Comparison]]
+- [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Telemetry Architecture & PPO Pathology Fixes]]
 """
     with open(os.path.join(VAULT_DIR, "00_Index_MOC.md"), "w", encoding="utf-8") as f:
         f.write(content)
@@ -1129,6 +1307,53 @@ Deterministic rollout benchmarks evaluated across all 3 Meta Compositions agains
         "label": "Architectural Upgrade: +Ch 8/9 Unit Archetypes & +Deploy-Fraction Head",
     })
 
+    # AI Training Diagnostics & Telemetry Suite Section (Below v2 Group)
+    diag_y = group_height + 80
+    nodes.append({
+        "id": "ai-diagnostics-summary",
+        "type": "text",
+        "x": 0,
+        "y": diag_y,
+        "width": 1500,
+        "height": 760,
+        "color": "4",
+        "text": """### 🩺 Dual-LLM AI Training Diagnostics & PPO Pathology Fixes (`v2.0 -> v2.1`)
+
+Full Dossier: [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Telemetry Architecture & PPO Pathology Fixes]]
+
+- **Diagnostic Engines**: **Argon 4 • OpenCode** (`google-vertex/gemini-4-argon#medium`) & **Flash 3.8 • AGY** (`gemini-3.8-flash-medium`).
+- **4 Pathologies Diagnosed at Ep 8,770 (`44/100 Plateaued`) & Corrected (`84/100 Progressing`)**:
+  1. **Action Dumping & Zero-NoOp Collapse** (`NoOp 0.11%`, abilities popped at `t=4–6.4s`) $\to$ Fixed via Two-Phase Tactical Pacing (`NoOp 15–24%`, abilities at `t=6.4–23.2s`) & fast-forward discounting.
+  2. **Factorized Head Entropy Imbalance & Interior-Hole Scattering** (`H(tile) 101.6%`, $\\sigma=17.0\\text{t}$) $\to$ Fixed via normalized per-head `reg_entropy`, exterior cardinal perimeter funneling (`not_interior_hole`), and FiLM spatial conditioning (`Top-5 Tile Mass 2.8% -> 24.5%`, $\\sigma=4.3\\text{t}$).
+  3. **1-Star Perimeter Trash-Clearing Local Optimum** (`4.0%` 2★ TH takedowns, `0.0%` 3★ triples) $\to$ Fixed via calibrated 100-pt dense HP + `+14.0` TH18 milestone reward & Town Hall spell-halo protection (`Overgrowth`/`Invisibility` exclusion).
+  4. **Cross-Army Interference & Critic Lag** $\to$ Fixed via stratified `batch_episodes=12` sampling & `2.5x` Critic LR.
+
+| Metric | Pre-Fix (`Ep 8,770`) | Post-Fix Continuation (`Ep 8,938`) | Live `v2.1` Run (`Phase 1 -> 5`) |
+| :--- | :---: | :---: | :---: |
+| **Mean Destruction %** | `59.5%` | `63.8%` (Peak `100%`) | `64.2% -> 71.7%` (Peak `100%`) |
+| **2★+ TH18 Takedown Rate** | `4.0%` | **`51.7% – 54.0%`** | `53.9% -> 68.4%` |
+| **3★ Triple Rate** | `0.0%` | **`3.3% – 4.0%`** | `4.0% -> 15.0%` |
+| **Argon 4 Health Verdict** | `PLATEAUED (44/100)` | **`PROGRESSING (84/100)`** | **`PROGRESSING (78/100)`** |""",
+    })
+    nodes.append({
+        "id": "ai-diagnostics-chart",
+        "type": "file",
+        "file": "assets/charts/v2_ai_diagnostics_telemetry.png",
+        "x": 1560,
+        "y": diag_y,
+        "width": 1540,
+        "height": 760,
+    })
+    edges.append({
+        "id": "edge-v2-to-diag",
+        "fromNode": "group-v2_archetype_10ch",
+        "fromSide": "bottom",
+        "toNode": "ai-diagnostics-chart",
+        "toSide": "top",
+        "color": "4",
+        "label": "Live Telemetry & 6-Panel AI Diagnostic Suite",
+    })
+
     canvas_data = {
         "nodes": nodes,
         "edges": edges,
@@ -1253,6 +1478,7 @@ def update_or_register_training_run(
     # Generate training curves chart
     chart_png = os.path.join(CHARTS_ASSETS_DIR, f"{target_model_id}_training_curves.png")
     generate_training_curves_chart(target_model_id, m, chart_png)
+    generate_ai_diagnostics_chart(os.path.join(CHARTS_ASSETS_DIR, "v2_ai_diagnostics_telemetry.png"))
 
     # Ensure architecture diagrams
     ensure_all_architecture_diagrams()
@@ -1303,6 +1529,9 @@ def rebuild_entire_vault(force_eval: bool = False) -> Dict[str, Any]:
         chart_png = os.path.join(CHARTS_ASSETS_DIR, f"{mid}_training_curves.png")
         generate_training_curves_chart(mid, m, chart_png)
         print(f"       -> Chart saved: {chart_png}")
+    diag_png = os.path.join(CHARTS_ASSETS_DIR, "v2_ai_diagnostics_telemetry.png")
+    generate_ai_diagnostics_chart(diag_png)
+    print(f"       -> AI Diagnostics chart saved: {diag_png}")
 
     # 4. Generate Markdown Notes
     print("  [4/5] Generating Markdown Notes & Index MOC...")

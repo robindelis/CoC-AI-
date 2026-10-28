@@ -21,7 +21,10 @@ This note tracks every model checkpoint in `trained_models/`, the exact architec
 | Model Lineage / Run | Checkpoint File | Arch Version | Input Tensor | Action Heads | Total Episodes Trained | Resumed Sessions | Avg Destruction % | Peak Destruction / Stars | Status |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | [[runs/v1_baseline_8ch\|v1.0 Baseline 8-Ch]] | `attacker_ep30102_100pct_3star.pt` | `v1.0` | `8×50×50` + `64-D` | 3 (`type`, `idx`, `tile`) | **`30,102`** | 6 sessions (`0 -> 2.4k -> 3.8k -> 6.5k -> 10.2k -> 15.2k -> 30.1k`) | `60.9%` | **`100% (3★)`** | `SUPERSEDED` |
-| [[runs/v2_archetype_10ch\|v2.0 10-Ch Archetype + Waves]] | `attacker_ep2726_85pct_2star.pt` | `v2.0` | `10×50×50` + `64-D` | 4 (`type`, `idx`, `frac`, `tile`) | **`2,726`** | 2 sessions (`0 -> 2,724 -> 2,726`) | `50.6%` | **`85% (2★)`** | **`ACTIVE`** |
+| [[runs/v2_archetype_10ch\|v2.0 10-Ch Archetype + Waves (Pre-Fix)]] | `attacker_ep8770_90pct_2star.pt` | `v2.0` | `10×50×50` + `64-D` | 4 (`type`, `idx`, `frac`, `tile`) | **`8,770`** | 3 sessions (`0 -> 2,724 -> 8,770`) | `59.5%` | `90% (2★)` | `DIAGNOSED` |
+| [[experiments/AI_Diagnostics_And_Training_Fixes\|v2.1 Two-Phase Pacing + Head-Balanced PPO]] | `attacker_ep8938_100pct_3star.pt` / `latest_attacker.pt` | `v2.1` | `10×50×50` + `64-D` | 4 (`type`, `idx`, `frac`, `tile`) | **`8,938+`** | Resumed + Live `60k` Run (`Ep 3,500+` at **`71.7%` avg, `68.4%` 2★+, `15.0%` 3★**) | **`71.7%`** | **`100% (3★)`** | **`ACTIVE`** |
+
+> **Full AI Diagnostic Dossier**: See [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Telemetry Architecture & PPO Pathology Fixes]] for the complete Dual-LLM (`OpenCode Gemini 4 Argon` & `AGY Gemini 3.8 Flash`) root-cause analysis and 6-panel telemetry plots.
 
 ---
 

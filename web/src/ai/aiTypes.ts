@@ -322,6 +322,32 @@ export interface AITelemetryHeadEntropy {
   top5_tile_prob_mass_pct?: number;
 }
 
+export interface AITelemetryWindowSummary {
+  window: string;
+  ep_start: number;
+  ep_end: number;
+  episodes: number;
+  mean_pct: number;
+  std_pct: number;
+  min_pct: number;
+  max_pct: number;
+  mean_stars: number;
+  zero_star_rate_pct: number;
+  one_plus_star_rate_pct: number;
+  two_plus_star_th_rate_pct: number;
+  three_star_triple_rate_pct: number;
+  mean_reward: number;
+  mean_noop_pct: number;
+  mean_steps: number;
+  mean_deploy_steps: number;
+  mean_spell_steps: number;
+  mean_ability_steps: number;
+  mean_policy_loss: number;
+  mean_value_loss: number;
+  mean_entropy: number;
+  mean_approx_kl: number;
+}
+
 export interface AITrainingTelemetrySummary {
   collected_at: string;
   session: {
@@ -354,34 +380,8 @@ export interface AITrainingTelemetrySummary {
     best_pct_first_at_episode?: number;
     episodes_since_best_pct?: number;
   };
-  windows: Record<
-    string,
-    {
-      window: string;
-      ep_start: number;
-      ep_end: number;
-      episodes: number;
-      mean_pct: number;
-      std_pct: number;
-      min_pct: number;
-      max_pct: number;
-      mean_stars: number;
-      zero_star_rate_pct: number;
-      one_plus_star_rate_pct: number;
-      two_plus_star_th_rate_pct: number;
-      three_star_triple_rate_pct: number;
-      mean_reward: number;
-      mean_noop_pct: number;
-      mean_steps: number;
-      mean_deploy_steps: number;
-      mean_spell_steps: number;
-      mean_ability_steps: number;
-      mean_policy_loss: number;
-      mean_value_loss: number;
-      mean_entropy: number;
-      mean_approx_kl: number;
-    }
-  >;
+  windows: Record<string, AITelemetryWindowSummary>;
+  phases?: AITelemetryWindowSummary[];
   live_model_probe?: {
     probe_duration_ms: number;
     head_entropy_breakdown: {
@@ -389,6 +389,10 @@ export interface AITrainingTelemetrySummary {
       slot_idx: AITelemetryHeadEntropy;
       deploy_fraction: AITelemetryHeadEntropy;
       tile_xy: AITelemetryHeadEntropy;
+    };
+    initial_step_probs?: {
+      slot_type_probs: number[];
+      deploy_fraction_probs: number[];
     };
     critic_calibration: {
       predicted_v_s0: number;
@@ -407,6 +411,8 @@ export interface AITrainingTelemetrySummary {
       spell_cast_tick_span: [number, number];
       hero_ability_tick_span: [number, number];
     };
+    weight_norms_l2?: Record<string, number>;
+    has_nan_or_inf_weights?: boolean;
   };
   detected_signals?: Array<{
     id: string;
