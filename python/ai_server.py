@@ -120,8 +120,8 @@ class RolloutRequest(BaseModel):
 
 class TrainStartRequest(BaseModel):
     episodes: int = 24
-    batch_episodes: int = 4
-    minibatch_size: int = 64
+    batch_episodes: int = 12
+    minibatch_size: int = 128
     ppo_epochs: int = 4
     lr: float = 3e-4
     ticks_per_step: int = 8

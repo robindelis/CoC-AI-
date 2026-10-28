@@ -178,9 +178,12 @@ def probe_live_model_diagnostics(
         return float(-(p * p.log()).sum().item())
 
     h_types: List[float] = []
+    max_types: List[float] = []
     h_idxs: List[float] = []
+    max_idxs: List[float] = []
     h_fracs: List[float] = []
     h_tiles: List[float] = []
+    max_tiles: List[float] = []
     top5_tile_masses: List[float] = []
     values_pred: List[float] = []
     tile_coords: List[Tuple[int, int]] = []
@@ -211,16 +214,25 @@ def probe_live_model_diagnostics(
 
             act_preview = act_t.squeeze(0)
             st_preview = int(act_preview[0].item())
-            step_max_tile_ent = (
-                math.log(max(2, valid_green_count))
-                if st_preview in (1, 2, 4)
-                else math.log(2500.0)
-            )
-            h_types.append(_ent(tp))
-            h_idxs.append(_ent(ip))
-            h_fracs.append(_ent(fp))
-            h_tiles.append(min(step_max_tile_ent, _ent(tile_p)))
-            top5_tile_masses.append(float(tile_p.topk(min(5, tile_p.numel())).values.sum().item()))
+            active_type_count = int((tp > 1e-6).sum().item())
+            if active_type_count >= 2:
+                h_types.append(_ent(tp))
+                max_types.append(math.log(active_type_count))
+            if st_preview in (1, 2, 3, 6):
+                active_idx_count = int((ip > 1e-6).sum().item())
+                if active_idx_count >= 2:
+                    h_idxs.append(_ent(ip))
+                    max_idxs.append(math.log(active_idx_count))
+            if st_preview == 1:
+                h_fracs.append(_ent(fp))
+            if st_preview in (1, 2, 4, 6):
+                active_tile_count = int((tile_p > 1e-7).sum().item())
+                step_max_tile_ent = math.log(max(2, active_tile_count))
+                h_tiles.append(min(step_max_tile_ent, _ent(tile_p)))
+                max_tiles.append(step_max_tile_ent)
+                top5_tile_masses.append(
+                    float(tile_p.topk(min(5, tile_p.numel())).values.sum().item())
+                )
             values_pred.append(float(val_t.item()))
 
         act = act_t.squeeze(0).cpu().numpy()
@@ -235,7 +247,12 @@ def probe_live_model_diagnostics(
             ability_ticks.append(tick)
 
         obs_np, _, term, trunc, info = env.step(act)
-        has_active = bool(info["action_masks"]["slot_type"][1:].any())
+        has_active = bool(
+            info.get(
+                "has_remaining_inventory",
+                info["action_masks"]["slot_type"][1:].any(),
+            )
+        )
         if term or trunc or not has_active:
             if not (term or trunc):
                 obs_np, _, _, info = env.finish_battle()
@@ -250,9 +267,12 @@ def probe_live_model_diagnostics(
     )
 
     mean_h_type = round(float(np.mean(h_types)), 3) if h_types else 0.0
+    eff_max_type = round(float(np.mean(max_types)), 3) if max_types else round(max_type_ent, 3)
     mean_h_idx = round(float(np.mean(h_idxs)), 3) if h_idxs else 0.0
+    eff_max_idx = round(float(np.mean(max_idxs)), 3) if max_idxs else round(max_idx_ent, 3)
     mean_h_frac = round(float(np.mean(h_fracs)), 3) if h_fracs else 0.0
     mean_h_tile = round(float(np.mean(h_tiles)), 3) if h_tiles else 0.0
+    eff_max_tile = round(float(np.mean(max_tiles)), 3) if max_tiles else round(max_tile_ent, 3)
 
     v_s0 = round(values_pred[0], 2) if values_pred else 0.0
     cal_gap = (
@@ -266,13 +286,13 @@ def probe_live_model_diagnostics(
         "head_entropy_breakdown": {
             "slot_type": {
                 "entropy": mean_h_type,
-                "max_possible": round(max_type_ent, 3),
-                "saturation_pct": round(100.0 * mean_h_type / max_type_ent, 1),
+                "max_possible": eff_max_type,
+                "saturation_pct": round(100.0 * mean_h_type / max(1e-6, eff_max_type), 1),
             },
             "slot_idx": {
                 "entropy": mean_h_idx,
-                "max_possible": round(max_idx_ent, 3),
-                "saturation_pct": round(100.0 * mean_h_idx / max_idx_ent, 1),
+                "max_possible": eff_max_idx,
+                "saturation_pct": round(100.0 * mean_h_idx / max(1e-6, eff_max_idx), 1),
             },
             "deploy_fraction": {
                 "entropy": mean_h_frac,
@@ -281,9 +301,9 @@ def probe_live_model_diagnostics(
             },
             "tile_xy": {
                 "entropy": mean_h_tile,
-                "max_possible": round(max_tile_ent, 3),
-                "saturation_pct": round(100.0 * mean_h_tile / max_tile_ent, 1),
-                "top5_tile_prob_mass_pct": round(100.0 * float(np.mean(top5_tile_masses)), 2),
+                "max_possible": eff_max_tile,
+                "saturation_pct": round(100.0 * mean_h_tile / max(1e-6, eff_max_tile), 1),
+                "top5_tile_prob_mass_pct": round(100.0 * float(np.mean(top5_tile_masses)), 2) if top5_tile_masses else 0.0,
             },
         },
         "initial_step_probs": {
@@ -569,12 +589,12 @@ You are an expert Deep Reinforcement Learning & PPO Diagnostics Architect analyz
 ### Architecture & Environment Context
 - **Observation**: `(10, 50, 50)` spatial grid (building HP, defense DPS, TH18, walls, red-zone mask, ground/air unit density, spells, allied/enemy unit types) + `64-D` army inventory context.
 - **Factorized Action Space**: `MultiDiscrete([7, 10, 50, 50, 5])` -> `slot_type` (0=NoOp, 1=Troop, 2=Hero, 3=HeroAbility, 4=Siege, 5=PopSiege, 6=Spell), `slot_idx` (0..9), `tile_x` (0..49), `tile_y` (0..49), `deploy_fraction_bin` (0%, 25%, 50%, 75%, 100%).
-- **Reward Shaping & Fast-Forward Mechanics**:
-  - 50 pts for 100% destruction (0.5 pt per 1%) + 50 pts for 3 stars (16.67 pts per star).
-  - Step shaping: `-0.04` penalty when `slot_type == 0` (NoOp) while troops remain, and `+0.035` bonus for every non-NoOp valid action step.
-  - When all deployable troops/spells/abilities are exhausted (`not has_active_actions`), `finish_battle()` fast-forwards the remainder of the 3-minute battle in a single step and credits all resulting destruction/star rewards to that final active step.
+- **Two-Phase Tactical Pacing & Reward Shaping**:
+  - Calibrated 100-point scale: 35 pts for 100% destruction + 15 pts for continuous building/core HP damage + 36 pts for 3 stars (12 pts/star) + 14 pts milestone bonus for Town Hall 18 takedown + spatial funnel cohesion bonus.
+  - Phase 1 (Deployment): Deploys core troop waves along the exterior cardinal funnel before deploying Siege and Heroes; avoids interior teaser killzone holes.
+  - Phase 2 (Mid-Battle Spell & Ability Pacing): Unlocks spells (`tick >= 40`) and hero abilities (`tick >= 64`) with tactical cooldown spacing and `NoOp (Wait)` interleaving while units push into core defenses; excludes the Town Hall footprint from Overgrowth/Invisibility spell masks.
 - **PPO Objective**:
-  - Joint entropy `H = H(slot_type) + uses_idx*H(slot_idx) + uses_frac*H(deploy_fraction) + uses_tile*H(tile_xy)` is weighted by a single scalar `ent_coef = 0.015`.
+  - Normalized per-head entropy regularization (`reg_entropy`) weights discrete heads (`slot_type`, `slot_idx`, `deploy_fraction`) separately from the 2,500-tile spatial pointer head (`tile_xy`), with FiLM-style multiplicative spatial conditioning and decoupled Critic learning rate (`2.5x` actor LR).
 
 ### Live Training Telemetry JSON
 {compact_json}

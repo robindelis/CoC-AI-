@@ -3,10 +3,10 @@ title: "v2.0 — 10-Channel Archetype & Batch-Deploy Fraction"
 model_id: "v2_archetype_10ch"
 arch_version: "2.0"
 status: "active"
-total_episodes: 2726
-best_pct: 85
-best_stars: 2
-updated_at: "2026-10-28 17:07:06"
+total_episodes: 8938
+best_pct: 100
+best_stars: 3
+updated_at: "2026-10-28 19:06:17"
 tags:
   - coc-rl
   - ppo
@@ -25,15 +25,28 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 - **Model Identifier**: `v2_archetype_10ch`
 - **Architecture Version**: `v2.0`
 - **Active Status**: **ACTIVE**
-- **Total Episodes Trained**: **`2,726`** (Cumulative across **2** training sessions)
-- **Peak Combat Performance**: **`85%` (2★)** (Best dense return: `+76.49`)
-- **Latest Checkpoint**: `trained_models/attacker_ep2726_85pct_2star.pt`
+- **Total Episodes Trained**: **`8,938`** (Cumulative across **15** training sessions)
+- **Peak Combat Performance**: **`100%` (3★)** (Best dense return: `+127.8575248226292`)
+- **Latest Checkpoint**: `trained_models/attacker_ep8938_100pct_3star.pt`
 
 ### 🔄 Resumed Training Sessions History
 | Session # | Start Ep | End Ep | Episodes Added | Checkpoint File | Peak % | Stars | Notes |
 | :---: | :---: | :---: | :---: | :--- | :---: | :---: | :--- |
 | **#1** | `0` | `2,724` | `+2,724` | `latest_attacker.pt` | `84%` | `2★` | Initial training: fractional wave drops (0.25..1.0) and unit archetype perception (Ch 8 & 9) |
 | **#2** | `2,724` | `2,726` | `+2` | `attacker_ep2726_85pct_2star.pt` | `85%` | `2★` | Resumed training (+2 ep from latest_attacker.pt) |
+| **#3** | `8,770` | `8,806` | `+36` | `attacker_ep8806_90pct_2star.pt` | `90%` | `2★` | Resumed training (+36 ep from latest_attacker.pt) |
+| **#4** | `8,806` | `8,866` | `+60` | `attacker_ep8866_100pct_3star.pt` | `100%` | `3★` | Resumed training (+60 ep from latest_attacker.pt) |
+| **#5** | `8,866` | `8,902` | `+36` | `attacker_ep8902_100pct_3star.pt` | `100%` | `3★` | Resumed training (+36 ep from latest_attacker.pt) |
+| **#6** | `8,902` | `8,962` | `+60` | `attacker_ep8962_100pct_3star.pt` | `100%` | `3★` | Resumed training (+60 ep from latest_attacker.pt) |
+| **#7** | `8,962` | `9,022` | `+60` | `attacker_ep9022_100pct_3star.pt` | `100%` | `3★` | Resumed training (+60 ep from latest_attacker.pt) |
+| **#8** | `8,770` | `8,830` | `+60` | `attacker_ep8830_90pct_2star.pt` | `90%` | `2★` | Resumed training (+60 ep from latest_attacker.pt) |
+| **#9** | `30,102` | `30,162` | `+60` | `attacker_ep30162_100pct_3star.pt` | `100%` | `3★` | Resumed training (+60 ep from attacker_ep30102_100pct_3star.pt) |
+| **#10** | `8,770` | `8,830` | `+60` | `attacker_ep8830_94pct_2star.pt` | `94%` | `2★` | Resumed training (+60 ep from attacker_ep8770_90pct_2star.pt) |
+| **#11** | `8,770` | `8,830` | `+60` | `attacker_ep8830_100pct_3star.pt` | `100%` | `3★` | Resumed training (+60 ep from attacker_ep8770_90pct_2star.pt) |
+| **#12** | `8,770` | `8,830` | `+60` | `attacker_ep8830_100pct_3star.pt` | `100%` | `3★` | Resumed training (+60 ep from attacker_ep8770_90pct_2star.pt) |
+| **#13** | `8,770` | `8,950` | `+180` | `attacker_ep8950_100pct_3star.pt` | `100%` | `3★` | Resumed training (+180 ep from attacker_ep8770_90pct_2star.pt) |
+| **#14** | `8,770` | `8,878` | `+108` | `attacker_ep8878_100pct_3star.pt` | `98%` | `2★` | Resumed training (+108 ep from attacker_ep8770_90pct_2star.pt) |
+| **#15** | `8,878` | `8,938` | `+60` | `attacker_ep8938_100pct_3star.pt` | `100%` | `3★` | Resumed training (+60 ep from latest_attacker.pt) |
 
 ---
 
@@ -95,10 +108,10 @@ $$R_t = 0.50 \cdot \Delta \%_{\text{destr}} + 16.6667 \cdot \Delta \text{stars} 
 
 | Attack Composition | **Central Box** | **Offset Diamond** | **Anti-Hydra Ring** | **Anti-Fireball** | **Compact Teaser** | **Avg Destruction** | **3★ Rate** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **TH18 Thrower + Healer + Totem Smash** | `39% (0★)` | `45% (0★)` | `61% (2★)` | `80% (1★)` | `58% (2★)` | **56.6%** | **0.0%** |
-| **TH18 Dragon Duke Charge Hydra** | `45% (0★)` | `40% (0★)` | `53% (1★)` | `66% (1★)` | `55% (2★)` | **51.8%** | **0.0%** |
-| **TH18 Fireball Super Bowler & Meteor Golem Smash** | `37% (0★)` | `53% (1★)` | `58% (1★)` | `40% (0★)` | `64% (2★)` | **50.4%** | **0.0%** |
-| **Base Defense Rate (Avg)** | **40.3% (0.0★)** | **46.0% (0.33★)** | **57.3% (1.33★)** | **62.0% (0.67★)** | **59.0% (2.0★)** | **Overall: 52.9%** | — |
+| **TH18 Thrower + Healer + Totem Smash** | `59% (2★)` | `76% (2★)` | `79% (2★)` | `64% (2★)` | `67% (2★)` | **69.0%** | **0.0%** |
+| **TH18 Dragon Duke Charge Hydra** | `43% (0★)` | `22% (0★)` | `52% (1★)` | `22% (0★)` | `70% (2★)` | **41.8%** | **0.0%** |
+| **TH18 Fireball Super Bowler & Meteor Golem Smash** | `31% (0★)` | `48% (1★)` | `70% (1★)` | `46% (0★)` | `57% (2★)` | **50.4%** | **0.0%** |
+| **Base Defense Rate (Avg)** | **44.3% (0.67★)** | **48.7% (1.0★)** | **67.0% (1.33★)** | **44.0% (0.67★)** | **64.7% (2.0★)** | **Overall: 53.7%** | — |
 
 ---
 
@@ -112,13 +125,13 @@ $$R_t = 0.50 \cdot \Delta \%_{\text{destr}} + 16.6667 \cdot \Delta \text{stars} 
 
 | Hyperparameter | Value | Description |
 | :--- | :--- | :--- |
-| **Learning Rate (`lr`)** | `0.0003` | Adam optimizer learning rate |
-| **Batch Episodes** | `4` | Trajectories collected per PPO update |
-| **Minibatch Size** | `64` | SGD transition batch size |
+| **Learning Rate (`lr`)** | `0.00015` | Adam optimizer learning rate |
+| **Batch Episodes** | `12` | Trajectories collected per PPO update |
+| **Minibatch Size** | `128` | SGD transition batch size |
 | **PPO Epochs** | `4` | Optimization passes over collected rollout |
 | **Simulation Ticks / Step** | `8` | Simulated combat duration per RL decision ($0.64\text{s}$) |
 | **Discount ($\gamma$)** | `0.99` | Reward discount factor |
 | **GAE ($\lambda$)** | `0.95` | Generalized Advantage Estimation smoothing |
 | **Clip Coefficient** | `0.2` | PPO surrogate objective clipping range |
 | **Entropy Coefficient** | `0.015` | Exploration policy entropy bonus |
-| **Total Training Episodes** | **`2,726`** | **Cumulative episodes across all resumed sessions** |
+| **Total Training Episodes** | **`8,938`** | **Cumulative episodes across all resumed sessions** |

@@ -263,10 +263,22 @@ class CoCActorCritic(nn.Module):
             )
 
         # 1. Action Type Distribution (0=NoOp is always valid as a fallback)
-        type_logits = self.slot_type_head(global_emb)
+        # Smooth logit bounding prevents premature discrete-head entropy collapse
+        type_logits = 1.4 * torch.tanh(self.slot_type_head(global_emb) / 3.0)
         if masks is not None and "slot_type" in masks:
             type_mask = masks["slot_type"].to(device=device, dtype=torch.bool).clone()
-            type_mask[:, 0] = True
+            has_undeployed_units = type_mask[:, 1] | type_mask[:, 2] | type_mask[:, 4]
+            has_any_active = type_mask[:, 1:].any(dim=-1)
+            if action is None:
+                type_mask[:, 0] = (~has_undeployed_units) | (~has_any_active)
+            else:
+                type_mask[:, 0] = True
+            type_logits = type_logits.clone()
+            type_logits[:, 0] = torch.where(
+                ~has_undeployed_units,
+                type_logits[:, 0] + 0.55,
+                type_logits[:, 0],
+            )
             type_logits = type_logits.masked_fill(~type_mask, NEG_INF)
 
         type_dist = Categorical(logits=type_logits)
@@ -280,7 +292,7 @@ class CoCActorCritic(nn.Module):
         cond_emb = torch.cat([global_emb, type_onehot], dim=-1)
 
         # 2. Army Slot Index Distribution (masked per chosen_type)
-        idx_logits = self.slot_idx_head(cond_emb)
+        idx_logits = 1.6 * torch.tanh(self.slot_idx_head(cond_emb) / 3.0)
         if masks is not None and "slot_idx" in masks:
             batch_indices = torch.arange(B, device=device)
             idx_mask = masks["slot_idx"].to(device=device, dtype=torch.bool)[
@@ -304,7 +316,13 @@ class CoCActorCritic(nn.Module):
         chosen_frac_bin = None
         if self.has_deploy_fraction and self.deploy_fraction_head is not None:
             frac_cond_emb = torch.cat([cond_emb, idx_onehot], dim=-1)
-            frac_logits = self.deploy_fraction_head(frac_cond_emb)
+            wave_prior = torch.tensor(
+                [-0.8, 0.7, 0.9, 0.4, 0.0], device=device, dtype=obs.dtype
+            )
+            frac_logits = (
+                1.4 * torch.tanh(self.deploy_fraction_head(frac_cond_emb) / 3.0)
+                + wave_prior
+            )
             frac_dist = Categorical(logits=frac_logits)
             if action is None:
                 chosen_frac_bin = (
@@ -316,19 +334,73 @@ class CoCActorCritic(nn.Module):
                 chosen_frac_bin = frac_logits.argmax(dim=-1)
 
         # 4. Spatial Tile Distribution (50x50 = 2500 tiles)
-        # Troop (1), Hero (2), and Siege (4) deployments must respect the village no-deploy red zone;
-        # Spells (6) can be cast anywhere on the 50x50 map.
+        # FiLM-style multiplicative + additive spatial conditioning & multi-scale core/defense proximity focus
         cond_spatial = self.tile_cond_proj(cond_emb).unsqueeze(-1).unsqueeze(-1)
-        fused_spatial = F.silu(spatial_feat + cond_spatial)
-        tile_logits = self.tile_conv_head(fused_spatial).reshape(B, 2500)
+        fused_spatial = F.silu(
+            spatial_feat * (1.0 + 0.5 * torch.tanh(cond_spatial)) + cond_spatial
+        )
+        raw_tile_logits = self.tile_conv_head(fused_spatial).reshape(B, 2500)
+        if obs.shape[1] >= 7:
+            is_spell = (chosen_type == 6).float().unsqueeze(-1)
+            threat_field = (
+                0.6 * obs[:, 0:1] + 1.8 * obs[:, 1:2] + 6.0 * obs[:, 2:3]
+            )
+            breach_stage1 = F.avg_pool2d(
+                threat_field, kernel_size=15, stride=1, padding=7
+            )
+            breach_prox = F.avg_pool2d(
+                breach_stage1, kernel_size=15, stride=1, padding=7
+            ).reshape(B, 2500)
+            non_th_defenses = obs[:, 1:2] * (1.0 - obs[:, 2:3])
+            combat_focus = F.avg_pool2d(
+                1.2 * non_th_defenses
+                + 3.0 * (obs[:, 5:6] + obs[:, 6:7]),
+                kernel_size=7,
+                stride=1,
+                padding=3,
+            ).reshape(B, 2500)
+            spatial_prior = (1.0 - is_spell) * (8.0 * breach_prox) + is_spell * (
+                7.5 * combat_focus
+            )
+            tile_logits = raw_tile_logits * 2.2 + spatial_prior
+        else:
+            tile_logits = raw_tile_logits * 2.4
 
         if masks is not None and "tile" in masks:
             valid_green = masks["tile"].to(device=device, dtype=torch.bool)
             needs_green = (chosen_type == 1) | (chosen_type == 2) | (chosen_type == 4)
+            if obs.shape[1] >= 7:
+                allied_units = obs[:, 5:6] + obs[:, 6:7]
+                buildings_alive = obs[:, 0:1] + obs[:, 1:2]
+                not_th_halo = (
+                    F.max_pool2d(obs[:, 2:3], kernel_size=7, stride=1, padding=3) < 0.5
+                )
+                near_allies = (
+                    F.max_pool2d(allied_units, kernel_size=9, stride=1, padding=4) > 0.01
+                )
+                near_buildings = (
+                    F.max_pool2d(buildings_alive, kernel_size=7, stride=1, padding=3) > 0.01
+                )
+                active_combat_zone = (near_allies & near_buildings & not_th_halo).reshape(B, 2500)
+                has_combat_tiles = active_combat_zone.any(dim=-1, keepdim=True)
+                fallback_zone = (near_allies & near_buildings).reshape(B, 2500)
+                has_fallback = fallback_zone.any(dim=-1, keepdim=True)
+                spell_mask = torch.where(
+                    has_combat_tiles,
+                    active_combat_zone,
+                    torch.where(
+                        has_fallback,
+                        fallback_zone,
+                        torch.ones_like(valid_green, dtype=torch.bool),
+                    ),
+                )
+            else:
+                spell_mask = torch.ones_like(valid_green, dtype=torch.bool)
+
             effective_tile_mask = torch.where(
                 needs_green.unsqueeze(-1),
                 valid_green,
-                torch.ones_like(valid_green, dtype=torch.bool),
+                spell_mask,
             )
             tile_logits = tile_logits.masked_fill(~effective_tile_mask, NEG_INF)
 
@@ -378,6 +450,22 @@ class CoCActorCritic(nn.Module):
             + (uses_frac * frac_dist.entropy() if (self.has_deploy_fraction and frac_dist is not None) else 0.0)
             + uses_tile * tile_dist.entropy()
         )
+        # Normalized per-head entropy with decoupled coefficients so the 2500-tile spatial head
+        # does not drown out discrete head exploration (slot_type, slot_idx, deploy_fraction)
+        h_type_norm = type_dist.entropy() / 1.94591
+        h_idx_norm = (uses_idx * idx_dist.entropy()) / 2.30259
+        h_frac_norm = (
+            (uses_frac * frac_dist.entropy()) / 1.60944
+            if (self.has_deploy_fraction and frac_dist is not None)
+            else torch.zeros_like(h_type_norm)
+        )
+        h_tile_norm = (uses_tile * tile_dist.entropy()) / 6.74288
+        reg_entropy = (
+            2.2 * h_type_norm
+            + 2.2 * h_idx_norm
+            + 2.2 * h_frac_norm
+            + 0.12 * h_tile_norm
+        )
         value = self.critic_head(global_emb).squeeze(-1)
 
         frac_bins_tensor = torch.tensor(
@@ -387,6 +475,7 @@ class CoCActorCritic(nn.Module):
             "slot_type_probs": type_dist.probs.detach(),
             "slot_idx_probs": idx_dist.probs.detach(),
             "tile_heatmap": tile_dist.probs.detach().reshape(B, 50, 50),
+            "reg_entropy": reg_entropy,
         }
         if self.has_deploy_fraction and frac_dist is not None and chosen_frac_bin is not None:
             diagnostics["deploy_fraction_probs"] = frac_dist.probs.detach()

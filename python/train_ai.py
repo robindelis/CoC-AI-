@@ -614,7 +614,12 @@ def simulate_model_rollout(
         total_reward += compute_custom_reward(next_info)
         steps_run += 1
 
-        has_active_actions = bool(next_info["action_masks"]["slot_type"][1:].any())
+        has_active_actions = bool(
+            next_info.get(
+                "has_remaining_inventory",
+                next_info["action_masks"]["slot_type"][1:].any(),
+            )
+        )
         if not done and (not has_active_actions or step_i == max_steps - 1):
             next_obs_np, _, ff_done, ff_info = env.finish_battle()
             total_reward += compute_custom_reward(ff_info)
@@ -647,8 +652,8 @@ def train_pytorch_ppo(
     episodes: int = 24,
     ticks_per_step: int = 8,
     max_steps_per_ep: int = 120,
-    batch_episodes: int = 4,
-    minibatch_size: int = 64,
+    batch_episodes: int = 12,
+    minibatch_size: int = 128,
     lr: float = 3e-4,
     gamma: float = 0.99,
     gae_lambda: float = 0.95,
@@ -732,13 +737,26 @@ def train_pytorch_ppo(
     )
     ensure_architecture_diagrams(live_attacker)
 
-    opt_live = torch.optim.Adam(live_attacker.parameters(), lr=lr, eps=1e-5)
+    critic_param_ids = {id(p) for p in live_attacker.critic_head.parameters()}
+    actor_params = [p for p in live_attacker.parameters() if id(p) not in critic_param_ids]
+    critic_params = list(live_attacker.critic_head.parameters())
+    opt_live = torch.optim.Adam(
+        [
+            {"params": actor_params, "lr": lr},
+            {"params": critic_params, "lr": lr * 2.5},
+        ],
+        eps=1e-5,
+    )
     # Restore optimizer momentum if resuming from a checkpoint, while applying the new LR!
     if loaded_ckpt and "optimizer_state_dict" in loaded_ckpt:
         try:
             opt_live.load_state_dict(loaded_ckpt["optimizer_state_dict"])
-            for pg in opt_live.param_groups:
-                pg["lr"] = lr
+            if len(opt_live.param_groups) >= 2:
+                opt_live.param_groups[0]["lr"] = lr
+                opt_live.param_groups[1]["lr"] = lr * 2.5
+            else:
+                for pg in opt_live.param_groups:
+                    pg["lr"] = lr
         except Exception:
             pass
 
@@ -824,6 +842,8 @@ def train_pytorch_ppo(
 
     army_names = [a.get("name", f"Army #{i+1}") for i, a in enumerate(armies)]
     village_names = [v.get("name", f"Village #{i+1}") for i, v in enumerate(layouts)]
+    strat_armies = list(range(len(armies)))
+    strat_villages = list(range(len(layouts)))
 
     def _save_attacker_ckpt(path: str, ep_total: int) -> None:
         payload = {
@@ -943,8 +963,12 @@ def train_pytorch_ppo(
 
         else:
             if matchup_mode == "random":
-                village_idx = random.randrange(len(layouts))
-                army_idx = random.randrange(len(armies))
+                if (ep - 1) % max(1, len(armies)) == 0:
+                    random.shuffle(strat_armies)
+                if (ep - 1) % max(1, len(layouts)) == 0:
+                    random.shuffle(strat_villages)
+                army_idx = strat_armies[(ep - 1) % len(armies)]
+                village_idx = strat_villages[(ep - 1) % len(layouts)]
                 chosen_layout_dict = layouts[village_idx]
                 chosen_army_dict = armies[army_idx]
             elif matchup_mode == "round_robin":
@@ -1074,18 +1098,22 @@ def train_pytorch_ppo(
             done = bool(terminated or truncated)
 
             custom_r = compute_custom_reward(next_info)
-            if chosen_slot_type == 0:
-                if next_info["army_context"][3] == 0.0 and bool(
-                    next_info["action_masks"]["slot_type"][1:].any()
-                ):
-                    custom_r -= 0.04
-            elif not next_info.get("invalid_action", False):
-                custom_r += 0.035
+            if chosen_slot_type == 0 and deploy_steps == 0 and step_i < 4:
+                custom_r -= 0.02
 
-            has_active_actions = bool(next_info["action_masks"]["slot_type"][1:].any())
+            has_active_actions = bool(
+                next_info.get(
+                    "has_remaining_inventory",
+                    next_info["action_masks"]["slot_type"][1:].any(),
+                )
+            )
             if not done and (not has_active_actions or step_i == max_steps_per_ep - 1):
                 next_obs_np, _ff_rew, ff_done, ff_info = env.finish_battle()
-                custom_r += compute_custom_reward(ff_info)
+                ff_equiv_steps = float(ff_info.get("ff_ticks", 0)) / max(
+                    1.0, float(ticks_per_step) * 4.0
+                )
+                ff_discount = float(gamma ** min(25.0, ff_equiv_steps))
+                custom_r += ff_discount * compute_custom_reward(ff_info)
                 next_info = ff_info
                 done = bool(ff_done)
 

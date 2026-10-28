@@ -14,24 +14,29 @@ from .networks import CoCActorCritic
 
 def compute_custom_reward(step_info: Dict[str, Any]) -> float:
     """
-    Dense & Milestone Reward Shaping for TH18 Combat.
-    50/50 balanced weighting between Destruction Percentage (50% max)
-    and Stars Earned (50% max).
-    - 50.0 points total for 100% destruction (0.50 pt per 1% destruction).
-    - 50.0 points total for 3 stars (16.6667 pts per star).
-    A complete 100% 3-star wipe achieves 100.0 base reward.
+    Calibrated 100-Point Dense & Milestone Reward Shaping for TH18 Combat:
+      - 50.0 pts total for 100% destruction & HP damage:
+          * Destruction Percentage progress: `delta_pct * 0.35` (35.0 pts max)
+          * Dense Core & Defense HP damage:  `delta_damage_ratio * 15.0` (15.0 pts max)
+      - 50.0 pts total for 3 Stars & Town Hall 18 takedown:
+          * Star progression:                `delta_stars * 12.0` (36.0 pts max)
+          * Town Hall 18 takedown milestone: `+14.0` on `th_just_destroyed`
+      - Spatial funnel cohesion shaping:     `funnel_cohesion * 0.08`
     """
     delta_pct = float(step_info.get("delta_pct", 0))
     delta_stars = float(step_info.get("delta_stars", 0))
+    delta_dmg_ratio = float(step_info.get("delta_damage_ratio", 0.0))
+    th_just_destroyed = bool(step_info.get("th_just_destroyed", False))
+    funnel_cohesion = float(step_info.get("funnel_cohesion", 0.0))
     invalid_action = bool(step_info.get("invalid_action", False))
 
-    # 50% for 100% destruction -> 0.50 points per 1%
-    pct_reward = delta_pct * 0.50
+    pct_reward = delta_pct * 0.35
+    dmg_reward = delta_dmg_ratio * 15.0
+    stars_reward = delta_stars * 12.0
+    th_bonus = 14.0 if th_just_destroyed else 0.0
+    cohesion_reward = funnel_cohesion * 0.08
 
-    # 50% for 3 stars -> 50.0 / 3.0 = 16.6666667 points per star
-    stars_reward = delta_stars * (50.0 / 3.0)
-
-    reward = pct_reward + stars_reward
+    reward = pct_reward + dmg_reward + stars_reward + th_bonus + cohesion_reward
 
     if invalid_action:
         reward -= 0.05
@@ -186,7 +191,7 @@ def ppo_minibatch_update(
                 "tile": masks_b["tile"][mb_idx],
             }
 
-            _, new_logprob, entropy, new_value, _ = model.get_action_and_value(
+            _, new_logprob, entropy, new_value, diag = model.get_action_and_value(
                 mb_obs, masks=mb_masks, action=mb_act, army_context=mb_ctx
             )
 
@@ -199,8 +204,9 @@ def ppo_minibatch_update(
 
             value_loss = 0.5 * F.mse_loss(new_value, mb_ret)
             entropy_loss = entropy.mean()
+            reg_entropy = diag.get("reg_entropy", entropy).mean()
 
-            loss = policy_loss + vf_coef * value_loss - ent_coef * entropy_loss
+            loss = policy_loss + vf_coef * value_loss - ent_coef * reg_entropy
 
             optimizer.zero_grad()
             loss.backward()

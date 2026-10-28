@@ -42,12 +42,12 @@
 <!-- 0 -->
 <g id="node1" class="node">
 <title>0</title>
-<polygon fill="lightyellow" stroke="none" points="599.25,-2178.5 472.75,-2178.5 472.75,-2140 599.25,-2140 599.25,-2178.5"/>
-<polygon fill="none" stroke="black" points="472.75,-2140 472.75,-2178.5 531.5,-2178.5 531.5,-2140 472.75,-2140"/>
-<text xml:space="preserve" text-anchor="start" x="477.75" y="-2162.25" font-family="Linux libertine" font-size="10.00">obs (input)</text>
-<text xml:space="preserve" text-anchor="start" x="483.75" y="-2148" font-family="Linux libertine" font-size="10.00">depth:0</text>
-<polygon fill="none" stroke="black" points="531.5,-2140 531.5,-2178.5 599.25,-2178.5 599.25,-2140 531.5,-2140"/>
-<text xml:space="preserve" text-anchor="start" x="536.5" y="-2155.12" font-family="Linux libertine" font-size="10.00">(1, 8, 50, 50)</text>
+<polygon fill="lightyellow" stroke="none" points="601.25,-2178.5 468.75,-2178.5 468.75,-2140 601.25,-2140 601.25,-2178.5"/>
+<polygon fill="none" stroke="black" points="468.75,-2140 468.75,-2178.5 527.5,-2178.5 527.5,-2140 468.75,-2140"/>
+<text xml:space="preserve" text-anchor="start" x="473.75" y="-2162.25" font-family="Linux libertine" font-size="10.00">obs (input)</text>
+<text xml:space="preserve" text-anchor="start" x="479.75" y="-2148" font-family="Linux libertine" font-size="10.00">depth:0</text>
+<polygon fill="none" stroke="black" points="527.5,-2140 527.5,-2178.5 601.25,-2178.5 601.25,-2140 527.5,-2140"/>
+<text xml:space="preserve" text-anchor="start" x="532.5" y="-2155.12" font-family="Linux libertine" font-size="10.00">(1, 10, 50, 50)</text>
 </g>
 <!-- 1 -->
 <g id="node2" class="node">
@@ -59,7 +59,7 @@
 <polygon fill="none" stroke="black" points="421.62,-1993 421.62,-2017.25 468.38,-2017.25 468.38,-1993 421.62,-1993"/>
 <text xml:space="preserve" text-anchor="start" x="431.5" y="-2001" font-family="Linux libertine" font-size="10.00">input:</text>
 <polygon fill="none" stroke="black" points="468.38,-1993 468.38,-2017.25 544.38,-2017.25 544.38,-1993 468.38,-1993"/>
-<text xml:space="preserve" text-anchor="start" x="476.38" y="-2001" font-family="Linux libertine" font-size="10.00">(1, 8, 50, 50) </text>
+<text xml:space="preserve" text-anchor="start" x="473.38" y="-2001" font-family="Linux libertine" font-size="10.00">(1, 10, 50, 50) </text>
 <polygon fill="none" stroke="black" points="421.62,-1968.75 421.62,-1993 468.38,-1993 468.38,-1968.75 421.62,-1968.75"/>
 <text xml:space="preserve" text-anchor="start" x="426.62" y="-1976.75" font-family="Linux libertine" font-size="10.00">output: </text>
 <polygon fill="none" stroke="black" points="468.38,-1968.75 468.38,-1993 544.38,-1993 544.38,-1968.75 468.38,-1968.75"/>
@@ -68,30 +68,30 @@
 <!-- 0&#45;&gt;1 -->
 <g id="edge2" class="edge">
 <title>0&#45;&gt;1</title>
-<path fill="none" stroke="black" d="M523.25,-2140.04C504.01,-2112.56 467.26,-2060.08 443.46,-2026.08"/>
-<polygon fill="black" stroke="black" points="446.59,-2024.45 437.99,-2018.26 440.86,-2028.46 446.59,-2024.45"/>
+<path fill="none" stroke="black" d="M522.36,-2140.04C503.29,-2112.56 466.86,-2060.08 443.27,-2026.08"/>
+<polygon fill="black" stroke="black" points="446.42,-2024.48 437.84,-2018.27 440.67,-2028.48 446.42,-2024.48"/>
 </g>
 <!-- 6 -->
 <g id="node7" class="node">
 <title>6</title>
-<polygon fill="aliceblue" stroke="none" points="703.12,-2104 538.88,-2104 538.88,-2055.5 703.12,-2055.5 703.12,-2104"/>
-<polygon fill="none" stroke="black" points="538.88,-2055.5 538.88,-2104 586.38,-2104 586.38,-2055.5 538.88,-2055.5"/>
-<text xml:space="preserve" text-anchor="start" x="543.88" y="-2082.75" font-family="Linux libertine" font-size="10.00">reshape</text>
-<text xml:space="preserve" text-anchor="start" x="544.25" y="-2068.5" font-family="Linux libertine" font-size="10.00">depth:1</text>
-<polygon fill="none" stroke="black" points="586.38,-2079.75 586.38,-2104 633.12,-2104 633.12,-2079.75 586.38,-2079.75"/>
-<text xml:space="preserve" text-anchor="start" x="596.25" y="-2087.75" font-family="Linux libertine" font-size="10.00">input:</text>
-<polygon fill="none" stroke="black" points="633.12,-2079.75 633.12,-2104 703.12,-2104 703.12,-2079.75 633.12,-2079.75"/>
-<text xml:space="preserve" text-anchor="start" x="638.12" y="-2087.75" font-family="Linux libertine" font-size="10.00">(1, 8, 50, 50) </text>
-<polygon fill="none" stroke="black" points="586.38,-2055.5 586.38,-2079.75 633.12,-2079.75 633.12,-2055.5 586.38,-2055.5"/>
-<text xml:space="preserve" text-anchor="start" x="591.38" y="-2063.5" font-family="Linux libertine" font-size="10.00">output: </text>
-<polygon fill="none" stroke="black" points="633.12,-2055.5 633.12,-2079.75 703.12,-2079.75 703.12,-2055.5 633.12,-2055.5"/>
-<text xml:space="preserve" text-anchor="start" x="643.38" y="-2063.5" font-family="Linux libertine" font-size="10.00">(1, 20000) </text>
+<polygon fill="aliceblue" stroke="none" points="706.12,-2104 535.88,-2104 535.88,-2055.5 706.12,-2055.5 706.12,-2104"/>
+<polygon fill="none" stroke="black" points="535.88,-2055.5 535.88,-2104 583.38,-2104 583.38,-2055.5 535.88,-2055.5"/>
+<text xml:space="preserve" text-anchor="start" x="540.88" y="-2082.75" font-family="Linux libertine" font-size="10.00">reshape</text>
+<text xml:space="preserve" text-anchor="start" x="541.25" y="-2068.5" font-family="Linux libertine" font-size="10.00">depth:1</text>
+<polygon fill="none" stroke="black" points="583.38,-2079.75 583.38,-2104 630.12,-2104 630.12,-2079.75 583.38,-2079.75"/>
+<text xml:space="preserve" text-anchor="start" x="593.25" y="-2087.75" font-family="Linux libertine" font-size="10.00">input:</text>
+<polygon fill="none" stroke="black" points="630.12,-2079.75 630.12,-2104 706.12,-2104 706.12,-2079.75 630.12,-2079.75"/>
+<text xml:space="preserve" text-anchor="start" x="635.12" y="-2087.75" font-family="Linux libertine" font-size="10.00">(1, 10, 50, 50) </text>
+<polygon fill="none" stroke="black" points="583.38,-2055.5 583.38,-2079.75 630.12,-2079.75 630.12,-2055.5 583.38,-2055.5"/>
+<text xml:space="preserve" text-anchor="start" x="588.38" y="-2063.5" font-family="Linux libertine" font-size="10.00">output: </text>
+<polygon fill="none" stroke="black" points="630.12,-2055.5 630.12,-2079.75 706.12,-2079.75 706.12,-2055.5 630.12,-2055.5"/>
+<text xml:space="preserve" text-anchor="start" x="643.38" y="-2063.5" font-family="Linux libertine" font-size="10.00">(1, 25000) </text>
 </g>
 <!-- 0&#45;&gt;6 -->
 <g id="edge1" class="edge">
 <title>0&#45;&gt;6</title>
-<path fill="none" stroke="black" d="M555.71,-2140.28C565.08,-2131.74 576.54,-2121.29 587.23,-2111.54"/>
-<polygon fill="black" stroke="black" points="589.43,-2114.27 594.47,-2104.94 584.72,-2109.09 589.43,-2114.27"/>
+<path fill="none" stroke="black" d="M554.95,-2140.28C564.42,-2131.74 576.02,-2121.29 586.83,-2111.54"/>
+<polygon fill="black" stroke="black" points="589.07,-2114.23 594.16,-2104.94 584.39,-2109.03 589.07,-2114.23"/>
 </g>
 <!-- 2 -->
 <g id="node3" class="node">
@@ -241,7 +241,7 @@
 <polygon fill="none" stroke="black" points="630.25,-1993 630.25,-2017.25 677,-2017.25 677,-1993 630.25,-1993"/>
 <text xml:space="preserve" text-anchor="start" x="640.12" y="-2001" font-family="Linux libertine" font-size="10.00">input:</text>
 <polygon fill="none" stroke="black" points="677,-1993 677,-2017.25 736.5,-2017.25 736.5,-1993 677,-1993"/>
-<text xml:space="preserve" text-anchor="start" x="682" y="-2001" font-family="Linux libertine" font-size="10.00">(1, 20000) </text>
+<text xml:space="preserve" text-anchor="start" x="682" y="-2001" font-family="Linux libertine" font-size="10.00">(1, 25000) </text>
 <polygon fill="none" stroke="black" points="630.25,-1968.75 630.25,-1993 677,-1993 677,-1968.75 630.25,-1968.75"/>
 <text xml:space="preserve" text-anchor="start" x="635.25" y="-1976.75" font-family="Linux libertine" font-size="10.00">output: </text>
 <polygon fill="none" stroke="black" points="677,-1968.75 677,-1993 736.5,-1993 736.5,-1968.75 677,-1968.75"/>
