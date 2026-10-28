@@ -1,0 +1,13 @@
+{
+  "name": "coc-th18-simulator-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "web"
+  ],
+  "scripts": {
+    "dev": "npm --workspace=web run dev",
+    "build": "npm --workspace=web run build && rm -rf dist && cp -r web/dist ./dist"
+  }
+}

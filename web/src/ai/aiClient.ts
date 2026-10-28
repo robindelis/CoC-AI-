@@ -9,7 +9,7 @@ import {
   TrainingMode,
 } from './aiTypes';
 
-const AI_API_BASE = 'http://localhost:8000/api/ai';
+const AI_API_BASE = '/api/ai';
 
 export function getArchitectureSvgUrl(detail: 'overview' | 'detailed' = 'overview'): string {
   return `${AI_API_BASE}/architecture.svg?detail=${detail}`;
