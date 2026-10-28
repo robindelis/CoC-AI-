@@ -398,12 +398,12 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
         param_count: 977905,
         models_info: {
           attacker_selector: {
-            name: 'Attacker 1: Army Selector (8×50×50 → 3 Armies)',
+            name: 'Attacker 1: Army Selector (10×50×50 → 3 Armies)',
             params: 18420,
           },
           live_attacker: {
-            name: 'Attacker 2: Live Controller (CNN+64d → 7×10×5×50×50)',
-            params: 944256,
+            name: 'Attacker 2: Live Controller (10×50×50+64d → 7×10×5×50×50)',
+            params: 878236,
           },
           defender_selector: {
             name: 'Defender: Village Selector (64d Army → 5 Villages)',
