@@ -269,6 +269,8 @@ export function unitTypeSignature(u: InternalUnit): number {
     case 'Frostmite':
     case 'Booger':
     case 'Snake':
+    case 'Golemite':
+    case 'Meteormite':
       return 0.14;
     case 'Barbarian':
     case 'SuperBarbarian':
@@ -276,12 +278,15 @@ export function unitTypeSignature(u: InternalUnit): number {
     case 'SneakyGoblin':
     case 'Miner':
     case 'HogRider':
+    case 'SuperHogRider':
+    case 'Henchman':
       return 0.18;
     case 'WallBreaker':
     case 'SuperWallBreaker':
     case 'Headhunter':
       return 0.22;
     case 'Bat':
+    case 'LavaPup':
       return 0.32;
     case 'Minion':
     case 'SuperMinion':
@@ -299,6 +304,7 @@ export function unitTypeSignature(u: InternalUnit): number {
       return 0.46;
     case 'Witch':
     case 'SuperWitch':
+    case 'RuinWitch':
     case 'ApprenticeWarden':
     case 'Druid':
     case 'Furnace':
@@ -317,9 +323,12 @@ export function unitTypeSignature(u: InternalUnit): number {
     case 'Giant':
     case 'SuperGiant':
     case 'DruidBear':
+    case 'GiantGiant':
+    case 'RuinKnight':
       return 0.66;
     case 'IceGolem':
     case 'Golem':
+    case 'MeteorGolem':
       return 0.70;
     case 'RootRider':
     case 'Pekka':
@@ -333,6 +342,7 @@ export function unitTypeSignature(u: InternalUnit): number {
     case 'Dragon':
     case 'SuperDragon':
     case 'ElectroDragon':
+    case 'Lavaloon':
       return 0.85;
     case 'LavaHound':
     case 'IceHound':
@@ -344,6 +354,8 @@ export function unitTypeSignature(u: InternalUnit): number {
     case 'LogLauncher':
     case 'FlameFlinger':
     case 'BattleDrill':
+    case 'TroopLauncher':
+    case 'SkyWagon':
       return 0.91;
     default:
       return u.is_air ? 0.36 : 0.46;

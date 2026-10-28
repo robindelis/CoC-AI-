@@ -318,9 +318,16 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
 
   function mutateVillageLayout(base: VillageLayout, swaps = 4): VillageLayout {
     const clone: VillageLayout = JSON.parse(JSON.stringify(base));
+    const footprintById = new Map(
+      FULL_CATALOG.buildings.map((s) => [s.id, s.footprint])
+    );
     const defIndices = clone.buildings
       .map((b, i) => ({ b, i }))
-      .filter((x) => x.b.building_id !== 'TownHall' && x.b.footprint === 3)
+      .filter(
+        (x) =>
+          x.b.building_id !== 'TownHall' &&
+          (footprintById.get(x.b.building_id) ?? 3) === 3
+      )
       .map((x) => x.i);
     for (let s = 0; s < swaps && defIndices.length >= 2; s++) {
       const i1 = defIndices[(s * 3) % defIndices.length];
@@ -590,15 +597,23 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           const deployCount = Math.max(1, Math.min(rem, Math.round(rem * frac)));
           rem -= deployCount;
           const y = Number((17.5 + ((slotIdx * 2.7 + w * 4.5) % 14.0)).toFixed(2));
-          const act = {
-            DeployTroop: {
-              troop_id: tid,
-              x: 1.5,
-              y,
-              count: deployCount,
-              deploy_fraction: frac,
-            },
-          };
+          const act =
+            deployCount > 1
+              ? {
+                  DeployTroopBatch: {
+                    troop_id: tid,
+                    x: 1.5,
+                    y,
+                    count: deployCount,
+                  },
+                }
+              : {
+                  DeployTroop: {
+                    troop_id: tid,
+                    x: 1.5,
+                    y,
+                  },
+                };
           sess.apply_action_json(JSON.stringify(act));
           sess.step_ticks(ticksPerStep);
           schedule.push({

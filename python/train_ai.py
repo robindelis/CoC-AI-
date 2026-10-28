@@ -473,13 +473,21 @@ def _discrete_action_to_battle_action_dict(
     spells = army_dict.get("spells", [])
 
     if slot_type == 1 and 0 <= slot_idx < len(troops):
+        cnt = max(1, int(deploy_count))
+        if cnt > 1:
+            return {
+                "DeployTroopBatch": {
+                    "troop_id": troops[slot_idx][0],
+                    "x": x,
+                    "y": y,
+                    "count": cnt,
+                }
+            }
         return {
             "DeployTroop": {
                 "troop_id": troops[slot_idx][0],
                 "x": x,
                 "y": y,
-                "count": max(1, int(deploy_count)),
-                "deploy_fraction": round(float(deploy_fraction), 2),
             }
         }
     if slot_type == 2 and 0 <= slot_idx < len(heroes):

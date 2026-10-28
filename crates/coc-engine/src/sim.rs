@@ -6341,15 +6341,19 @@ impl BattleEngine {
                 | TroopId::Firemite
                 | TroopId::Frostmite
                 | TroopId::Booger
-                | TroopId::Snake => 0.14,
+                | TroopId::Snake
+                | TroopId::Golemite
+                | TroopId::Meteormite => 0.14,
                 TroopId::Barbarian
                 | TroopId::SuperBarbarian
                 | TroopId::Goblin
                 | TroopId::SneakyGoblin
                 | TroopId::Miner
-                | TroopId::HogRider => 0.18,
+                | TroopId::HogRider
+                | TroopId::SuperHogRider
+                | TroopId::Henchman => 0.18,
                 TroopId::WallBreaker | TroopId::SuperWallBreaker | TroopId::Headhunter => 0.22,
-                TroopId::Bat => 0.32,
+                TroopId::Bat | TroopId::LavaPup => 0.32,
                 TroopId::Minion
                 | TroopId::SuperMinion
                 | TroopId::BabyDragon
@@ -6361,6 +6365,7 @@ impl BattleEngine {
                 | TroopId::SuperWizard => 0.46,
                 TroopId::Witch
                 | TroopId::SuperWitch
+                | TroopId::RuinWitch
                 | TroopId::ApprenticeWarden
                 | TroopId::Druid
                 | TroopId::Furnace => 0.52,
@@ -6373,14 +6378,21 @@ impl BattleEngine {
                 | TroopId::Yeti
                 | TroopId::SuperYeti
                 | TroopId::ElectroTitan => 0.60,
-                TroopId::Giant | TroopId::SuperGiant | TroopId::DruidBear => 0.66,
-                TroopId::IceGolem | TroopId::Golem => 0.70,
+                TroopId::Giant
+                | TroopId::SuperGiant
+                | TroopId::DruidBear
+                | TroopId::GiantGiant
+                | TroopId::RuinKnight => 0.66,
+                TroopId::IceGolem | TroopId::Golem | TroopId::MeteorGolem => 0.70,
                 TroopId::RootRider | TroopId::Pekka => 0.74,
                 TroopId::GuardianLogger
                 | TroopId::GuardianLongshot
                 | TroopId::GuardianSmasher => 0.78,
                 TroopId::Healer => 0.81,
-                TroopId::Dragon | TroopId::SuperDragon | TroopId::ElectroDragon => 0.85,
+                TroopId::Dragon
+                | TroopId::SuperDragon
+                | TroopId::ElectroDragon
+                | TroopId::Lavaloon => 0.85,
                 TroopId::LavaHound | TroopId::IceHound => 0.89,
                 TroopId::WallWrecker
                 | TroopId::BattleBlimp
@@ -6388,7 +6400,9 @@ impl BattleEngine {
                 | TroopId::SiegeBarracks
                 | TroopId::LogLauncher
                 | TroopId::FlameFlinger
-                | TroopId::BattleDrill => 0.91,
+                | TroopId::BattleDrill
+                | TroopId::TroopLauncher
+                | TroopId::SkyWagon => 0.91,
             },
         }
     }

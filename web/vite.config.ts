@@ -25,6 +25,7 @@ export default defineConfig({
     {
       name: 'coc-ai-server-autostart',
       configureServer(server) {
+        if (process.env.COC_AI_MANAGED === '1') return;
         const venvPython = path.join(rootDir, '.venv', 'bin', 'python');
         const scriptPath = path.join(rootDir, 'python', 'ai_server.py');
 
@@ -33,9 +34,7 @@ export default defineConfig({
           aiServerProc = spawn(venvPython, [scriptPath], {
             cwd: rootDir,
             stdio: 'ignore',
-            detached: true,
           });
-          aiServerProc.unref();
         });
 
         server.httpServer?.once('close', () => {
