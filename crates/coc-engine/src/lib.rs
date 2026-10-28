@@ -1069,4 +1069,55 @@ mod tests {
             "No residual beams or explosions may remain after Totem dies"
         );
     }
+
+    #[test]
+    fn test_battle_ends_early_if_only_healing_units_alive() {
+        let catalog = get_full_catalog();
+        let mut layout = catalog.preset_layouts[0].clone();
+        layout.buildings = vec![PlacedBuilding {
+            instance_id: 1,
+            building_id: BuildingId::GoldStorage,
+            tile_x: 45,
+            tile_y: 45,
+            mode: DefenseMode::Default,
+            direction_deg: 0.0,
+        }];
+        layout.walls.clear();
+        layout.traps.clear();
+        layout.defending_heroes.clear();
+        layout.defending_cc_troops.clear();
+
+        let mut army = catalog.preset_armies[0].clone();
+        army.troops = vec![(TroopId::Healer, 1)];
+        army.spells.clear();
+        army.cc_spells.clear();
+        army.heroes.clear();
+        army.siege_machine = None;
+        army.cc_troops.clear();
+
+        let mut engine = BattleEngine::new(&layout, &army);
+
+        // Deploy the healer
+        engine.apply_action(BattleAction::DeployTroop {
+            troop_id: TroopId::Healer,
+            x: 10.0,
+            y: 10.0,
+        });
+
+        // Run until tick > 10
+        for _ in 0..15 {
+            engine.step(BattleAction::NoOp);
+        }
+
+        assert!(
+            engine.is_finished,
+            "Battle must end early when only healing units (Healer/Unicorn) are alive and inventory is empty, tick was {}",
+            engine.tick
+        );
+        assert!(
+            engine.tick < 50,
+            "Battle must terminate well before 1800 ticks, finished at tick {}",
+            engine.tick
+        );
+    }
 }

@@ -7,6 +7,7 @@ from .networks import (
 )
 from .ppo import (
     compute_custom_reward,
+    compute_custom_reward_components,
     compute_gae,
     ppo_minibatch_update,
     ppo_update_step,

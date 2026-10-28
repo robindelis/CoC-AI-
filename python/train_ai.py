@@ -24,6 +24,7 @@ from coc_rl import (
     CoCDefenderEvolution,
     DefenderVillageSelectorNet,
     compute_custom_reward,
+    compute_custom_reward_components,
     compute_gae,
     ensure_architecture_diagrams,
     ppo_minibatch_update,
@@ -1061,6 +1062,9 @@ def train_pytorch_ppo(
         mask_tile_list: List[torch.Tensor] = []
 
         ep_custom_reward = 0.0
+        ep_r_destr = 0.0
+        ep_r_stars = 0.0
+        ep_r_damage = 0.0
         steps_run = 0
         noop_steps = 0
         deploy_steps = 0
@@ -1097,9 +1101,10 @@ def train_pytorch_ppo(
             next_obs_np, _engine_rew, terminated, truncated, next_info = env.step(action_np)
             done = bool(terminated or truncated)
 
-            custom_r = compute_custom_reward(next_info)
+            custom_r, r_destr, r_stars, r_dmg = compute_custom_reward_components(next_info)
             if chosen_slot_type == 0 and deploy_steps == 0 and step_i < 4:
                 custom_r -= 0.02
+                r_dmg -= 0.02
 
             has_active_actions = bool(
                 next_info.get(
@@ -1113,11 +1118,18 @@ def train_pytorch_ppo(
                     1.0, float(ticks_per_step) * 4.0
                 )
                 ff_discount = float(gamma ** min(25.0, ff_equiv_steps))
-                custom_r += ff_discount * compute_custom_reward(ff_info)
+                ff_r, ff_destr, ff_stars, ff_dmg = compute_custom_reward_components(ff_info)
+                custom_r += ff_discount * ff_r
+                r_destr += ff_discount * ff_destr
+                r_stars += ff_discount * ff_stars
+                r_dmg += ff_discount * ff_dmg
                 next_info = ff_info
                 done = bool(ff_done)
 
             ep_custom_reward += custom_r
+            ep_r_destr += r_destr
+            ep_r_stars += r_stars
+            ep_r_damage += r_dmg
             steps_run += 1
 
             obs_list.append(obs_t.squeeze(0))
@@ -1333,6 +1345,9 @@ def train_pytorch_ppo(
                 else f"Village {village_idx}"
             ),
             "reward": round(float(ep_custom_reward), 3),
+            "reward_destr": round(float(ep_r_destr), 3),
+            "reward_stars": round(float(ep_r_stars), 3),
+            "reward_damage": round(float(ep_r_damage), 3),
             "avg_reward_10": round(avg_reward_10, 3),
             "defender_reward": round(float(defender_reward), 3),
             "destruction_pct": pct,

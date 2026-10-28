@@ -12,16 +12,17 @@ import torch.nn.functional as F
 from .networks import CoCActorCritic
 
 
-def compute_custom_reward(step_info: Dict[str, Any]) -> float:
+def compute_custom_reward_components(
+    step_info: Dict[str, Any]
+) -> Tuple[float, float, float, float]:
     """
     Calibrated 100-Point Dense & Milestone Reward Shaping for TH18 Combat:
-      - 50.0 pts total for 100% destruction & HP damage:
-          * Destruction Percentage progress: `delta_pct * 0.35` (35.0 pts max)
-          * Dense Core & Defense HP damage:  `delta_damage_ratio * 15.0` (15.0 pts max)
-      - 50.0 pts total for 3 Stars & Town Hall 18 takedown:
-          * Star progression:                `delta_stars * 12.0` (36.0 pts max)
-          * Town Hall 18 takedown milestone: `+14.0` on `th_just_destroyed`
-      - Spatial funnel cohesion shaping:     `funnel_cohesion * 0.08`
+      - 35.0 pts max for Destruction Percentage: delta_pct * 0.35
+      - 50.0 pts max for 3 Stars & TH18 milestone: delta_stars * 12.0 + (14.0 if TH takedown)
+      - 15.0+ pts max for Core HP damage & tactical cohesion: delta_damage_ratio * 15.0 + funnel_cohesion * 0.08 - penalty
+
+    Returns:
+      (total_reward, reward_destr, reward_stars_th, reward_damage_tactical)
     """
     delta_pct = float(step_info.get("delta_pct", 0))
     delta_stars = float(step_info.get("delta_stars", 0))
@@ -30,18 +31,20 @@ def compute_custom_reward(step_info: Dict[str, Any]) -> float:
     funnel_cohesion = float(step_info.get("funnel_cohesion", 0.0))
     invalid_action = bool(step_info.get("invalid_action", False))
 
-    pct_reward = delta_pct * 0.35
-    dmg_reward = delta_dmg_ratio * 15.0
-    stars_reward = delta_stars * 12.0
+    r_destr = delta_pct * 0.35
     th_bonus = 14.0 if th_just_destroyed else 0.0
-    cohesion_reward = funnel_cohesion * 0.08
-
-    reward = pct_reward + dmg_reward + stars_reward + th_bonus + cohesion_reward
-
+    r_stars = delta_stars * 12.0 + th_bonus
+    r_damage = delta_dmg_ratio * 15.0 + funnel_cohesion * 0.08
     if invalid_action:
-        reward -= 0.05
+        r_damage -= 0.05
 
-    return float(reward)
+    total = r_destr + r_stars + r_damage
+    return float(total), float(r_destr), float(r_stars), float(r_damage)
+
+
+def compute_custom_reward(step_info: Dict[str, Any]) -> float:
+    total, _, _, _ = compute_custom_reward_components(step_info)
+    return float(total)
 
 
 def compute_gae(

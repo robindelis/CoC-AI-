@@ -15,9 +15,9 @@
               "state": {
                 "file": "01_Model_Architecture_and_Training_Tracker.canvas",
                 "viewState": {
-                  "x": 2742.6437804715215,
-                  "y": 260.17155484294574,
-                  "zoom": 0.4499999999999996
+                  "x": 2075.007331262454,
+                  "y": 1767.401411435907,
+                  "zoom": -0.05000000000000049
                 }
               },
               "icon": "lucide-layout-dashboard",
@@ -193,6 +193,8 @@
   },
   "active": "a12dbd6778e0f270",
   "lastOpenFiles": [
+    "assets/charts/v2_ai_diagnostics_telemetry.png",
+    "experiments/AI_Diagnostics_And_Training_Fixes.md",
     "00_Index_MOC.md",
     "01_Model_Architecture_and_Training_Tracker.canvas",
     "runs/v2_archetype_10ch.md",

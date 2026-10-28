@@ -112,13 +112,13 @@
         "tile_xy (2500)",
         "critic_value (1)"
       ],
-      "total_episodes": 5786,
-      "latest_checkpoint": "attacker_ep5786_100pct_3star.pt",
+      "total_episodes": 5788,
+      "latest_checkpoint": "attacker_ep5788_100pct_3star.pt",
       "best_pct": 100,
       "best_stars": 3,
       "best_reward": 127.8575248226292,
       "hyperparams": {
-        "lr": 0.00015,
+        "lr": 0.0003,
         "batch_episodes": 12,
         "minibatch_size": 128,
         "ppo_epochs": 4,
@@ -129,9 +129,9 @@
         "ent_coef": 0.015,
         "training_mode": "live_attacker",
         "matchup_mode": "random",
-        "episodes": 60000,
+        "episodes": 2,
         "co_evolve_defender": false,
-        "resumed_from": "scratch"
+        "resumed_from": "latest_attacker.pt"
       },
       "sessions": [
         {
@@ -318,6 +318,17 @@
           "best_stars": 3,
           "best_reward": 97.78332225010968,
           "notes": "Initial training (5,786 ep)"
+        },
+        {
+          "session_id": 18,
+          "start_ep": 5786,
+          "end_ep": 5788,
+          "episodes": 2,
+          "checkpoint": "attacker_ep5788_100pct_3star.pt",
+          "best_pct": 100,
+          "best_stars": 3,
+          "best_reward": 97.78332225010968,
+          "notes": "Resumed training (+2 ep from latest_attacker.pt)"
         }
       ],
       "history_points": [
@@ -60566,6 +60577,24 @@
           "policy_loss": -0.0144,
           "value_loss": 9.3857,
           "entropy": 3.376
+        },
+        {
+          "episode": 5787,
+          "destruction_pct": 66,
+          "stars": 2,
+          "reward": 61.442,
+          "policy_loss": 0.0,
+          "value_loss": 0.0,
+          "entropy": 0.0
+        },
+        {
+          "episode": 5788,
+          "destruction_pct": 47,
+          "stars": 0,
+          "reward": 23.969,
+          "policy_loss": -0.0158,
+          "value_loss": 92.1548,
+          "entropy": 2.878
         }
       ]
     }

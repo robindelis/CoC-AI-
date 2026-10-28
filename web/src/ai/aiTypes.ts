@@ -50,6 +50,9 @@ export interface AITrainingEpisodeRecord {
   village_idx?: number;
   village_name?: string;
   reward: number;
+  reward_destr?: number;
+  reward_stars?: number;
+  reward_damage?: number;
   avg_reward_10: number;
   defender_reward?: number;
   destruction_pct: number;

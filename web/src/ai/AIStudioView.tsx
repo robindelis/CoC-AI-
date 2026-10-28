@@ -31,6 +31,7 @@ import {
   TrainingMode,
 } from './aiTypes';
 import { NetworkBuilderPanel } from './NetworkBuilderPanel';
+import { useContainerWidth } from './useContainerWidth';
 
 interface AIStudioViewProps {
   studioMode: 'trainer' | 'tester';
@@ -83,6 +84,9 @@ interface BinnedPoint {
   avg50Pct: number;
   meanNoop: number;
   meanReward: number;
+  meanRewardDestr: number;
+  meanRewardStars: number;
+  meanRewardDamage: number;
   meanEntropy: number;
   meanValLoss: number;
 }
@@ -112,7 +116,23 @@ function binTrainingHistory(
     const meanNoop =
       slice.reduce((a, b) => a + (b.noop_pct ?? 0), 0) / slice.length;
     const meanReward =
-      slice.reduce((a, b) => a + b.reward, 0) / slice.length;
+      slice.reduce((a, b) => a + (b.reward ?? 0), 0) / slice.length;
+    const meanRewardDestr =
+      slice.reduce((a, b) => a + (b.reward_destr ?? (b.destruction_pct * 0.35)), 0) / slice.length;
+    const meanRewardStars =
+      slice.reduce((a, b) => {
+        if (b.reward_stars !== undefined) return a + b.reward_stars;
+        const thBonus = b.stars >= 2 || b.destruction_pct >= 50 ? 14.0 : 0.0;
+        return a + (b.stars * 12.0 + thBonus);
+      }, 0) / slice.length;
+    const meanRewardDamage =
+      slice.reduce((a, b) => {
+        if (b.reward_damage !== undefined) return a + b.reward_damage;
+        const destr = b.destruction_pct * 0.35;
+        const starsAndTh = b.stars * 12.0 + (b.stars >= 2 ? 14.0 : 0.0);
+        return a + Math.max(0, (b.reward ?? 0) - destr - starsAndTh);
+      }, 0) / slice.length;
+
     const meanEntropy =
       slice.reduce((a, b) => a + b.entropy, 0) / slice.length;
     const meanValLoss =
@@ -127,6 +147,9 @@ function binTrainingHistory(
       avg50Pct,
       meanNoop,
       meanReward,
+      meanRewardDestr,
+      meanRewardStars,
+      meanRewardDamage,
       meanEntropy,
       meanValLoss,
     });
@@ -232,6 +255,10 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   const [ppoEpochs, setPpoEpochs] = useState<number>(4);
   const [lr, setLr] = useState<number>(0.0003);
   const [coEvolveDefender, setCoEvolveDefender] = useState<boolean>(false);
+  const [trainerTab, setTrainerTab] = useState<'configs' | 'stats'>('stats');
+  const [fitYAxis, setFitYAxis] = useState<boolean>(false);
+  const [mainChartRef, mainChartWidth] = useContainerWidth(960);
+  const [pacingChartRef, pacingChartWidth] = useContainerWidth(380);
 
   // Army and Village Presets selection for Training
   const [allArmies, setAllArmies] = useState<ArmyLoadout[]>(() => catalog.preset_armies);
@@ -426,6 +453,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
     });
     const st = await fetchAIServerStatus();
     if (st) setServerStatus(st);
+    setTrainerTab('stats');
   };
 
   const handleRenameModel = async (oldFilename: string) => {
@@ -456,6 +484,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
     await stopAIPpoTraining();
     const st = await fetchAIServerStatus();
     if (st) setServerStatus(st);
+    setTrainerTab('stats');
   };
 
   const handleRunTrainedModelTest = async () => {
@@ -511,6 +540,10 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
         deltaPct: 0,
         avgNoop: 0,
         avgFps: 0,
+        meanReward: 0,
+        meanRewardDestr: 0,
+        meanRewardStars: 0,
+        meanRewardDamage: 0,
       };
     }
     const firstSlice = history.slice(0, Math.min(25, history.length));
@@ -523,11 +556,44 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
       lastSlice.reduce((a, r) => a + (r.noop_pct ?? 0), 0) / lastSlice.length;
     const avgFps =
       lastSlice.reduce((a, r) => a + (r.fps_ticks ?? 0), 0) / lastSlice.length;
+
+    // Mean reward & 3 contributions across the recent 50 episodes:
+    const meanReward =
+      lastSlice.reduce((a, r) => a + (r.reward ?? 0), 0) / lastSlice.length;
+
+    // Contribution 1: Destruction % progression (35 pts max)
+    const meanRewardDestr =
+      lastSlice.reduce(
+        (a, r) => a + (r.reward_destr ?? r.destruction_pct * 0.35),
+        0
+      ) / lastSlice.length;
+
+    // Contribution 2: Stars & Town Hall 18 milestone (50 pts max)
+    const meanRewardStars =
+      lastSlice.reduce((a, r) => {
+        if (r.reward_stars !== undefined) return a + r.reward_stars;
+        const thBonus = r.stars >= 2 || r.destruction_pct >= 50 ? 14.0 : 0.0;
+        return a + (r.stars * 12.0 + thBonus);
+      }, 0) / lastSlice.length;
+
+    // Contribution 3: Dense Core HP damage & tactical shaping (15+ pts max)
+    const meanRewardDamage =
+      lastSlice.reduce((a, r) => {
+        if (r.reward_damage !== undefined) return a + r.reward_damage;
+        const destr = r.destruction_pct * 0.35;
+        const starsAndTh = r.stars * 12.0 + (r.stars >= 2 ? 14.0 : 0.0);
+        return a + Math.max(0, (r.reward ?? 0) - destr - starsAndTh);
+      }, 0) / lastSlice.length;
+
     return {
       recent50Pct: Math.round(recent50Pct * 10) / 10,
       deltaPct: Math.round((recent50Pct - firstAvg) * 10) / 10,
       avgNoop: Math.round(avgNoop * 10) / 10,
       avgFps: Math.round(avgFps),
+      meanReward: Math.round(meanReward * 10) / 10,
+      meanRewardDestr: Math.round(meanRewardDestr * 10) / 10,
+      meanRewardStars: Math.round(meanRewardStars * 10) / 10,
+      meanRewardDamage: Math.round(meanRewardDamage * 10) / 10,
     };
   }, [history, serverStatus?.checkpoint?.best_pct]);
 
@@ -611,9 +677,49 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
         serverStatus?.checkpoint?.best_stars ?? 0
       );
 
+    const dataMinPct = binned.length > 0 ? Math.min(...binned.map((b) => b.minPct)) : 0;
+    const dataMaxPct = binned.length > 0 ? Math.max(...binned.map((b) => b.maxPct)) : 100;
+    const effectiveYMin =
+      fitYAxis && binned.length > 0
+        ? Math.max(0, Math.floor((dataMinPct - 2) / 5) * 5)
+        : 0;
+    const effectiveYMax =
+      fitYAxis && binned.length > 0
+        ? Math.min(100, Math.ceil((dataMaxPct + 2) / 5) * 5)
+        : 100;
+    const ySpan = Math.max(10, effectiveYMax - effectiveYMin);
+    const yTicks = [0, 0.25, 0.5, 0.75, 1.0].map((frac) =>
+      Math.round(effectiveYMin + frac * ySpan)
+    );
+
     return (
       <div className="ai-trainer-fullscreen">
-        {/* TOP CONTROL & CHECKPOINT RESUME BAR */}
+        {/* SUBTAB BAR: SWITCH BETWEEN CONFIGURATIONS AND STATS */}
+        <div className="ai-trainer-subtabs">
+          <button
+            type="button"
+            className={`ai-trainer-subtab ${trainerTab === 'configs' ? 'active' : ''}`}
+            onClick={() => setTrainerTab('configs')}
+          >
+            ⚙️ Training Configurations & Model Setup
+          </button>
+          <button
+            type="button"
+            className={`ai-trainer-subtab ${trainerTab === 'stats' ? 'active' : ''}`}
+            onClick={() => setTrainerTab('stats')}
+          >
+            📊 Training Stats & Live Telemetry
+            {isTraining && (
+              <span className="ai-live-pulse-badge">
+                ● LIVE (Ep {serverStatus?.training?.current_episode ?? 0})
+              </span>
+            )}
+          </button>
+        </div>
+
+        {trainerTab === 'configs' && (
+          <>
+            {/* TOP CONTROL & CHECKPOINT RESUME BAR */}
         <div className="ai-trainer-topbar">
           <div className="ai-form-grid" style={{ gridTemplateColumns: '1.2fr 0.8fr' }}>
             <label>
@@ -892,7 +998,250 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
           history={history}
         />
 
-        {/* 6-KPI LIVE SUMMARY STRIP */}
+        {/* SAVED CHECKPOINTS LIBRARY & FILE RENAMER */}
+        <section className="ai-card" style={{ marginTop: 4 }}>
+          <div className="ai-card-header">
+            <h3>💾 Saved Training Files & Checkpoints ({savedModels.length} Models in `trained_models/`)</h3>
+            <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+              Name, rename, and review bundled village & army configurations
+            </span>
+          </div>
+
+          {renameMessage && (
+            <div
+              style={{
+                padding: '6px 12px',
+                borderRadius: 6,
+                fontSize: '0.82rem',
+                marginBottom: 8,
+                background: renameMessage.isError
+                  ? 'rgba(239, 68, 68, 0.2)'
+                  : 'rgba(34, 197, 94, 0.2)',
+                color: renameMessage.isError ? '#f87171' : '#4ade80',
+                border: `1px solid ${
+                  renameMessage.isError ? '#ef4444' : '#22c55e'
+                }`,
+              }}
+            >
+              {renameMessage.text}
+            </div>
+          )}
+
+          <div className="ai-models-table-wrap">
+            <table className="ai-matrix-table">
+              <thead>
+                <tr>
+                  <th>Checkpoint File</th>
+                  <th>Episodes</th>
+                  <th>Best Destruction</th>
+                  <th>Bundled Armies</th>
+                  <th>Bundled Villages</th>
+                  <th>Size</th>
+                  <th>Updated</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {savedModels.map((m) => {
+                  const isEditing = renamingModel === m.filename;
+                  const isCurrentResume = resumeFrom === m.filename;
+                  const armyList =
+                    m.army_names ?? m.armies?.map((a) => a.name) ?? ['3 Meta Armies'];
+                  const vilList =
+                    m.village_names ?? m.villages?.map((v) => v.name) ?? ['5 Meta Bases'];
+
+                  return (
+                    <tr
+                      key={m.filename}
+                      style={
+                        isCurrentResume
+                          ? { background: 'rgba(250, 204, 21, 0.08)' }
+                          : undefined
+                      }
+                    >
+                      <td>
+                        {isEditing ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <input
+                              type="text"
+                              value={renameInput}
+                              onChange={(e) => setRenameInput(e.target.value)}
+                              className="clash-select"
+                              style={{
+                                padding: '2px 6px',
+                                fontSize: '0.8rem',
+                                minWidth: 160,
+                              }}
+                              autoFocus
+                            />
+                            <button
+                              className="clash-btn gold"
+                              style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                              onClick={() => handleRenameModel(m.filename)}
+                            >
+                              Save
+                            </button>
+                            <button
+                              className="clash-btn"
+                              style={{ padding: '2px 6px', fontSize: '0.75rem' }}
+                              onClick={() => setRenamingModel(null)}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span
+                              style={{
+                                fontWeight: 700,
+                                color: isCurrentResume ? '#facc15' : '#f8fafc',
+                              }}
+                            >
+                              💾 {m.filename}
+                            </span>
+                            <button
+                              type="button"
+                              title="Rename file"
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#38bdf8',
+                                cursor: 'pointer',
+                                fontSize: '0.8rem',
+                                padding: 0,
+                              }}
+                              onClick={() => {
+                                setRenamingModel(m.filename);
+                                setRenameInput(m.filename);
+                              }}
+                            >
+                              ✏️
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                      <td>Ep {m.episode}</td>
+                      <td style={{ color: '#fde047', fontWeight: 700 }}>
+                        {m.best_pct}% ({m.best_stars}★)
+                      </td>
+                      <td
+                        style={{ fontSize: '0.75rem', color: '#94a3b8' }}
+                        title={armyList.join('\n')}
+                      >
+                        {armyList.length} Armies ({armyList[0]?.split(' ')[0] ?? 'Meta'}...)
+                      </td>
+                      <td
+                        style={{ fontSize: '0.75rem', color: '#94a3b8' }}
+                        title={vilList.join('\n')}
+                      >
+                        {vilList.length} Bases ({vilList[0]?.split(' ')[0] ?? 'Meta'}...)
+                      </td>
+                      <td>{m.size_kb} KB</td>
+                      <td style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                        {m.updated_at}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button
+                            className={`clash-btn ${isCurrentResume ? 'gold' : ''}`}
+                            style={{ padding: '2px 8px', fontSize: '0.72rem' }}
+                            onClick={() => {
+                              setResumeFrom(m.filename);
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                          >
+                            {isCurrentResume ? '✓ Selected' : 'Resume'}
+                          </button>
+                          <button
+                            className="clash-btn green"
+                            style={{ padding: '2px 8px', fontSize: '0.72rem' }}
+                            onClick={() => {
+                              setTestModelFile(m.filename);
+                              onSwitchStudioMode('tester');
+                            }}
+                          >
+                            Test
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </>
+    )}
+
+    {/* ================================================================= */}
+    {/* PANEL B: TRAINING STATS, LIVE CURVES & MATCHUP ANALYTICS         */}
+    {/* ================================================================= */}
+    {trainerTab === 'stats' && (
+      <>
+        {/* COMPACT RUNTIME & CONTROL STRIP */}
+        <div
+          className="ai-trainer-topbar"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '10px 16px',
+            flexWrap: 'wrap',
+            gap: 12,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span
+              style={{
+                background: MODEL_BADGE[trainingMode]?.color ?? '#facc15',
+                color: '#0f172a',
+                fontWeight: 800,
+                padding: '3px 8px',
+                borderRadius: 4,
+                fontSize: '0.78rem',
+              }}
+            >
+              {MODEL_BADGE[trainingMode]?.label ?? trainingMode}
+            </span>
+            <span style={{ fontSize: '0.82rem', color: '#cbd5e1' }}>
+              Weights: <strong style={{ color: '#facc15' }}>{resumeFrom === 'scratch' ? 'Fresh (Untrained)' : resumeFrom}</strong>
+            </span>
+            <span style={{ fontSize: '0.82rem', color: '#94a3b8' }}>
+              Target: <strong>{episodes} Eps</strong> (LR: {lr}, Batch: {batchEpisodes})
+            </span>
+          </div>
+          <div className="ai-btn-row">
+            {!isTraining ? (
+              <button
+                className="clash-btn gold"
+                disabled={!serverStatus?.online}
+                onClick={handleStartTraining}
+              >
+                🚀 {resumeFrom === 'scratch' ? 'Train Fresh' : 'Resume & Train'}
+              </button>
+            ) : (
+              <button className="clash-btn danger" onClick={handleStopTraining}>
+                ⏹ Stop & Save
+              </button>
+            )}
+            <button
+              className="clash-btn"
+              onClick={() => setTrainerTab('configs')}
+              style={{ fontSize: '0.78rem' }}
+            >
+              ⚙️ Edit Configs
+            </button>
+            <button
+              className="clash-btn green"
+              onClick={() => onSwitchStudioMode('tester')}
+            >
+              🧪 Test Models →
+            </button>
+          </div>
+        </div>
+
+        {/* 6+ KPI LIVE SUMMARY STRIP (WITH MEAN REWARD + 3 CONTRIBUTIONS) */}
         <div className="ai-kpi-strip">
           <div className="ai-kpi-card">
             <span>GPU Runtime</span>
@@ -932,6 +1281,24 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
               {bestPct}% ({bestStars}★)
             </strong>
           </div>
+          {/* Mean Reward divided by the three contributions */}
+          <div className="ai-kpi-card" style={{ minWidth: 210 }}>
+            <span>Mean Reward (3 Contributions)</span>
+            <strong style={{ color: '#facc15' }}>
+              +{kpiStats.meanReward.toFixed(1)}
+            </strong>
+            <div className="ai-reward-contribs">
+              <span className="ai-reward-pill" title="Destruction % progression contribution (max 35 pts)">
+                💥 Dest: +{kpiStats.meanRewardDestr.toFixed(1)}
+              </span>
+              <span className="ai-reward-pill" title="Victory Stars & TH takedown milestone (max 50 pts)">
+                ⭐ Stars: +{kpiStats.meanRewardStars.toFixed(1)}
+              </span>
+              <span className="ai-reward-pill" title="Dense Core HP damage & tactical shaping (max 15+ pts)">
+                🎯 HP: +{kpiStats.meanRewardDamage.toFixed(1)}
+              </span>
+            </div>
+          </div>
           <div className="ai-kpi-card">
             <span>Recent NoOp (Wait) Rate</span>
             <strong style={{ color: '#38bdf8' }}>{kpiStats.avgNoop}%</strong>
@@ -943,7 +1310,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
         </div>
 
         {/* FULL-WIDTH BINNED TRAINING PROGRESS CHART */}
-        <section className="ai-main-chart-card">
+        <section className="ai-main-chart-card" ref={mainChartRef}>
           <div className="ai-card-header">
             <h3>
               📈 Attacker Improvement Curve ({history.length} Episodes in Current Run
@@ -952,40 +1319,47 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                 : ''}
               )
             </h3>
-            <div className="ai-chart-legend">
-              <span>
-                <i className="ai-dot" style={{ background: '#f97316' }} />
-                50-Ep Rolling Avg Destruction %
-              </span>
-              <span>
-                <i className="ai-dot" style={{ background: '#facc15' }} />
-                Window Mean Destruction % (with Min–Max Band)
-              </span>
-              <span>
-                <i className="ai-dot" style={{ background: '#38bdf8' }} />
-                NoOp (Wait) %
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div className="ai-chart-legend">
+                <span>
+                  <i className="ai-dot" style={{ background: '#f97316' }} />
+                  50-Ep Rolling Avg Destruction %
+                </span>
+                <span>
+                  <i className="ai-dot" style={{ background: '#facc15' }} />
+                  Window Mean Destruction % (with Min–Max Band)
+                </span>
+              </div>
+              <button
+                type="button"
+                className={`speed-pill-btn ${fitYAxis ? 'active' : ''}`}
+                style={{ cursor: 'pointer' }}
+                onClick={() => setFitYAxis((prev) => !prev)}
+                title="Fit Y-axis scale to data range or reset to 0-100%"
+              >
+                ↕️ {fitYAxis ? `Fitted (${effectiveYMin}%–${effectiveYMax}%)` : 'Fit to Data (Y-Axis)'}
+              </button>
             </div>
           </div>
 
           <svg
-            viewBox="0 0 960 235"
+            viewBox={`0 0 ${mainChartWidth} 340`}
             className="ai-wide-svg-chart"
-            preserveAspectRatio="none"
+            style={{ height: 340 }}
           >
-            {[0, 25, 50, 75, 100].map((pct) => {
-              const y = 235 - 18 - (pct / 100) * (235 - 36);
+            {yTicks.map((pct) => {
+              const y = 340 - 22 - ((pct - effectiveYMin) / ySpan) * (340 - 44);
               return (
                 <g key={pct}>
                   <line
-                    x1={36}
+                    x1={40}
                     y1={y}
-                    x2={946}
+                    x2={mainChartWidth - 14}
                     y2={y}
                     stroke="#1e293b"
-                    strokeDasharray={pct === 0 || pct === 100 ? undefined : '4 4'}
+                    strokeDasharray={pct === effectiveYMin || pct === effectiveYMax ? undefined : '4 4'}
                   />
-                  <text x={6} y={y + 3} fill="#64748b" fontSize="10">
+                  <text x={6} y={y + 3} fill="#64748b" fontSize="10.5" fontFamily="monospace">
                     {pct}%
                   </text>
                 </g>
@@ -1001,28 +1375,15 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                     points={buildBandPolygon(
                       binned.map((b) => b.minPct),
                       binned.map((b) => b.maxPct),
-                      960,
-                      235,
-                      0,
-                      100
+                      mainChartWidth,
+                      340,
+                      effectiveYMin,
+                      effectiveYMax,
+                      40,
+                      22
                     )}
                   />
                 )}
-
-                {/* NoOp % curve */}
-                <polyline
-                  fill="none"
-                  stroke="#38bdf8"
-                  strokeWidth="1.8"
-                  strokeDasharray="5 3"
-                  points={buildLinePoints(
-                    binned.map((b) => b.meanNoop),
-                    960,
-                    235,
-                    0,
-                    100
-                  )}
-                />
 
                 {/* Window Mean Destruction % */}
                 <polyline
@@ -1031,10 +1392,12 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   strokeWidth="1.8"
                   points={buildLinePoints(
                     binned.map((b) => b.meanPct),
-                    960,
-                    235,
-                    0,
-                    100
+                    mainChartWidth,
+                    340,
+                    effectiveYMin,
+                    effectiveYMax,
+                    40,
+                    22
                   )}
                 />
 
@@ -1045,10 +1408,12 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   strokeWidth="3.0"
                   points={buildLinePoints(
                     binned.map((b) => b.avg50Pct),
-                    960,
-                    235,
-                    0,
-                    100
+                    mainChartWidth,
+                    340,
+                    effectiveYMin,
+                    effectiveYMax,
+                    40,
+                    22
                   )}
                 />
 
@@ -1059,15 +1424,16 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                     Math.floor(frac * (binned.length - 1))
                   );
                   const b = binned[bIdx];
-                  const x = 36 + frac * (960 - 50);
+                  const x = 40 + frac * (mainChartWidth - 54);
                   return (
                     <text
                       key={idx}
                       x={x}
-                      y={231}
+                      y={334}
                       textAnchor="middle"
                       fill="#94a3b8"
                       fontSize="10"
+                      fontFamily="monospace"
                     >
                       Ep {b.epEnd}
                     </text>
@@ -1076,11 +1442,12 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
               </>
             ) : (
               <text
-                x="480"
-                y="120"
+                x={mainChartWidth / 2}
+                y={170}
                 textAnchor="middle"
                 fill="#64748b"
                 fontSize="13"
+                fontFamily="monospace"
               >
                 Click "Resume & Train" above to stream live GPU training curves
               </text>
@@ -1271,15 +1638,14 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
           </section>
 
           {/* COL 3: LOSSES, ACTION PACING & RECENT EPISODES */}
-          <section className="ai-card">
+          <section className="ai-card" ref={pacingChartRef}>
             <div className="ai-card-header">
               <h3>🧠 Return, Entropy & Action Pacing</h3>
             </div>
             <svg
-              viewBox="0 0 380 115"
+              viewBox={`0 0 ${pacingChartWidth} 115`}
               className="ai-svg-chart"
               style={{ height: 115 }}
-              preserveAspectRatio="none"
             >
               {binned.length > 0 ? (
                 <>
@@ -1289,7 +1655,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                     strokeWidth="2.2"
                     points={buildLinePoints(
                       binned.map((b) => b.meanReward),
-                      380,
+                      pacingChartWidth,
                       115,
                       Math.min(0, ...binned.map((b) => b.meanReward)),
                       Math.max(15, ...binned.map((b) => b.meanReward)),
@@ -1303,7 +1669,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                     strokeWidth="1.8"
                     points={buildLinePoints(
                       binned.map((b) => b.meanEntropy),
-                      380,
+                      pacingChartWidth,
                       115,
                       0,
                       Math.max(8, ...binned.map((b) => b.meanEntropy)),
@@ -1314,11 +1680,12 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                 </>
               ) : (
                 <text
-                  x="190"
+                  x={pacingChartWidth / 2}
                   y="60"
                   textAnchor="middle"
                   fill="#64748b"
                   fontSize="11"
+                  fontFamily="monospace"
                 >
                   Return R & Entropy H(π)
                 </text>
@@ -1387,180 +1754,8 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
             </div>
           </section>
         </div>
-
-        {/* SAVED CHECKPOINTS LIBRARY & FILE RENAMER */}
-        <section className="ai-card" style={{ marginTop: 4 }}>
-          <div className="ai-card-header">
-            <h3>💾 Saved Training Files & Checkpoints ({savedModels.length} Models in `trained_models/`)</h3>
-            <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
-              Name, rename, and review bundled village & army configurations
-            </span>
-          </div>
-
-          {renameMessage && (
-            <div
-              style={{
-                padding: '6px 12px',
-                borderRadius: 6,
-                fontSize: '0.82rem',
-                marginBottom: 8,
-                background: renameMessage.isError
-                  ? 'rgba(239, 68, 68, 0.2)'
-                  : 'rgba(34, 197, 94, 0.2)',
-                color: renameMessage.isError ? '#f87171' : '#4ade80',
-                border: `1px solid ${
-                  renameMessage.isError ? '#ef4444' : '#22c55e'
-                }`,
-              }}
-            >
-              {renameMessage.text}
-            </div>
-          )}
-
-          <div className="ai-models-table-wrap">
-            <table className="ai-matrix-table">
-              <thead>
-                <tr>
-                  <th>Checkpoint File</th>
-                  <th>Episodes</th>
-                  <th>Best Destruction</th>
-                  <th>Bundled Armies</th>
-                  <th>Bundled Villages</th>
-                  <th>Size</th>
-                  <th>Updated</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {savedModels.map((m) => {
-                  const isEditing = renamingModel === m.filename;
-                  const isCurrentResume = resumeFrom === m.filename;
-                  const armyList =
-                    m.army_names ?? m.armies?.map((a) => a.name) ?? ['3 Meta Armies'];
-                  const vilList =
-                    m.village_names ?? m.villages?.map((v) => v.name) ?? ['5 Meta Bases'];
-
-                  return (
-                    <tr
-                      key={m.filename}
-                      style={
-                        isCurrentResume
-                          ? { background: 'rgba(250, 204, 21, 0.08)' }
-                          : undefined
-                      }
-                    >
-                      <td>
-                        {isEditing ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <input
-                              type="text"
-                              value={renameInput}
-                              onChange={(e) => setRenameInput(e.target.value)}
-                              className="clash-select"
-                              style={{
-                                padding: '2px 6px',
-                                fontSize: '0.8rem',
-                                minWidth: 160,
-                              }}
-                              autoFocus
-                            />
-                            <button
-                              className="clash-btn gold"
-                              style={{ padding: '2px 8px', fontSize: '0.75rem' }}
-                              onClick={() => handleRenameModel(m.filename)}
-                            >
-                              Save
-                            </button>
-                            <button
-                              className="clash-btn"
-                              style={{ padding: '2px 6px', fontSize: '0.75rem' }}
-                              onClick={() => setRenamingModel(null)}
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ) : (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span
-                              style={{
-                                fontWeight: 700,
-                                color: isCurrentResume ? '#facc15' : '#f8fafc',
-                              }}
-                            >
-                              💾 {m.filename}
-                            </span>
-                            <button
-                              type="button"
-                              title="Rename file"
-                              style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: '#38bdf8',
-                                cursor: 'pointer',
-                                fontSize: '0.8rem',
-                                padding: 0,
-                              }}
-                              onClick={() => {
-                                setRenamingModel(m.filename);
-                                setRenameInput(m.filename);
-                              }}
-                            >
-                              ✏️
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                      <td>Ep {m.episode}</td>
-                      <td style={{ color: '#fde047', fontWeight: 700 }}>
-                        {m.best_pct}% ({m.best_stars}★)
-                      </td>
-                      <td
-                        style={{ fontSize: '0.75rem', color: '#94a3b8' }}
-                        title={armyList.join('\n')}
-                      >
-                        {armyList.length} Armies ({armyList[0]?.split(' ')[0] ?? 'Meta'}...)
-                      </td>
-                      <td
-                        style={{ fontSize: '0.75rem', color: '#94a3b8' }}
-                        title={vilList.join('\n')}
-                      >
-                        {vilList.length} Bases ({vilList[0]?.split(' ')[0] ?? 'Meta'}...)
-                      </td>
-                      <td>{m.size_kb} KB</td>
-                      <td style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                        {m.updated_at}
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <button
-                            className={`clash-btn ${isCurrentResume ? 'gold' : ''}`}
-                            style={{ padding: '2px 8px', fontSize: '0.72rem' }}
-                            onClick={() => {
-                              setResumeFrom(m.filename);
-                              window.scrollTo({ top: 0, behavior: 'smooth' });
-                            }}
-                          >
-                            {isCurrentResume ? '✓ Selected' : 'Resume'}
-                          </button>
-                          <button
-                            className="clash-btn green"
-                            style={{ padding: '2px 8px', fontSize: '0.72rem' }}
-                            onClick={() => {
-                              setTestModelFile(m.filename);
-                              onSwitchStudioMode('tester');
-                            }}
-                          >
-                            Test
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
+      </>
+    )}
       </div>
     );
   }

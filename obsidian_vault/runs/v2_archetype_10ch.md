@@ -3,10 +3,10 @@ title: "v2.0 — 10-Channel Archetype & Batch-Deploy Fraction"
 model_id: "v2_archetype_10ch"
 arch_version: "2.0"
 status: "active"
-total_episodes: 5786
+total_episodes: 5788
 best_pct: 100
 best_stars: 3
-updated_at: "2026-10-28 19:54:33"
+updated_at: "2026-10-28 20:23:13"
 tags:
   - coc-rl
   - ppo
@@ -25,9 +25,9 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 - **Model Identifier**: `v2_archetype_10ch`
 - **Architecture Version**: `v2.0`
 - **Active Status**: **ACTIVE**
-- **Total Episodes Trained**: **`5,786`** (Cumulative across **17** training sessions)
+- **Total Episodes Trained**: **`5,788`** (Cumulative across **18** training sessions)
 - **Peak Combat Performance**: **`100%` (3★)** (Best dense return: `+127.8575248226292`)
-- **Latest Checkpoint**: `trained_models/attacker_ep5786_100pct_3star.pt`
+- **Latest Checkpoint**: `trained_models/attacker_ep5788_100pct_3star.pt`
 
 ### 🔄 Resumed Training Sessions History
 | Session # | Start Ep | End Ep | Episodes Added | Checkpoint File | Peak % | Stars | Notes |
@@ -49,6 +49,7 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 | **#15** | `8,878` | `8,938` | `+60` | `attacker_ep8938_100pct_3star.pt` | `100%` | `3★` | Resumed training (+60 ep from latest_attacker.pt) |
 | **#16** | `0` | `4` | `+4` | `attacker_ep4_88pct_2star.pt` | `88%` | `2★` | Initial training (4 ep) |
 | **#17** | `0` | `5,786` | `+5,786` | `attacker_ep5786_100pct_3star.pt` | `100%` | `3★` | Initial training (5,786 ep) |
+| **#18** | `5,786` | `5,788` | `+2` | `attacker_ep5788_100pct_3star.pt` | `100%` | `3★` | Resumed training (+2 ep from latest_attacker.pt) |
 
 ---
 
@@ -92,17 +93,15 @@ The network parameterizes a factorized multi-discrete policy:
 
 ## 4. Reward Shaping Function
 
-### 🎯 Reward Formulation (TH18 Combat)
+### 🎯 Reward Formulation & Two-Phase Pacing (TH18 Combat v2.1)
 
-Balanced 50/50 weighting between **Destruction Percentage** and **Milestone Victory Stars**:
+Calibrated 100-point dense & milestone reward shaping balancing **Destruction + Core HP Damage** ($50\text{ pts}$) and **Victory Stars + Town Hall 18 Takedown** ($50\text{ pts}$):
 
-$$R_t = 0.50 \cdot \Delta \%_{\text{destr}} + 16.6667 \cdot \Delta \text{stars} - 0.05 \cdot \mathbb{I}_{\text{invalid}}$$
+$$R_t = 0.35 \cdot \Delta \%_{\text{destr}} + 15.0 \cdot \Delta \text{HP}_{\text{ratio}} + 12.0 \cdot \Delta \text{stars} + 14.0 \cdot \mathbb{I}_{\text{TH18}} + 0.08 \cdot C_{\text{funnel}} - 0.05 \cdot \mathbb{I}_{\text{invalid}}$$
 
-- **Destruction**: $0.50\text{ pts}$ per $1\%$ building destruction ($50.0\text{ pts}$ max).
-- **Victory Stars**: $\frac{50.0}{3} = 16.6667\text{ pts}$ per star earned ($50.0\text{ pts}$ max for 3 stars).
-- **Invalid Penalty**: $-0.05\text{ pts}$ deducted for executing illegal actions (e.g. dropping in red zone).
-- **Total Wipe Return**: A complete $100\%$ 3-star wipe achieves **$100.0\text{ base reward}$**.
-- **Fast-Forward Bonus**: When active attack actions are exhausted or timer reaches limit, remaining simulation ticks run to resolution and award accrued terminal rewards.
+- **Destruction & Core HP Damage**: $0.35\text{ pts}$ per $1\%$ destruction ($35.0\text{ pts}$ max) $+ 15.0\text{ pts}$ continuous building/core HP pool damage ($50.0\text{ pts}$ combined).
+- **Stars & TH18 Takedown**: $12.0\text{ pts}$ per star ($36.0\text{ pts}$ max) $+ 14.0\text{ pts}$ dedicated milestone bonus upon destroying Town Hall 18 ($50.0\text{ pts}$ combined).
+- **Two-Phase Tactical Masking & Normalized Per-Head Entropy (`reg_entropy`)**: Phase 1 deploys frontline troop waves along exterior cardinal funnels (excluding interior teaser holes) before Siege/Heroes; Phase 2 paces Spells (`t >= 40`) and Hero Abilities (`t >= 64`) with `NoOp` waiting and Town Hall spell-halo protection.
 
 ---
 
@@ -110,10 +109,10 @@ $$R_t = 0.50 \cdot \Delta \%_{\text{destr}} + 16.6667 \cdot \Delta \text{stars} 
 
 | Attack Composition | **Central Box** | **Offset Diamond** | **Anti-Hydra Ring** | **Anti-Fireball** | **Compact Teaser** | **Avg Destruction** | **3★ Rate** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **TH18 Thrower + Healer + Totem Smash** | `59% (2★)` | `87% (2★)` | `81% (2★)` | `100% (3★)` | `67% (2★)` | **78.8%** | **20.0%** |
-| **TH18 Dragon Duke Charge Hydra** | `48% (0★)` | `58% (1★)` | `55% (1★)` | `100% (3★)` | `58% (2★)` | **63.8%** | **20.0%** |
-| **TH18 Fireball Super Bowler & Meteor Golem Smash** | `100% (3★)` | `33% (1★)` | `48% (1★)` | `60% (2★)` | `68% (2★)` | **61.8%** | **20.0%** |
-| **Base Defense Rate (Avg)** | **69.0% (1.67★)** | **59.3% (1.33★)** | **61.3% (1.33★)** | **86.7% (2.67★)** | **64.3% (2.0★)** | **Overall: 68.1%** | — |
+| **TH18 Thrower + Healer + Totem Smash** | `67% (2★)` | `75% (2★)` | `80% (2★)` | `100% (3★)` | `66% (2★)` | **77.6%** | **20.0%** |
+| **TH18 Dragon Duke Charge Hydra** | `37% (0★)` | `66% (2★)` | `52% (1★)` | `85% (2★)` | `66% (2★)` | **61.2%** | **0.0%** |
+| **TH18 Fireball Super Bowler & Meteor Golem Smash** | `59% (1★)` | `53% (2★)` | `84% (2★)` | `52% (2★)` | `63% (2★)` | **62.2%** | **0.0%** |
+| **Base Defense Rate (Avg)** | **54.3% (1.0★)** | **64.7% (2.0★)** | **72.0% (1.67★)** | **79.0% (2.33★)** | **65.0% (2.0★)** | **Overall: 67.0%** | — |
 
 ---
 
@@ -121,13 +120,19 @@ $$R_t = 0.50 \cdot \Delta \%_{\text{destr}} + 16.6667 \cdot \Delta \text{stars} 
 
 ![Training Curves Progression](../assets/charts/v2_archetype_10ch_training_curves.png)
 
+### 🩺 AI Diagnostic Telemetry Suite (Head Entropy, Tactical Pacing & Critic Calibration)
+
+See [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Telemetry Architecture & PPO Pathology Fixes]] for the full Dual-LLM (`OpenCode Gemini 4 Argon` & `AGY Gemini 3.8 Flash`) root-cause analysis.
+
+![AI Diagnostic Telemetry Overview](../assets/charts/v2_ai_diagnostics_telemetry.png)
+
 ---
 
 ## 7. Hyperparameters & Simulation Configuration
 
 | Hyperparameter | Value | Description |
 | :--- | :--- | :--- |
-| **Learning Rate (`lr`)** | `0.00015` | Adam optimizer learning rate |
+| **Learning Rate (`lr`)** | `0.0003` | Adam optimizer learning rate |
 | **Batch Episodes** | `12` | Trajectories collected per PPO update |
 | **Minibatch Size** | `128` | SGD transition batch size |
 | **PPO Epochs** | `4` | Optimization passes over collected rollout |
@@ -136,4 +141,4 @@ $$R_t = 0.50 \cdot \Delta \%_{\text{destr}} + 16.6667 \cdot \Delta \text{stars} 
 | **GAE ($\lambda$)** | `0.95` | Generalized Advantage Estimation smoothing |
 | **Clip Coefficient** | `0.2` | PPO surrogate objective clipping range |
 | **Entropy Coefficient** | `0.015` | Exploration policy entropy bonus |
-| **Total Training Episodes** | **`5,786`** | **Cumulative episodes across all resumed sessions** |
+| **Total Training Episodes** | **`5,788`** | **Cumulative episodes across all resumed sessions** |

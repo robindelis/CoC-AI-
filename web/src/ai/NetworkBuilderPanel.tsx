@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useContainerWidth } from './useContainerWidth';
 import {
   fetchAITrainingFeedback,
   fetchArchitectureSpec,
@@ -368,6 +369,8 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
   const [liveSpec, setLiveSpec] = useState<AIArchitectureSpec | null>(architectureSpec ?? null);
   const [liveHash, setLiveHash] = useState<string>(architectureHash ?? String(Date.now()));
   const [refreshCount, setRefreshCount] = useState<number>(0);
+  const [telPlot1Ref, telPlot1Width] = useContainerWidth(340);
+  const [telPlot2Ref, telPlot2Width] = useContainerWidth(340);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
   // AI Training Feedback state
@@ -1703,7 +1706,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
             return (
               <div className="ai-telemetry-plots-grid">
                 {/* PLOT 1: 5-PHASE PROGRESSION & STAR TIERS */}
-                <div className="ai-tel-plot-card">
+                <div className="ai-tel-plot-card" ref={telPlot1Ref}>
                   <div className="ai-tel-plot-head">
                     <strong>1. Phase Progression & Star Tiers</strong>
                     <div className="ai-chart-legend">
@@ -1726,9 +1729,8 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                     </div>
                   </div>
                   <svg
-                    viewBox="0 0 340 132"
+                    viewBox={`0 0 ${telPlot1Width} 132`}
                     className="ai-tel-svg"
-                    preserveAspectRatio="none"
                   >
                     {[0, 25, 50, 75, 100].map((pct) => {
                       const y = 132 - 14 - (pct / 100) * (132 - 28);
@@ -1737,12 +1739,12 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                           <line
                             x1={26}
                             y1={y}
-                            x2={330}
+                            x2={telPlot1Width - 10}
                             y2={y}
                             stroke="#1e293b"
                             strokeDasharray={pct === 50 ? '3 3' : undefined}
                           />
-                          <text x={2} y={y + 3} fill="#64748b" fontSize="8.5">
+                          <text x={2} y={y + 3} fill="#64748b" fontSize="8.5" fontFamily="monospace">
                             {pct}%
                           </text>
                         </g>
@@ -1757,7 +1759,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                           strokeDasharray="3 2"
                           points={buildSvgPolyline(
                             phasesToPlot.map((p) => p.one_plus_star_rate_pct),
-                            340,
+                            telPlot1Width,
                             132,
                             0,
                             100
@@ -1769,7 +1771,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                           strokeWidth="2.4"
                           points={buildSvgPolyline(
                             phasesToPlot.map((p) => p.mean_pct),
-                            340,
+                            telPlot1Width,
                             132,
                             0,
                             100
@@ -1781,7 +1783,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                           strokeWidth="2.0"
                           points={buildSvgPolyline(
                             phasesToPlot.map((p) => p.two_plus_star_th_rate_pct),
-                            340,
+                            telPlot1Width,
                             132,
                             0,
                             100
@@ -1793,7 +1795,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                           strokeWidth="2.0"
                           points={buildSvgPolyline(
                             phasesToPlot.map((p) => p.three_star_triple_rate_pct),
-                            340,
+                            telPlot1Width,
                             132,
                             0,
                             100
@@ -1802,8 +1804,8 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                         {phasesToPlot.map((p, idx) => {
                           const x =
                             phasesToPlot.length === 1
-                              ? 178
-                              : 26 + (idx / (phasesToPlot.length - 1)) * 304;
+                              ? 26 + (telPlot1Width - 36) / 2
+                              : 26 + (idx / (phasesToPlot.length - 1)) * (telPlot1Width - 36);
                           return (
                             <text
                               key={p.window}
@@ -1812,6 +1814,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                               textAnchor="middle"
                               fill="#94a3b8"
                               fontSize="8.5"
+                              fontFamily="monospace"
                             >
                               P{idx + 1} ({p.mean_pct.toFixed(0)}%)
                             </text>
@@ -2033,7 +2036,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                 </div>
 
                 {/* PLOT 5: CRITIC CALIBRATION V(s0) vs R & VALUE LOSS / KL */}
-                <div className="ai-tel-plot-card">
+                <div className="ai-tel-plot-card" ref={telPlot2Ref}>
                   <div className="ai-tel-plot-head">
                     <strong>5. Critic Calibration V(s₀) & Value Loss / KL</strong>
                     {cal && (
@@ -2087,10 +2090,9 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                     );
                   })()}
                   <svg
-                    viewBox="0 0 340 72"
+                    viewBox={`0 0 ${telPlot2Width} 72`}
                     className="ai-tel-svg"
                     style={{ height: 72 }}
-                    preserveAspectRatio="none"
                   >
                     {phasesToPlot.length > 0 && (() => {
                       const vls = phasesToPlot.map((p) => p.mean_value_loss);
@@ -2102,19 +2104,19 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                             fill="none"
                             stroke="#f87171"
                             strokeWidth="2.0"
-                            points={buildSvgPolyline(vls, 340, 72, 0, maxVl, 10, 10, 8)}
+                            points={buildSvgPolyline(vls, telPlot2Width, 72, 0, maxVl, 10, 10, 8)}
                           />
                           <polyline
                             fill="none"
                             stroke="#c084fc"
                             strokeWidth="1.8"
                             strokeDasharray="3 2"
-                            points={buildSvgPolyline(kls, 340, 72, 0, 35, 10, 10, 8)}
+                            points={buildSvgPolyline(kls, telPlot2Width, 72, 0, 35, 10, 10, 8)}
                           />
-                          <text x={12} y={14} fill="#f87171" fontSize="8.5">
+                          <text x={12} y={14} fill="#f87171" fontSize="8.5" fontFamily="monospace">
                             V-Loss ({vls[vls.length - 1]?.toFixed(1)})
                           </text>
-                          <text x={240} y={14} fill="#c084fc" fontSize="8.5">
+                          <text x={Math.max(120, telPlot2Width - 100)} y={14} fill="#c084fc" fontSize="8.5" fontFamily="monospace">
                             KL ({phasesToPlot[phasesToPlot.length - 1]?.mean_approx_kl})
                           </text>
                         </>

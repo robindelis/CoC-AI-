@@ -1866,10 +1866,15 @@ export class WasmBattleSession {
       this.state.remaining_spells.every(([, c]) => c === 0) &&
       this.state.remaining_heroes.length === 0 &&
       this.state.remaining_siege === null;
-    const noLiveAttackers = !this.internalUnits.some(
-      (u) => u.alive && u.team === 'Attacker' && u.kind !== 'Totem'
+    const hasCombatAttackers = this.internalUnits.some(
+      (u) =>
+        u.alive &&
+        u.team === 'Attacker' &&
+        u.kind !== 'Totem' &&
+        u.name !== 'Healer' &&
+        u.name !== 'Unicorn'
     );
-    if (noInventory && noLiveAttackers && this.state.tick > 10) {
+    if (noInventory && !hasCombatAttackers && this.state.tick > 10) {
       this.state.is_finished = true;
     }
   }

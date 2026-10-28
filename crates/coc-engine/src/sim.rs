@@ -6288,17 +6288,22 @@ impl BattleEngine {
             return;
         }
 
-        // Check if attacker has no remaining inventory AND no live attacking units
+        // Check if attacker has no remaining inventory AND no live combat units capable of dealing damage
+        // (If only healing units like Healers and Unicorn or Totems are alive, attacker cannot damage buildings)
         let no_inventory = self.remaining_troops.iter().all(|(_, c)| *c == 0)
             && self.remaining_spells.iter().all(|(_, c)| *c == 0)
             && self.remaining_heroes.is_empty()
             && self.remaining_siege.is_none();
-        let no_live_attackers = !self
-            .units
-            .iter()
-            .any(|u| u.alive && u.team == Team::Attacker);
+        let has_combat_attackers = self.units.iter().any(|u| {
+            u.alive
+                && u.team == Team::Attacker
+                && !matches!(
+                    u.kind,
+                    UnitKind::Troop(TroopId::Healer) | UnitKind::Pet(PetId::Unicorn) | UnitKind::Totem
+                )
+        });
 
-        if no_inventory && no_live_attackers && self.tick > 10 {
+        if no_inventory && !has_combat_attackers && self.tick > 10 {
             self.is_finished = true;
         }
     }

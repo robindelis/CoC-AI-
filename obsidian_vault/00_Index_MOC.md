@@ -26,7 +26,7 @@ Open the interactive 2D whiteboard visualizer presenting side-by-side architectu
 | Model Run | Arch | Spatial Input | Total Episodes | Peak Combat Record | Status |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | [[runs/v1_baseline_8ch\|v1.0 — Baseline 8-Channel Single-Deploy]] | `v1.0` | `(8, 50, 50)` | **`30,102`** (6 sessions) | **`100%` (3★)** | **SUPERSEDED** |
-| [[runs/v2_archetype_10ch\|v2.0 — 10-Channel Archetype & Batch-Deploy Fraction]] | `v2.0` | `(10, 50, 50)` | **`5,786`** (17 sessions) | **`100%` (3★)** | **ACTIVE** |
+| [[runs/v2_archetype_10ch\|v2.0 — 10-Channel Archetype & Batch-Deploy Fraction]] | `v2.0` | `(10, 50, 50)` | **`5,788`** (18 sessions) | **`100%` (3★)** | **ACTIVE** |
 
 ---
 
@@ -39,5 +39,6 @@ Open the interactive 2D whiteboard visualizer presenting side-by-side architectu
 ### 2. Spatial & Tensor Encodings (`encodings/`)
 - [[encodings/Unit_Type_Spatial_Encoding|Hierarchical Tactical-Archetype Spatial Encoding (Ch 8 & Ch 9)]]
 
-### 3. Empirical Benchmark Logs (`experiments/`)
+### 3. Empirical Benchmark Logs & AI Training Diagnostics (`experiments/`)
 - [[experiments/Experiment_Log_And_Benchmarks|Master Experiment Log & Model Checkpoint Comparison]]
+- [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Telemetry Architecture & PPO Pathology Fixes]]
