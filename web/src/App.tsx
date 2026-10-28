@@ -359,7 +359,7 @@ export const App: React.FC = () => {
               rolloutScheduleRef.current = null;
               resetBattle();
             }}
-            onApplyEvolvedLayout={(nextLayout) => setLayout(nextLayout)}
+            onSelectLayout={(nextLayout) => setLayout(nextLayout)}
             onSelectArmy={(nextArmy) => setArmy(nextArmy)}
             onPlayTrainedRollout={playTrainedRollout}
           />

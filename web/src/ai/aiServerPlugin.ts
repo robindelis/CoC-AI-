@@ -5,19 +5,17 @@ import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import { FULL_CATALOG } from '../sim-ts/catalogData';
-import { WasmBattleSession, validateLayout } from '../sim-ts/coc_sim';
-import type { ArmyLoadout, VillageLayout } from '../types';
+import { WasmBattleSession } from '../sim-ts/coc_sim';
+import type { ArmyLoadout } from '../types';
 import type {
   AIArmyStat,
-  AIEvolutionGeneration,
+  AIMatchupStats,
   AIRolloutStep,
-  AISelectorMatrices,
   AITrainingEpisodeRecord,
   AITrainingState,
   AIVillageStat,
   MatchupMode,
   SavedModelMeta,
-  TrainingMode,
 } from './aiTypes';
 
 const ARMY_SHORT_NAMES = [
@@ -111,14 +109,12 @@ function buildInitialHistory(): AITrainingEpisodeRecord[] {
       episode: ep,
       cumulative_episode: ep,
       total_episodes: 40,
-      active_model: 'live_attacker',
       army_idx: armyIdx,
       army_name: ARMY_SHORT_NAMES[armyIdx],
       village_idx: villageIdx,
       village_name: VILLAGE_SHORT_NAMES[villageIdx],
       reward,
       avg_reward_10: avgReward10,
-      defender_reward: Number((10 - reward * 0.45).toFixed(2)),
       destruction_pct: pct,
       avg_pct_10: avgPct10,
       avg_pct_50: avgPct10,
@@ -135,18 +131,14 @@ function buildInitialHistory(): AITrainingEpisodeRecord[] {
       approx_kl: Number((0.012 + (ep % 4) * 0.002).toFixed(4)),
       fps_ticks: 4850 + (ep % 7) * 120,
       steps: 120,
-      defender_gen: Math.floor(ep / 10),
-      defender_fitness: Number((45 + (100 - pct) * 0.55).toFixed(1)),
-      army_probs: [0.42, 0.33, 0.25],
-      village_probs: [0.22, 0.24, 0.19, 0.18, 0.17],
     });
   }
   return history;
 }
 
-function computeSelectorMatrices(
+function computeMatchupStats(
   history: AITrainingEpisodeRecord[]
-): AISelectorMatrices {
+): AIMatchupStats {
   const armyStats: AIArmyStat[] = ARMY_SHORT_NAMES.map((name, idx) => {
     const eps = history.filter((h) => h.army_idx === idx);
     const count = Math.max(1, eps.length);
@@ -167,49 +159,33 @@ function computeSelectorMatrices(
       avg_stars: Number(avgStars.toFixed(2)),
       avg_reward: Number(avgReward.toFixed(2)),
       triple_rate: Number((triples * 100).toFixed(1)),
-      mean_selector_prob: idx === 0 ? 0.42 : idx === 1 ? 0.33 : 0.25,
-      selector_model_prob: idx === 0 ? 0.42 : idx === 1 ? 0.33 : 0.25,
     };
   });
 
   const villageStats: AIVillageStat[] = VILLAGE_SHORT_NAMES.map((name, idx) => {
     const eps = history.filter((h) => h.village_idx === idx);
     const count = Math.max(1, eps.length);
-    const avgPctAllowed = eps.reduce((a, b) => a + b.destruction_pct, 0) / count;
-    const avgStarsAllowed = eps.reduce((a, b) => a + b.stars, 0) / count;
-    const holds = eps.filter((e) => e.stars < 3).length / count;
+    const avgPct = eps.reduce((a, b) => a + b.destruction_pct, 0) / count;
+    const avgStars = eps.reduce((a, b) => a + b.stars, 0) / count;
+    const triples = eps.filter((e) => e.stars === 3).length / count;
+    const peak = eps.reduce((m, e) => Math.max(m, e.destruction_pct), 0);
     return {
       village_idx: idx,
       name,
       full_name: FULL_CATALOG.preset_layouts[idx]?.name ?? name,
       episodes: eps.length,
       usage_pct: Number(((eps.length / Math.max(1, history.length)) * 100).toFixed(1)),
-      avg_pct_allowed: Number(avgPctAllowed.toFixed(1)),
-      recent_avg_pct_allowed: Number(avgPctAllowed.toFixed(1)),
-      avg_stars_allowed: Number(avgStarsAllowed.toFixed(2)),
-      hold_rate: Number((holds * 100).toFixed(1)),
-      mean_selector_prob: 0.2,
-      selector_model_prob: 0.2,
+      avg_pct: Number(avgPct.toFixed(1)),
+      recent_avg_pct: Number(avgPct.toFixed(1)),
+      peak_pct: peak,
+      avg_stars: Number(avgStars.toFixed(2)),
+      triple_rate: Number((triples * 100).toFixed(1)),
     };
   });
 
   return {
     armies: ARMY_SHORT_NAMES,
     villages: VILLAGE_SHORT_NAMES,
-    village_to_army_probs: [
-      [0.48, 0.28, 0.24],
-      [0.31, 0.46, 0.23],
-      [0.44, 0.19, 0.37],
-      [0.38, 0.41, 0.21],
-      [0.29, 0.32, 0.39],
-    ],
-    army_to_village_probs: [
-      [0.16, 0.24, 0.18, 0.22, 0.2],
-      [0.18, 0.17, 0.31, 0.16, 0.18],
-      [0.19, 0.2, 0.17, 0.28, 0.16],
-    ],
-    layout_values: [14.2, 13.6, 12.9, 13.4, 13.8],
-    defender_values: [8.4, 9.1, 9.6, 9.2, 8.9],
     army_stats: armyStats,
     village_stats: villageStats,
   };
@@ -241,7 +217,6 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
         ppo_epochs: 4,
         episodes: 40,
         ticks_per_step: 8,
-        training_mode: 'live_attacker',
         matchup_mode: 'random',
       },
     },
@@ -266,8 +241,7 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
         ppo_epochs: 4,
         episodes: 120,
         ticks_per_step: 8,
-        training_mode: 'cycle',
-        matchup_mode: 'selectors',
+        matchup_mode: 'round_robin',
       },
     },
   ];
@@ -275,21 +249,15 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
   const trainingState: AITrainingState = {
     is_training: false,
     stop_requested: false,
-    training_mode: 'live_attacker',
     matchup_mode: 'random',
     resume_from: 'latest_attacker.pt',
     saved_filename: 'latest_attacker.pt',
-    active_model: 'live_attacker',
     current_episode: initialHistory.length,
     cumulative_episode: initialHistory.length,
     total_episodes: initialHistory.length,
     best_pct: 96,
     best_stars: 3,
-    co_evolve_defender: false,
-    defender_gen: 4,
-    defender_fitness: 62.4,
-    evolved_layout: null,
-    selector_matrices: computeSelectorMatrices(initialHistory),
+    matchup_stats: computeMatchupStats(initialHistory),
     history: initialHistory,
   };
 
@@ -314,35 +282,6 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
     } catch {
       // ignore
     }
-  }
-
-  function mutateVillageLayout(base: VillageLayout, swaps = 4): VillageLayout {
-    const clone: VillageLayout = JSON.parse(JSON.stringify(base));
-    const footprintById = new Map(
-      FULL_CATALOG.buildings.map((s) => [s.id, s.footprint])
-    );
-    const defIndices = clone.buildings
-      .map((b, i) => ({ b, i }))
-      .filter(
-        (x) =>
-          x.b.building_id !== 'TownHall' &&
-          (footprintById.get(x.b.building_id) ?? 3) === 3
-      )
-      .map((x) => x.i);
-    for (let s = 0; s < swaps && defIndices.length >= 2; s++) {
-      const i1 = defIndices[(s * 3) % defIndices.length];
-      const i2 = defIndices[(s * 7 + 1) % defIndices.length];
-      if (i1 !== i2) {
-        const tx = clone.buildings[i1].tile_x;
-        const ty = clone.buildings[i1].tile_y;
-        clone.buildings[i1].tile_x = clone.buildings[i2].tile_x;
-        clone.buildings[i1].tile_y = clone.buildings[i2].tile_y;
-        clone.buildings[i2].tile_x = tx;
-        clone.buildings[i2].tile_y = ty;
-      }
-    }
-    clone.name = `${base.name.replace(/\s*\(Evolved.*\)$/, '')} (Evolved)`;
-    return clone;
   }
 
   async function handleApiRequest(
@@ -693,27 +632,12 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
 
     if (req.method === 'GET' && pathname === '/api/ai/status') {
       const liveArch = buildLiveArchitectureSpecFromDisk();
-      const inCh = liveArch.spec.in_channels;
       const liveParams = liveArch.spec.total_params;
       sendJson(res, 200, {
         online: true,
         device: 'cuda:0',
         device_name: 'PyTorch Actor-Critic Engine (TH18)',
-        param_count: liveParams + 18420 + 15229,
-        models_info: {
-          attacker_selector: {
-            name: `Attacker 1: Army Selector (${inCh}×50×50 → 3 Armies)`,
-            params: 18420,
-          },
-          live_attacker: {
-            name: `Attacker 2: Live Controller (${inCh}×50×50+64d → 7×10×5×50×50)`,
-            params: liveParams,
-          },
-          defender_selector: {
-            name: 'Defender: Village Selector (64d Army → 5 Villages)',
-            params: 15229,
-          },
-        },
+        param_count: liveParams,
         architecture_hash: liveArch.architecture_hash,
         architecture_spec: liveArch.spec,
         saved_models: savedModels,
@@ -851,18 +775,6 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           deploy_fraction: 1.0,
         },
         model_meta: modelMeta,
-        attacker_selector: {
-          recommended_army_idx: 0,
-          recommended_army_name: FULL_CATALOG.preset_armies[0].name,
-          army_probs: [0.46, 0.31, 0.23],
-          value: 15.8,
-        },
-        defender_selector: {
-          recommended_village_idx: 2,
-          recommended_village_name: FULL_CATALOG.preset_layouts[2].name,
-          village_probs: [0.18, 0.21, 0.29, 0.17, 0.15],
-          value: 9.4,
-        },
       });
       return true;
     }
@@ -1046,12 +958,10 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
       const targetEpisodes = Math.max(1, Number(body.episodes ?? 24));
       trainingState.is_training = true;
       trainingState.stop_requested = false;
-      trainingState.training_mode = (body.training_mode as TrainingMode) ?? 'live_attacker';
       trainingState.matchup_mode = (body.matchup_mode as MatchupMode) ?? 'random';
       trainingState.resume_from = String(body.resume_from ?? 'latest_attacker.pt');
       trainingState.current_episode = 0;
       trainingState.total_episodes = targetEpisodes;
-      trainingState.co_evolve_defender = Boolean(body.co_evolve_defender);
 
       if (trainTimer) clearInterval(trainTimer);
       trainTimer = setInterval(() => {
@@ -1103,17 +1013,12 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           episode: ep,
           cumulative_episode: cumEp,
           total_episodes: trainingState.total_episodes,
-          active_model:
-            trainingState.training_mode === 'cycle'
-              ? ['live_attacker', 'attacker_selector', 'defender_selector'][ep % 3]
-              : trainingState.training_mode,
           army_idx: armyIdx,
           army_name: ARMY_SHORT_NAMES[armyIdx],
           village_idx: villageIdx,
           village_name: VILLAGE_SHORT_NAMES[villageIdx],
           reward,
           avg_reward_10: avgReward10,
-          defender_reward: Number((10 - reward * 0.45).toFixed(2)),
           destruction_pct: pct,
           avg_pct_10: avgPct10,
           avg_pct_50: avgPct10,
@@ -1130,23 +1035,12 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           approx_kl: 0.011,
           fps_ticks: 5200,
           steps: 120,
-          defender_gen: trainingState.defender_gen,
-          defender_fitness: trainingState.defender_fitness,
-          army_probs: [0.44, 0.32, 0.24],
-          village_probs: [0.2, 0.22, 0.21, 0.19, 0.18],
         };
 
         trainingState.history.push(rec);
-        trainingState.selector_matrices = computeSelectorMatrices(
+        trainingState.matchup_stats = computeMatchupStats(
           trainingState.history
         );
-        if (trainingState.co_evolve_defender && ep % 2 === 0) {
-          trainingState.defender_gen = (trainingState.defender_gen ?? 0) + 1;
-          trainingState.evolved_layout = mutateVillageLayout(
-            FULL_CATALOG.preset_layouts[0],
-            trainingState.defender_gen
-          );
-        }
       }, 350);
 
       sendJson(res, 200, { started: true, training: trainingState });
@@ -1161,36 +1055,6 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
       }
       trainingState.is_training = false;
       sendJson(res, 200, { stopping: true, training: trainingState });
-      return true;
-    }
-
-    if (req.method === 'POST' && pathname === '/api/ai/evolve') {
-      const body = await readJsonBody(req);
-      const generations = Math.max(1, Math.min(15, Number(body.generations ?? 3)));
-      const baseLayout: VillageLayout =
-        typeof body.base_layout_json === 'string' && body.base_layout_json
-          ? JSON.parse(body.base_layout_json)
-          : FULL_CATALOG.preset_layouts[0];
-
-      const genLogs: AIEvolutionGeneration[] = [];
-      let bestLayout = baseLayout;
-      for (let g = 1; g <= generations; g++) {
-        bestLayout = mutateVillageLayout(bestLayout, 4);
-        const pct = Math.max(38, 72 - g * 6);
-        const stars = pct >= 50 ? 1 : 0;
-        genLogs.push({
-          generation: g,
-          best_attacker_pct: pct,
-          best_attacker_stars: stars,
-          defense_fitness: Number((100 - pct + (3 - stars) * 15).toFixed(2)),
-        });
-      }
-
-      sendJson(res, 200, {
-        best_layout: bestLayout,
-        generations: genLogs,
-        validation: validateLayout(bestLayout),
-      });
       return true;
     }
 

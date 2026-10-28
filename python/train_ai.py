@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """
-Clash of Clans TH18 — 3-Model Deep RL Trainer, Checkpoint Manager & Benchmark:
-  1. Attacker Model 1 (`AttackerArmySelectorNet`): Village Layout (8×50×50) -> Top 3 Meta Armies
-  2. Attacker Model 2 (`CoCActorCritic`): Village Layout + Full Army Context (64) -> Live Placement / NoOp
-  3. Defender Model   (`DefenderVillageSelectorNet`): Incoming Army Context (64) -> Top 5 Meta Villages
+Clash of Clans TH18 — Deep RL Attacker Trainer, Checkpoint Manager & Benchmark:
+  - CoCActorCritic: Village Layout (10×50×50) + Full Army Context (64) -> Live Placement / NoOp
 """
 import argparse
 import json
@@ -18,18 +16,14 @@ import torch
 
 import coc_py
 from coc_rl import (
-    AttackerArmySelectorNet,
     CoCActorCritic,
     CoCAttackerEnv,
-    CoCDefenderEvolution,
-    DefenderVillageSelectorNet,
     compute_custom_reward,
     compute_custom_reward_components,
     compute_gae,
     ensure_architecture_diagrams,
     ppo_minibatch_update,
     ppo_update_step,
-    selector_ppo_update_step,
 )
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -37,8 +31,6 @@ TRAINED_MODELS_DIR = os.path.join(REPO_ROOT, "trained_models")
 CHECKPOINT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "checkpoints")
 
 DEFAULT_CKPT_PATH = os.path.join(TRAINED_MODELS_DIR, "latest_attacker.pt")
-ARMY_SELECTOR_CKPT_PATH = os.path.join(TRAINED_MODELS_DIR, "latest_army_selector.pt")
-DEFENDER_SELECTOR_CKPT_PATH = os.path.join(TRAINED_MODELS_DIR, "latest_defender_selector.pt")
 CUSTOM_ARMIES_PATH = os.path.join(TRAINED_MODELS_DIR, "custom_armies.json")
 
 ARMY_SHORT_NAMES = [
@@ -233,12 +225,10 @@ def _load_state_dict_flexible(model: torch.nn.Module, saved_sd: Dict[str, Any]) 
     model.load_state_dict(filtered_sd, strict=False)
 
 
-def load_all_models(
+def load_attacker_model(
     device: torch.device,
     attacker_model_file: Optional[str] = "latest_attacker.pt",
-    num_armies: Optional[int] = None,
-    num_villages: Optional[int] = None,
-) -> Tuple[CoCActorCritic, AttackerArmySelectorNet, DefenderVillageSelectorNet, Dict[str, Any]]:
+) -> Tuple[CoCActorCritic, Dict[str, Any]]:
     ensure_trained_models_dir()
     attacker_ckpt_meta: Dict[str, Any] = {}
     atk_path = resolve_model_path(attacker_model_file)
@@ -256,33 +246,7 @@ def load_all_models(
         except Exception:
             pass
 
-    if num_armies is None:
-        if "armies" in attacker_ckpt_meta and isinstance(attacker_ckpt_meta["armies"], list):
-            num_armies = max(1, len(attacker_ckpt_meta["armies"]))
-        else:
-            num_armies = 3
-    if num_villages is None:
-        if "villages" in attacker_ckpt_meta and isinstance(attacker_ckpt_meta["villages"], list):
-            num_villages = max(1, len(attacker_ckpt_meta["villages"]))
-        else:
-            num_villages = 5
-
-    army_selector = AttackerArmySelectorNet(in_channels=10, num_armies=num_armies).to(device)
-    defender_selector = DefenderVillageSelectorNet(army_context_dim=64, num_villages=num_villages).to(device)
-
-    for model, path in (
-        (army_selector, ARMY_SELECTOR_CKPT_PATH),
-        (defender_selector, DEFENDER_SELECTOR_CKPT_PATH),
-    ):
-        if os.path.exists(path):
-            try:
-                ckpt = torch.load(path, map_location=device, weights_only=False)
-                if "model_state_dict" in ckpt and isinstance(ckpt["model_state_dict"], dict):
-                    _load_state_dict_flexible(model, ckpt["model_state_dict"])
-            except Exception:
-                pass
-
-    return live_attacker, army_selector, defender_selector, attacker_ckpt_meta
+    return live_attacker, attacker_ckpt_meta
 
 
 def get_meta_presets() -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
@@ -310,61 +274,20 @@ def masks_np_to_torch(
     }
 
 
-def compute_selector_matrices(
-    army_selector: AttackerArmySelectorNet,
-    defender_selector: DefenderVillageSelectorNet,
-    device: torch.device,
+def compute_matchup_stats(
     history: Optional[List[Dict[str, Any]]] = None,
     layouts: Optional[List[Dict[str, Any]]] = None,
     armies: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
-    Computes live policy probability matrices and empirical performance breakdowns for:
-      - Attacker Model 1 (Villages -> Armies probability matrix & per-army stats)
-      - Defender Model   (Armies -> Villages probability matrix & per-village stats)
-      - Empirical usage %, recent 50-ep destruction %, overall avg %, peak %, and star rates.
+    Computes empirical performance breakdowns per army and per village layout:
+      - Usage %, recent 50-ep destruction %, overall avg %, peak %, and star rates.
     """
     default_layouts, default_armies = get_meta_presets()
     if layouts is None or len(layouts) == 0:
         layouts = default_layouts
     if armies is None or len(armies) == 0:
         armies = default_armies
-
-    army_selector.eval()
-    defender_selector.eval()
-
-    env = CoCAttackerEnv(ticks_per_step=8)
-
-    layout_obs_list = []
-    for lay in layouts:
-        obs_np, _ = env.reset(
-            options={"layout_json": json.dumps(lay), "army_json": json.dumps(armies[0])}
-        )
-        layout_obs_list.append(obs_np)
-    layout_obs_t = torch.as_tensor(
-        np.stack(layout_obs_list), dtype=torch.float32, device=device
-    )
-
-    army_ctx_list = []
-    for arm in armies:
-        _, info = env.reset(
-            options={"layout_json": json.dumps(layouts[0]), "army_json": json.dumps(arm)}
-        )
-        army_ctx_list.append(info["army_context"])
-    army_ctx_t = torch.as_tensor(
-        np.stack(army_ctx_list), dtype=torch.float32, device=device
-    )
-
-    with torch.no_grad():
-        _, _, _, layout_vals, army_probs_t = army_selector.get_action_and_value(
-            layout_obs_t, deterministic=True
-        )
-        _, _, _, def_vals, village_probs_t = defender_selector.get_action_and_value(
-            army_ctx_t, deterministic=True
-        )
-
-    village_to_army_probs = army_probs_t.cpu().numpy().round(4).tolist()
-    army_to_village_probs = village_probs_t.cpu().numpy().round(4).tolist()
 
     hist = history or []
     total_eps = len(hist)
@@ -388,11 +311,6 @@ def compute_selector_matrices(
         avg_rew = round(float(np.mean([r["reward"] for r in recs])), 2) if n else 0.0
         triples = sum(1 for r in recs if r["stars"] == 3)
         usage_pct = round(100.0 * n / max(1, total_eps), 1) if total_eps > 0 else round(100.0 / max(1, len(armies)), 1)
-        sel_prob = round(
-            float(np.mean([village_to_army_probs[v][a_idx] for v in range(len(layouts))]))
-            * 100.0,
-            1,
-        )
         army_stats.append(
             {
                 "army_idx": a_idx,
@@ -410,8 +328,6 @@ def compute_selector_matrices(
                 "avg_stars": avg_stars,
                 "avg_reward": avg_rew,
                 "triple_rate": round(100.0 * triples / max(1, n), 1) if n else 0.0,
-                "mean_selector_prob": usage_pct if total_eps > 0 else sel_prob,
-                "selector_model_prob": sel_prob,
             }
         )
 
@@ -426,14 +342,10 @@ def compute_selector_matrices(
             if recent_recs
             else 0.0
         )
+        peak_pct = int(max((r["destruction_pct"] for r in recs), default=0))
         avg_stars = round(float(np.mean([r["stars"] for r in recs])), 2) if n else 0.0
-        holds = sum(1 for r in recs if r["stars"] < 3)
+        triples = sum(1 for r in recs if r["stars"] == 3)
         usage_pct = round(100.0 * n / max(1, total_eps), 1) if total_eps > 0 else round(100.0 / max(1, len(layouts)), 1)
-        sel_prob = round(
-            float(np.mean([army_to_village_probs[a][v_idx] for a in range(len(armies))]))
-            * 100.0,
-            1,
-        )
         village_stats.append(
             {
                 "village_idx": v_idx,
@@ -445,22 +357,17 @@ def compute_selector_matrices(
                 "full_name": village_names[v_idx],
                 "episodes": n,
                 "usage_pct": usage_pct,
-                "avg_pct_allowed": avg_pct,
-                "recent_avg_pct_allowed": recent_pct,
-                "avg_stars_allowed": avg_stars,
-                "hold_rate": round(100.0 * holds / max(1, n), 1) if n else 100.0,
-                "mean_selector_prob": usage_pct if total_eps > 0 else sel_prob,
-                "selector_model_prob": sel_prob,
+                "avg_pct": avg_pct,
+                "recent_avg_pct": recent_pct,
+                "peak_pct": peak_pct,
+                "avg_stars": avg_stars,
+                "triple_rate": round(100.0 * triples / max(1, n), 1) if n else 0.0,
             }
         )
 
     return {
         "armies": army_names,
         "villages": village_names,
-        "village_to_army_probs": village_to_army_probs,
-        "army_to_village_probs": army_to_village_probs,
-        "layout_values": [round(float(x), 3) for x in layout_vals.cpu().tolist()],
-        "defender_values": [round(float(x), 3) for x in def_vals.cpu().tolist()],
         "army_stats": army_stats,
         "village_stats": village_stats,
     }
@@ -526,7 +433,7 @@ def simulate_model_rollout(
     and test the exact neural network policy on the interactive village canvas.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    live_attacker, _, _, ckpt_meta = load_all_models(
+    live_attacker, ckpt_meta = load_attacker_model(
         device, attacker_model_file=model_file
     )
     live_attacker.eval()
@@ -663,8 +570,6 @@ def train_pytorch_ppo(
     ppo_epochs: int = 4,
     use_reference: bool = False,
     curriculum_deploy: bool = True,
-    co_evolve_defender: bool = False,
-    training_mode: str = "live_attacker",
     matchup_mode: str = "random",
     resume_from: Optional[str] = "latest_attacker.pt",
     save_name: Optional[str] = None,
@@ -675,7 +580,7 @@ def train_pytorch_ppo(
     on_episode_callback: Optional[Callable[[Dict[str, Any]], bool]] = None,
 ) -> Dict[str, Any]:
     """
-    Trains the 3-Model TH18 AI System with full checkpoint resume & save support in `trained_models/`.
+    Trains the TH18 Attacker AI (`CoCActorCritic`) with full checkpoint resume & save support in `trained_models/`.
     """
     ensure_trained_models_dir()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -730,11 +635,9 @@ def train_pytorch_ppo(
             except Exception:
                 pass
 
-    live_attacker, army_selector, defender_selector, loaded_ckpt = load_all_models(
+    live_attacker, loaded_ckpt = load_attacker_model(
         device,
         attacker_model_file=resume_from if is_resuming else None,
-        num_armies=len(armies),
-        num_villages=len(layouts),
     )
     ensure_architecture_diagrams(live_attacker)
 
@@ -761,9 +664,6 @@ def train_pytorch_ppo(
         except Exception:
             pass
 
-    opt_army_sel = torch.optim.Adam(army_selector.parameters(), lr=lr, eps=1e-5)
-    opt_def_sel = torch.optim.Adam(defender_selector.parameters(), lr=lr, eps=1e-5)
-
     base_trained_episodes = int(loaded_ckpt.get("episode", 0)) if loaded_ckpt else 0
     best_pct = int(loaded_ckpt.get("best_pct", 0)) if loaded_ckpt else 0
     best_stars = int(loaded_ckpt.get("best_stars", 0)) if loaded_ckpt else 0
@@ -774,19 +674,6 @@ def train_pytorch_ppo(
         army_json=json.dumps(armies[0]),
         ticks_per_step=ticks_per_step,
     )
-
-    evolver: Optional[CoCDefenderEvolution] = None
-    defender_pop: List[Dict[str, Any]] = []
-    defender_gen = 0
-    defender_fitness = 0.0
-    best_defender_layout: Optional[Dict[str, Any]] = None
-    if co_evolve_defender:
-        base_layout_obj = json.loads(layout_json) if layout_json else layouts[0]
-        evolver = CoCDefenderEvolution(base_layout=base_layout_obj)
-        best_defender_layout = evolver.base_layout
-        defender_pop = [evolver.base_layout] + [
-            evolver.mutate_layout(evolver.base_layout, num_swaps=6) for _ in range(11)
-        ]
 
     history: List[Dict[str, Any]] = []
 
@@ -801,16 +688,6 @@ def train_pytorch_ppo(
     buf_m_tile: List[torch.Tensor] = []
     buf_eps_count = 0
 
-    atk_sel_inputs: List[torch.Tensor] = []
-    atk_sel_acts: List[torch.Tensor] = []
-    atk_sel_lps: List[torch.Tensor] = []
-    atk_sel_rets: List[float] = []
-
-    def_sel_inputs: List[torch.Tensor] = []
-    def_sel_acts: List[torch.Tensor] = []
-    def_sel_lps: List[torch.Tensor] = []
-    def_sel_rets: List[float] = []
-
     last_metrics = {
         "policy_loss": 0.0,
         "value_loss": 0.0,
@@ -822,11 +699,6 @@ def train_pytorch_ppo(
     }
 
     b_eps = max(1, batch_episodes)
-    cycle_block = (
-        ["live_attacker"] * b_eps
-        + ["defender_selector"] * 3
-        + ["attacker_selector"] * 3
-    )
 
     hyperparams_meta = {
         "lr": lr,
@@ -835,9 +707,7 @@ def train_pytorch_ppo(
         "ppo_epochs": ppo_epochs,
         "episodes": episodes,
         "ticks_per_step": ticks_per_step,
-        "training_mode": training_mode,
         "matchup_mode": matchup_mode,
-        "co_evolve_defender": co_evolve_defender,
         "resumed_from": resume_from or "scratch",
     }
 
@@ -864,191 +734,60 @@ def train_pytorch_ppo(
         }
         torch.save(payload, path)
 
+    live_attacker.train()
+
     for ep in range(1, episodes + 1):
         t0 = time.perf_counter()
         cumulative_ep = base_trained_episodes + ep
 
-        if training_mode == "cycle":
-            active_model = cycle_block[(ep - 1) % len(cycle_block)]
-        elif training_mode in ("live_attacker", "attacker_selector", "defender_selector"):
-            active_model = training_mode
-        else:
-            active_model = "live_attacker"
-
-        live_attacker.train(active_model == "live_attacker")
-        army_selector.train(active_model == "attacker_selector")
-        defender_selector.train(active_model == "defender_selector")
-
-        if co_evolve_defender and evolver is not None and (ep == 1 or ep % 6 == 0):
-            defender_pop, ranked_scores = evolver.evolve_generation(defender_pop, elite_k=4)
-            defender_gen += 1
-            _, _, best_fit = ranked_scores[0]
-            defender_fitness = round(float(best_fit), 2)
-            best_defender_layout = defender_pop[0]
-
         # ---------------------------------------------------------------------
-        # Pre-Battle Phase: Defender Village Selection & Attacker Army Selection
+        # Matchup Selection
         # ---------------------------------------------------------------------
-        if active_model == "defender_selector":
-            army_idx = len(def_sel_inputs) % len(armies)
+        if matchup_mode == "round_robin":
+            village_idx = (ep - 1) % len(layouts)
+            army_idx = ((ep - 1) // len(layouts)) % len(armies)
+            chosen_layout_dict = layouts[village_idx]
             chosen_army_dict = armies[army_idx]
-            _, init_info = env.reset(
-                options={
-                    "layout_json": json.dumps(layouts[0]),
-                    "army_json": json.dumps(chosen_army_dict),
-                }
+        elif matchup_mode == "fixed_current":
+            chosen_layout_dict = (
+                json.loads(layout_json) if layout_json else layouts[0]
             )
-            init_army_ctx_t = torch.as_tensor(
-                init_info["army_context"], dtype=torch.float32, device=device
-            ).unsqueeze(0)
-            with torch.no_grad():
-                def_act_t, def_logprob_t, _, _, def_probs_t = (
-                    defender_selector.get_action_and_value(init_army_ctx_t)
-                )
-            if random.random() < 0.35:
-                village_idx = (ep + len(def_sel_inputs)) % len(layouts)
-                def_act_t = torch.tensor([village_idx], dtype=torch.long, device=device)
-                with torch.no_grad():
-                    _, def_logprob_t, _, _, _ = defender_selector.get_action_and_value(
-                        init_army_ctx_t, action=def_act_t
-                    )
-            else:
-                village_idx = int(def_act_t.item()) % len(layouts)
-
+            chosen_army_dict = json.loads(army_json) if army_json else armies[0]
+            village_idx = next(
+                (
+                    i
+                    for i, l in enumerate(layouts)
+                    if l.get("name") == chosen_layout_dict.get("name")
+                ),
+                0,
+            )
+            army_idx = next(
+                (
+                    i
+                    for i, a in enumerate(armies)
+                    if a.get("name") == chosen_army_dict.get("name")
+                ),
+                0,
+            )
+        else:
+            if (ep - 1) % max(1, len(armies)) == 0:
+                random.shuffle(strat_armies)
+            if (ep - 1) % max(1, len(layouts)) == 0:
+                random.shuffle(strat_villages)
+            army_idx = strat_armies[(ep - 1) % len(armies)]
+            village_idx = strat_villages[(ep - 1) % len(layouts)]
             chosen_layout_dict = layouts[village_idx]
-            obs_np, info = env.reset(
-                options={
-                    "layout_json": json.dumps(chosen_layout_dict),
-                    "army_json": json.dumps(chosen_army_dict),
-                }
-            )
-            with torch.no_grad():
-                init_layout_obs_t = torch.as_tensor(
-                    obs_np, dtype=torch.float32, device=device
-                ).unsqueeze(0)
-                _, _, _, _, army_probs_t = army_selector.get_action_and_value(init_layout_obs_t)
-
-        elif active_model == "attacker_selector":
-            village_idx = ((ep - 1) // 3) % len(layouts)
-            chosen_layout_dict = layouts[village_idx]
-            obs_init, _ = env.reset(
-                options={
-                    "layout_json": json.dumps(chosen_layout_dict),
-                    "army_json": json.dumps(armies[0]),
-                }
-            )
-            init_layout_obs_t = torch.as_tensor(
-                obs_init, dtype=torch.float32, device=device
-            ).unsqueeze(0)
-            army_idx = len(atk_sel_inputs) % len(armies)
-            atk_sel_act_t = torch.tensor([army_idx], dtype=torch.long, device=device)
-            with torch.no_grad():
-                _, atk_sel_logprob_t, _, _, army_probs_t = (
-                    army_selector.get_action_and_value(
-                        init_layout_obs_t, action=atk_sel_act_t
-                    )
-                )
             chosen_army_dict = armies[army_idx]
 
-            obs_np, info = env.reset(
-                options={
-                    "layout_json": json.dumps(chosen_layout_dict),
-                    "army_json": json.dumps(chosen_army_dict),
-                }
-            )
-            with torch.no_grad():
-                init_army_ctx_t = torch.as_tensor(
-                    info["army_context"], dtype=torch.float32, device=device
-                ).unsqueeze(0)
-                _, _, _, _, def_probs_t = defender_selector.get_action_and_value(init_army_ctx_t)
-
-        else:
-            if matchup_mode == "random":
-                if (ep - 1) % max(1, len(armies)) == 0:
-                    random.shuffle(strat_armies)
-                if (ep - 1) % max(1, len(layouts)) == 0:
-                    random.shuffle(strat_villages)
-                army_idx = strat_armies[(ep - 1) % len(armies)]
-                village_idx = strat_villages[(ep - 1) % len(layouts)]
-                chosen_layout_dict = layouts[village_idx]
-                chosen_army_dict = armies[army_idx]
-            elif matchup_mode == "round_robin":
-                village_idx = (ep - 1) % len(layouts)
-                army_idx = ((ep - 1) // len(layouts)) % len(armies)
-                chosen_layout_dict = layouts[village_idx]
-                chosen_army_dict = armies[army_idx]
-            elif matchup_mode == "fixed_current":
-                chosen_layout_dict = (
-                    json.loads(layout_json) if layout_json else layouts[0]
-                )
-                chosen_army_dict = json.loads(army_json) if army_json else armies[0]
-                village_idx = next(
-                    (
-                        i
-                        for i, l in enumerate(layouts)
-                        if l.get("name") == chosen_layout_dict.get("name")
-                    ),
-                    0,
-                )
-                army_idx = next(
-                    (
-                        i
-                        for i, a in enumerate(armies)
-                        if a.get("name") == chosen_army_dict.get("name")
-                    ),
-                    0,
-                )
-            else:
-                army_idx = random.randrange(len(armies))
-                _, tmp_info = env.reset(
-                    options={
-                        "layout_json": json.dumps(layouts[0]),
-                        "army_json": json.dumps(armies[army_idx]),
-                    }
-                )
-                with torch.no_grad():
-                    tmp_ctx_t = torch.as_tensor(
-                        tmp_info["army_context"], dtype=torch.float32, device=device
-                    ).unsqueeze(0)
-                    def_act, _, _, _, _ = defender_selector.get_action_and_value(tmp_ctx_t)
-                    village_idx = int(def_act.item()) % len(layouts)
-                    obs_init, _ = env.reset(
-                        options={
-                            "layout_json": json.dumps(layouts[village_idx]),
-                            "army_json": json.dumps(armies[0]),
-                        }
-                    )
-                    init_layout_obs_t = torch.as_tensor(
-                        obs_init, dtype=torch.float32, device=device
-                    ).unsqueeze(0)
-                    atk_act, _, _, _, _ = army_selector.get_action_and_value(
-                        init_layout_obs_t
-                    )
-                    army_idx = int(atk_act.item()) % len(armies)
-                chosen_layout_dict = layouts[village_idx]
-                chosen_army_dict = armies[army_idx]
-
-            if co_evolve_defender and best_defender_layout is not None and ep % 3 == 0:
-                chosen_layout_dict = best_defender_layout
-
-            obs_np, info = env.reset(
-                options={
-                    "layout_json": json.dumps(chosen_layout_dict),
-                    "army_json": json.dumps(chosen_army_dict),
-                }
-            )
-            with torch.no_grad():
-                init_layout_obs_t = torch.as_tensor(
-                    obs_np, dtype=torch.float32, device=device
-                ).unsqueeze(0)
-                _, _, _, _, army_probs_t = army_selector.get_action_and_value(init_layout_obs_t)
-                init_army_ctx_t = torch.as_tensor(
-                    info["army_context"], dtype=torch.float32, device=device
-                ).unsqueeze(0)
-                _, _, _, _, def_probs_t = defender_selector.get_action_and_value(init_army_ctx_t)
+        obs_np, info = env.reset(
+            options={
+                "layout_json": json.dumps(chosen_layout_dict),
+                "army_json": json.dumps(chosen_army_dict),
+            }
+        )
 
         # ---------------------------------------------------------------------
-        # Live Battle Rollout using Model 2 (`CoCActorCritic` with full army_context)
+        # Live Battle Rollout (`CoCActorCritic` with full army_context)
         # ---------------------------------------------------------------------
         obs_list: List[torch.Tensor] = []
         army_ctx_list: List[torch.Tensor] = []
@@ -1150,145 +889,87 @@ def train_pytorch_ppo(
 
         pct = int(info["destruction_pct"])
         stars = int(info["stars"])
-        # 50/50 complementary defender score (0..100 total)
-        defender_reward = (
-            (100.0 - float(pct)) * 0.50
-            + (3.0 - float(stars)) * (50.0 / 3.0)
-        )
 
         # ---------------------------------------------------------------------
         # Rollout Buffer Accumulation & Shuffled Minibatch PPO Updates
         # ---------------------------------------------------------------------
-        if active_model == "live_attacker":
-            with torch.no_grad():
-                next_obs_t = torch.as_tensor(
-                    obs_np, dtype=torch.float32, device=device
-                ).unsqueeze(0)
-                next_ctx_t = torch.as_tensor(
-                    info["army_context"], dtype=torch.float32, device=device
-                ).unsqueeze(0)
-                _, _, _, next_val_t, _ = live_attacker.get_action_and_value(
-                    next_obs_t, army_context=next_ctx_t
-                )
-
-            rewards_t = torch.tensor(rewards_list, dtype=torch.float32, device=device)
-            values_t = torch.stack(values_list)
-            dones_t = torch.tensor(dones_list, dtype=torch.float32, device=device)
-
-            advantages_t, returns_t = compute_gae(
-                rewards=rewards_t,
-                values=values_t,
-                dones=dones_t,
-                next_value=next_val_t.squeeze(0),
-                gamma=gamma,
-                gae_lambda=gae_lambda,
+        with torch.no_grad():
+            next_obs_t = torch.as_tensor(
+                obs_np, dtype=torch.float32, device=device
+            ).unsqueeze(0)
+            next_ctx_t = torch.as_tensor(
+                info["army_context"], dtype=torch.float32, device=device
+            ).unsqueeze(0)
+            _, _, _, next_val_t, _ = live_attacker.get_action_and_value(
+                next_obs_t, army_context=next_ctx_t
             )
 
-            buf_obs.append(torch.stack(obs_list))
-            buf_ctx.append(torch.stack(army_ctx_list))
-            buf_act.append(torch.stack(actions_list))
-            buf_lp.append(torch.stack(logprobs_list))
-            buf_adv.append(advantages_t)
-            buf_ret.append(returns_t)
-            buf_m_type.append(torch.stack(mask_type_list))
-            buf_m_idx.append(torch.stack(mask_idx_list))
-            buf_m_tile.append(torch.stack(mask_tile_list))
-            buf_eps_count += 1
+        rewards_t = torch.tensor(rewards_list, dtype=torch.float32, device=device)
+        values_t = torch.stack(values_list)
+        dones_t = torch.tensor(dones_list, dtype=torch.float32, device=device)
 
-            if buf_eps_count >= b_eps or ep == episodes:
-                obs_b = torch.cat(buf_obs, dim=0)
-                army_ctx_b = torch.cat(buf_ctx, dim=0)
-                actions_b = torch.cat(buf_act, dim=0)
-                old_logprobs_b = torch.cat(buf_lp, dim=0)
-                adv_b = torch.cat(buf_adv, dim=0)
-                ret_b = torch.cat(buf_ret, dim=0)
-                masks_b = {
-                    "slot_type": torch.cat(buf_m_type, dim=0),
-                    "slot_idx": torch.cat(buf_m_idx, dim=0),
-                    "tile": torch.cat(buf_m_tile, dim=0),
-                }
+        advantages_t, returns_t = compute_gae(
+            rewards=rewards_t,
+            values=values_t,
+            dones=dones_t,
+            next_value=next_val_t.squeeze(0),
+            gamma=gamma,
+            gae_lambda=gae_lambda,
+        )
 
-                last_metrics = ppo_minibatch_update(
-                    model=live_attacker,
-                    optimizer=opt_live,
-                    obs_b=obs_b,
-                    actions_b=actions_b,
-                    old_logprobs_b=old_logprobs_b,
-                    advantages_b=adv_b,
-                    returns_b=ret_b,
-                    masks_b=masks_b,
-                    army_context_b=army_ctx_b,
-                    ppo_epochs=ppo_epochs,
-                    minibatch_size=minibatch_size,
-                    clip_coef=clip_coef,
-                    ent_coef=ent_coef,
-                )
+        buf_obs.append(torch.stack(obs_list))
+        buf_ctx.append(torch.stack(army_ctx_list))
+        buf_act.append(torch.stack(actions_list))
+        buf_lp.append(torch.stack(logprobs_list))
+        buf_adv.append(advantages_t)
+        buf_ret.append(returns_t)
+        buf_m_type.append(torch.stack(mask_type_list))
+        buf_m_idx.append(torch.stack(mask_idx_list))
+        buf_m_tile.append(torch.stack(mask_tile_list))
+        buf_eps_count += 1
 
-                buf_obs.clear()
-                buf_ctx.clear()
-                buf_act.clear()
-                buf_lp.clear()
-                buf_adv.clear()
-                buf_ret.clear()
-                buf_m_type.clear()
-                buf_m_idx.clear()
-                buf_m_tile.clear()
-                buf_eps_count = 0
+        if buf_eps_count >= b_eps or ep == episodes:
+            obs_b = torch.cat(buf_obs, dim=0)
+            army_ctx_b = torch.cat(buf_ctx, dim=0)
+            actions_b = torch.cat(buf_act, dim=0)
+            old_logprobs_b = torch.cat(buf_lp, dim=0)
+            adv_b = torch.cat(buf_adv, dim=0)
+            ret_b = torch.cat(buf_ret, dim=0)
+            masks_b = {
+                "slot_type": torch.cat(buf_m_type, dim=0),
+                "slot_idx": torch.cat(buf_m_idx, dim=0),
+                "tile": torch.cat(buf_m_tile, dim=0),
+            }
 
-                # Periodically sync latest weights so live inspection reflects ongoing training
-                _save_attacker_ckpt(DEFAULT_CKPT_PATH, cumulative_ep)
+            last_metrics = ppo_minibatch_update(
+                model=live_attacker,
+                optimizer=opt_live,
+                obs_b=obs_b,
+                actions_b=actions_b,
+                old_logprobs_b=old_logprobs_b,
+                advantages_b=adv_b,
+                returns_b=ret_b,
+                masks_b=masks_b,
+                army_context_b=army_ctx_b,
+                ppo_epochs=ppo_epochs,
+                minibatch_size=minibatch_size,
+                clip_coef=clip_coef,
+                ent_coef=ent_coef,
+            )
 
-        elif active_model == "defender_selector":
-            def_sel_inputs.append(init_army_ctx_t.squeeze(0))
-            def_sel_acts.append(def_act_t.squeeze(0).detach())
-            def_sel_lps.append(def_logprob_t.squeeze(0).detach())
-            def_sel_rets.append(defender_reward)
+            buf_obs.clear()
+            buf_ctx.clear()
+            buf_act.clear()
+            buf_lp.clear()
+            buf_adv.clear()
+            buf_ret.clear()
+            buf_m_type.clear()
+            buf_m_idx.clear()
+            buf_m_tile.clear()
+            buf_eps_count = 0
 
-            if len(def_sel_inputs) >= 3 or ep == episodes:
-                inp_b = torch.stack(def_sel_inputs)
-                act_b = torch.stack(def_sel_acts)
-                lp_b = torch.stack(def_sel_lps)
-                ret_b = torch.tensor(def_sel_rets, dtype=torch.float32, device=device)
-                for _ in range(ppo_epochs):
-                    last_metrics = selector_ppo_update_step(
-                        model=defender_selector,
-                        optimizer=opt_def_sel,
-                        inputs_b=inp_b,
-                        actions_b=act_b,
-                        old_logprobs_b=lp_b,
-                        returns_b=ret_b,
-                        ent_coef=0.05,
-                    )
-                def_sel_inputs.clear()
-                def_sel_acts.clear()
-                def_sel_lps.clear()
-                def_sel_rets.clear()
-
-        elif active_model == "attacker_selector":
-            atk_sel_inputs.append(init_layout_obs_t.squeeze(0))
-            atk_sel_acts.append(atk_sel_act_t.squeeze(0).detach())
-            atk_sel_lps.append(atk_sel_logprob_t.squeeze(0).detach())
-            atk_sel_rets.append(ep_custom_reward)
-
-            if len(atk_sel_inputs) >= 3 or ep == episodes:
-                inp_b = torch.stack(atk_sel_inputs)
-                act_b = torch.stack(atk_sel_acts)
-                lp_b = torch.stack(atk_sel_lps)
-                ret_b = torch.tensor(atk_sel_rets, dtype=torch.float32, device=device)
-                for _ in range(ppo_epochs):
-                    last_metrics = selector_ppo_update_step(
-                        model=army_selector,
-                        optimizer=opt_army_sel,
-                        inputs_b=inp_b,
-                        actions_b=act_b,
-                        old_logprobs_b=lp_b,
-                        returns_b=ret_b,
-                        ent_coef=0.05,
-                    )
-                atk_sel_inputs.clear()
-                atk_sel_acts.clear()
-                atk_sel_lps.clear()
-                atk_sel_rets.clear()
+            # Periodically sync latest weights so live inspection reflects ongoing training
+            _save_attacker_ckpt(DEFAULT_CKPT_PATH, cumulative_ep)
 
         elapsed = max(1e-6, time.perf_counter() - t0)
         sim_ticks = info.get("tick", steps_run * ticks_per_step)
@@ -1299,25 +980,6 @@ def train_pytorch_ppo(
             best_stars = max(best_stars, stars)
             best_reward = max(best_reward, ep_custom_reward)
             _save_attacker_ckpt(DEFAULT_CKPT_PATH, cumulative_ep)
-
-        if active_model == "attacker_selector":
-            torch.save(
-                {
-                    "model_state_dict": army_selector.state_dict(),
-                    "episode": cumulative_ep,
-                    "model_type": "attacker_selector",
-                },
-                ARMY_SELECTOR_CKPT_PATH,
-            )
-        elif active_model == "defender_selector":
-            torch.save(
-                {
-                    "model_state_dict": defender_selector.state_dict(),
-                    "episode": cumulative_ep,
-                    "model_type": "defender_selector",
-                },
-                DEFENDER_SELECTOR_CKPT_PATH,
-            )
 
         recent_rewards = [h["reward"] for h in history[-9:]] + [ep_custom_reward]
         avg_reward_10 = float(np.mean(recent_rewards))
@@ -1331,7 +993,6 @@ def train_pytorch_ppo(
             "episode": ep,
             "cumulative_episode": cumulative_ep,
             "total_episodes": episodes,
-            "active_model": active_model,
             "army_idx": army_idx,
             "army_name": (
                 ARMY_SHORT_NAMES[army_idx]
@@ -1349,7 +1010,6 @@ def train_pytorch_ppo(
             "reward_stars": round(float(ep_r_stars), 3),
             "reward_damage": round(float(ep_r_damage), 3),
             "avg_reward_10": round(avg_reward_10, 3),
-            "defender_reward": round(float(defender_reward), 3),
             "destruction_pct": pct,
             "avg_pct_10": round(avg_pct_10, 1),
             "avg_pct_50": round(avg_pct_50, 1),
@@ -1369,11 +1029,6 @@ def train_pytorch_ppo(
             "explained_variance": round(last_metrics.get("explained_variance", 0.0), 4),
             "fps_ticks": round(fps_ticks, 0),
             "steps": steps_run,
-            "defender_gen": defender_gen,
-            "defender_fitness": defender_fitness,
-            "army_probs": [round(float(x), 3) for x in army_probs_t.squeeze(0).cpu().tolist()],
-            "village_probs": [round(float(x), 3) for x in def_probs_t.squeeze(0).cpu().tolist()],
-            "evolved_layout": best_defender_layout,
         }
         history.append(ep_record)
 
@@ -1406,13 +1061,12 @@ def train_pytorch_ppo(
             best_pct=best_pct,
             best_stars=best_stars,
             best_reward=best_reward,
-            training_mode=training_mode,
         )
     except Exception as e:
         print(f"[vault_generator] Note: could not update obsidian vault: {e}")
 
-    selector_matrices = compute_selector_matrices(
-        army_selector, defender_selector, device, history=history, layouts=layouts, armies=armies
+    matchup_stats = compute_matchup_stats(
+        history=history, layouts=layouts, armies=armies
     )
     return {
         "history": history,
@@ -1420,8 +1074,7 @@ def train_pytorch_ppo(
         "best_stars": best_stars,
         "checkpoint_path": named_path,
         "saved_filename": named_file,
-        "evolved_layout": best_defender_layout,
-        "selector_matrices": selector_matrices,
+        "matchup_stats": matchup_stats,
         "armies": armies,
         "villages": layouts,
         "army_names": army_names,
@@ -1430,7 +1083,7 @@ def train_pytorch_ppo(
 
 
 def run_attacker_benchmark() -> None:
-    print("=== 1. Attacker Gymnasium RL Environment Benchmark ===")
+    print("=== Attacker Gymnasium RL Environment Benchmark ===")
     env = CoCAttackerEnv(ticks_per_step=5)
     obs, info = env.reset()
     valid_tiles = env.valid_deploy_tiles()
@@ -1477,51 +1130,17 @@ def run_attacker_benchmark() -> None:
     )
 
 
-def run_defender_evolution() -> None:
-    print("=== 2. Defender Base-Layout Evolution (Rayon Multi-Core) ===")
-    evolver = CoCDefenderEvolution()
-    population = [evolver.base_layout] + [
-        evolver.mutate_layout(evolver.base_layout, num_swaps=6) for _ in range(11)
-    ]
-
-    t0 = time.perf_counter()
-    for gen in range(1, 4):
-        population, ranked_scores = evolver.evolve_generation(population, elite_k=4)
-        best_pct, best_stars, best_fitness = ranked_scores[0]
-        print(
-            f"Generation {gen} | Best Village Defense -> "
-            f"Avg Attacker Destruction: {best_pct}% | Avg Stars Allowed: {best_stars}★ | "
-            f"Defense Fitness: {best_fitness:.1f}"
-        )
-
-    elapsed = time.perf_counter() - t0
-    print(f"Evaluated 3 generations × 12 layouts × 3 meta armies = 108 full TH18 battles in {elapsed:.2f}s")
-
-    val = json.loads(coc_py.validate_layout_json(json.dumps(population[0])))
-    print(
-        f"Best Evolved Layout Validation: is_valid={val['is_valid']} "
-        f"(Buildings={val['total_buildings']}, Walls={val['total_walls']}/325, Traps={val['total_traps']}/48)"
-    )
-
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="CoC TH18 3-Model AI Trainer & Benchmark")
-    parser.add_argument("--train-ppo", action="store_true", help="Run 3-model PyTorch GPU PPO training loop")
+    parser = argparse.ArgumentParser(description="CoC TH18 Deep RL Attacker Trainer & Benchmark")
+    parser.add_argument("--train-ppo", action="store_true", help="Run PyTorch GPU PPO training loop")
     parser.add_argument("--episodes", type=int, default=20, help="Number of training episodes")
     parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate")
-    parser.add_argument(
-        "--mode",
-        type=str,
-        default="live_attacker",
-        choices=["live_attacker", "cycle", "attacker_selector", "defender_selector"],
-        help="Training schedule: train live_attacker (default), cycle all 3 models, or train a selector",
-    )
     parser.add_argument(
         "--matchup",
         type=str,
         default="random",
-        choices=["random", "round_robin", "fixed_current", "selectors"],
-        help="Matchup sampling mode for live_attacker training",
+        choices=["random", "round_robin", "fixed_current"],
+        help="Matchup sampling mode for training",
     )
     parser.add_argument(
         "--resume-from",
@@ -1541,12 +1160,12 @@ if __name__ == "__main__":
     if args.train_ppo:
         device_str = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
         print(
-            f"=== Training TH18 AI ({args.mode} | matchup={args.matchup} | resume={args.resume_from}) on {device_str} ==="
+            f"=== Training TH18 Attacker AI (matchup={args.matchup} | resume={args.resume_from}) on {device_str} ==="
         )
 
         def log_ep(rec: Dict[str, Any]) -> bool:
             print(
-                f"Ep {rec['episode']:02d}/{rec['total_episodes']:02d} (Cum {rec['cumulative_episode']}) [{rec['active_model']:17s}] | "
+                f"Ep {rec['episode']:02d}/{rec['total_episodes']:02d} (Cum {rec['cumulative_episode']}) | "
                 f"{rec['village_name'][:18]:18s} vs {rec['army_name'][:18]:18s} | "
                 f"Destr: {rec['destruction_pct']:3d}% ({rec['stars']}★) | "
                 f"Rew: {rec['reward']:+6.2f} | NoOp: {rec['noop_pct']:4.1f}% | "
@@ -1557,7 +1176,6 @@ if __name__ == "__main__":
         train_pytorch_ppo(
             episodes=args.episodes,
             lr=args.lr,
-            training_mode=args.mode,
             matchup_mode=args.matchup,
             resume_from=args.resume_from,
             save_name=args.save_name,
@@ -1566,4 +1184,4 @@ if __name__ == "__main__":
         )
     else:
         run_attacker_benchmark()
-        run_defender_evolution()
+

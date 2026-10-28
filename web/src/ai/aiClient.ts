@@ -1,7 +1,6 @@
 import { ArmyLoadout } from '../types';
 import {
   AIArchitectureSpec,
-  AIEvolutionResult,
   AIFeedbackProviderId,
   AIInspectResponse,
   AIRolloutResponse,
@@ -9,7 +8,6 @@ import {
   AITrainingFeedbackResponse,
   MatchupMode,
   SavedModelMeta,
-  TrainingMode,
 } from './aiTypes';
 
 const AI_API_BASE = '/api/ai';
@@ -165,11 +163,9 @@ export async function startAIPpoTraining(params: {
   ppoEpochs: number;
   lr: number;
   ticks_per_step: number;
-  trainingMode: TrainingMode;
   matchupMode: MatchupMode;
   resumeFrom: string;
   saveName?: string;
-  coEvolveDefender: boolean;
   layoutJson: string;
   armyJson: string;
   armiesJson?: string;
@@ -186,11 +182,9 @@ export async function startAIPpoTraining(params: {
         ppo_epochs: params.ppoEpochs,
         lr: params.lr,
         ticks_per_step: params.ticks_per_step,
-        training_mode: params.trainingMode,
         matchup_mode: params.matchupMode,
         resume_from: params.resumeFrom,
         save_name: params.saveName,
-        co_evolve_defender: params.coEvolveDefender,
         layout_json: params.layoutJson,
         army_json: params.armyJson,
         armies_json: params.armiesJson,
@@ -209,28 +203,6 @@ export async function stopAIPpoTraining(): Promise<boolean> {
     return res.ok;
   } catch {
     return false;
-  }
-}
-
-export async function runAIDefenderEvolution(params: {
-  generations: number;
-  populationSize: number;
-  baseLayoutJson: string;
-}): Promise<AIEvolutionResult | null> {
-  try {
-    const res = await fetch(`${AI_API_BASE}/evolve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        generations: params.generations,
-        population_size: params.populationSize,
-        base_layout_json: params.baseLayoutJson,
-      }),
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as AIEvolutionResult;
-  } catch {
-    return null;
   }
 }
 

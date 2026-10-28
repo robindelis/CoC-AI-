@@ -1,16 +1,9 @@
 import { ArmyLoadout, VillageLayout } from '../types';
 
-export type TrainingMode =
-  | 'cycle'
-  | 'live_attacker'
-  | 'attacker_selector'
-  | 'defender_selector';
-
 export type MatchupMode =
   | 'random'
   | 'round_robin'
-  | 'fixed_current'
-  | 'selectors';
+  | 'fixed_current';
 
 export interface SavedModelMeta {
   filename: string;
@@ -33,9 +26,7 @@ export interface SavedModelMeta {
     ppo_epochs?: number;
     episodes?: number;
     ticks_per_step?: number;
-    training_mode?: string;
     matchup_mode?: string;
-    co_evolve_defender?: boolean;
     resumed_from?: string;
   };
 }
@@ -44,7 +35,6 @@ export interface AITrainingEpisodeRecord {
   episode: number;
   cumulative_episode?: number;
   total_episodes: number;
-  active_model?: string;
   army_idx?: number;
   army_name?: string;
   village_idx?: number;
@@ -54,7 +44,6 @@ export interface AITrainingEpisodeRecord {
   reward_stars?: number;
   reward_damage?: number;
   avg_reward_10: number;
-  defender_reward?: number;
   destruction_pct: number;
   avg_pct_10?: number;
   avg_pct_50?: number;
@@ -74,10 +63,6 @@ export interface AITrainingEpisodeRecord {
   explained_variance?: number;
   fps_ticks: number;
   steps: number;
-  defender_gen?: number;
-  defender_fitness?: number;
-  army_probs?: number[];
-  village_probs?: number[];
 }
 
 export interface AIArmyStat {
@@ -92,8 +77,6 @@ export interface AIArmyStat {
   avg_stars: number;
   avg_reward: number;
   triple_rate: number;
-  mean_selector_prob: number;
-  selector_model_prob?: number;
 }
 
 export interface AIVillageStat {
@@ -102,21 +85,16 @@ export interface AIVillageStat {
   full_name: string;
   episodes: number;
   usage_pct?: number;
-  avg_pct_allowed: number;
-  recent_avg_pct_allowed?: number;
-  avg_stars_allowed: number;
-  hold_rate: number;
-  mean_selector_prob: number;
-  selector_model_prob?: number;
+  avg_pct: number;
+  recent_avg_pct?: number;
+  peak_pct?: number;
+  avg_stars: number;
+  triple_rate: number;
 }
 
-export interface AISelectorMatrices {
+export interface AIMatchupStats {
   armies: string[];
   villages: string[];
-  village_to_army_probs: number[][];
-  army_to_village_probs: number[][];
-  layout_values: number[];
-  defender_values: number[];
   army_stats: AIArmyStat[];
   village_stats: AIVillageStat[];
 }
@@ -124,21 +102,15 @@ export interface AISelectorMatrices {
 export interface AITrainingState {
   is_training: boolean;
   stop_requested: boolean;
-  training_mode?: TrainingMode;
   matchup_mode?: MatchupMode;
   resume_from?: string;
   saved_filename?: string;
-  active_model?: string;
   current_episode: number;
   cumulative_episode?: number;
   total_episodes: number;
   best_pct: number;
   best_stars: number;
-  co_evolve_defender?: boolean;
-  defender_gen?: number;
-  defender_fitness?: number;
-  evolved_layout?: VillageLayout | null;
-  selector_matrices?: AISelectorMatrices | null;
+  matchup_stats?: AIMatchupStats | null;
   history: AITrainingEpisodeRecord[];
 }
 
@@ -176,11 +148,6 @@ export interface AIServerStatus {
   device: string;
   device_name: string;
   param_count: number;
-  models_info?: {
-    attacker_selector: { name: string; params: number };
-    live_attacker: { name: string; params: number };
-    defender_selector: { name: string; params: number };
-  };
   architecture_hash?: string;
   architecture_spec?: AIArchitectureSpec;
   saved_models?: SavedModelMeta[];
@@ -207,18 +174,6 @@ export interface AIInspectResponse {
     tile_x: number;
     tile_y: number;
     deploy_fraction?: number;
-  };
-  attacker_selector?: {
-    recommended_army_idx: number;
-    recommended_army_name: string;
-    army_probs: number[];
-    value: number;
-  };
-  defender_selector?: {
-    recommended_village_idx: number;
-    recommended_village_name: string;
-    village_probs: number[];
-    value: number;
   };
   model_meta?: SavedModelMeta;
 }
@@ -249,24 +204,6 @@ export interface AIRolloutResponse {
   total_reward: number;
   noop_pct: number;
   actions_schedule: AIRolloutStep[];
-}
-
-export interface AIEvolutionGeneration {
-  generation: number;
-  best_attacker_pct: number;
-  best_attacker_stars: number;
-  defense_fitness: number;
-}
-
-export interface AIEvolutionResult {
-  best_layout: VillageLayout;
-  generations: AIEvolutionGeneration[];
-  validation: {
-    is_valid: boolean;
-    total_buildings: number;
-    total_walls: number;
-    total_traps: number;
-  };
 }
 
 export const SPATIAL_CHANNELS = [
@@ -355,7 +292,6 @@ export interface AITrainingTelemetrySummary {
   collected_at: string;
   session: {
     is_training: boolean;
-    training_mode: string;
     matchup_mode: string;
     active_checkpoint: string;
     current_episode: number;

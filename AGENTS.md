@@ -59,10 +59,10 @@ A Clash of Clans Town Hall 18 combat simulator, village layout editor, and reinf
 ├── python/                           # Production AI / RL runtime, GPU trainer, and FastAPI AI bridge
 │   ├── coc_rl/
 │   │   ├── __init__.py
-│   │   ├── envs.py                   # Gymnasium environment (CoCAttackerEnv) and layout mutator (CoCDefenderEvolution)
+│   │   ├── envs.py                   # Gymnasium environment (CoCAttackerEnv)
 │   │   ├── networks.py               # Standalone CoCSpatialEncoder & CoCActorCritic neural networks
 │   │   └── ppo.py                    # Standalone reward shaping, GAE, and PPO update step
-│   ├── train_ai.py                   # CLI PyTorch GPU PPO trainer & Rayon base evolution benchmark
+│   ├── train_ai.py                   # CLI PyTorch GPU PPO trainer & benchmark
 │   └── ai_server.py                  # FastAPI bridge server for the Web AI Studio
 ├── scripts/
 │   └── fetch_assets.py               # Utility script to download sprite and font assets into web/public/assets/
@@ -87,7 +87,7 @@ A Clash of Clans Town Hall 18 combat simulator, village layout editor, and reinf
         │   ├── GameArmyBuilder.tsx   # Army composition, hero equipment, and pet selection UI
         │   └── GameTacticalDrawer.tsx# Tactical overlays and live entity telemetry drawer
         └── ai/                       # Dedicated AI Studio UI, client, and types
-            ├── AIStudioView.tsx      # AI Attack Sandbox, Spatial Tensor Inspector, GPU PPO Trainer & Base Evolution
+            ├── AIStudioView.tsx      # AI Attack Sandbox, Spatial Tensor Inspector & GPU PPO Trainer
             ├── aiClient.ts           # FastAPI AI server client
             └── aiTypes.ts            # AI telemetry and tensor interfaces
 ```

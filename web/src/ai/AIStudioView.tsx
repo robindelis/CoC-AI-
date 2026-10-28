@@ -13,12 +13,10 @@ import {
   fetchTrainedModelRollout,
   inspectAIPolicy,
   renameTrainedModel,
-  runAIDefenderEvolution,
   startAIPpoTraining,
   stopAIPpoTraining,
 } from './aiClient';
 import {
-  AIEvolutionResult,
   AIInspectResponse,
   AIRolloutResponse,
   AIRolloutStep,
@@ -28,7 +26,6 @@ import {
   SavedModelMeta,
   SLOT_TYPE_LABELS,
   SPATIAL_CHANNELS,
-  TrainingMode,
 } from './aiTypes';
 import { NetworkBuilderPanel } from './NetworkBuilderPanel';
 import { useContainerWidth } from './useContainerWidth';
@@ -51,7 +48,7 @@ interface AIStudioViewProps {
   onToggleAiPlay: () => void;
   onStepAiTick: () => void;
   onResetAiBattle: () => void;
-  onApplyEvolvedLayout: (nextLayout: VillageLayout) => void;
+  onSelectLayout: (nextLayout: VillageLayout) => void;
   onSelectArmy: (nextArmy: ArmyLoadout) => void;
   onPlayTrainedRollout: (
     steps: AIRolloutStep[],
@@ -60,13 +57,6 @@ interface AIStudioViewProps {
   ) => void;
 }
 
-const MODEL_BADGE: Record<string, { label: string; color: string }> = {
-  live_attacker: { label: 'Attacker 2 • Live Control', color: '#facc15' },
-  attacker_selector: { label: 'Attacker 1 • Army Select', color: '#38bdf8' },
-  defender_selector: { label: 'Defender • Village Select', color: '#4ade80' },
-};
-
-const ARMY_SHORT = ['Thrower Smash', 'Duke Hydra', 'Fireball Bowlers'];
 const VILLAGE_SHORT = [
   'Central Box',
   'Offset Diamond',
@@ -236,7 +226,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   onToggleAiPlay,
   onStepAiTick,
   onResetAiBattle,
-  onApplyEvolvedLayout,
+  onSelectLayout,
   onSelectArmy,
   onPlayTrainedRollout,
 }) => {
@@ -245,7 +235,6 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   const [selectedChannel, setSelectedChannel] = useState<number>(10);
 
   // Trainer state
-  const [trainingMode, setTrainingMode] = useState<TrainingMode>('live_attacker');
   const [matchupMode, setMatchupMode] = useState<MatchupMode>('random');
   const [resumeFrom, setResumeFrom] = useState<string>('latest_attacker.pt');
   const [saveName, setSaveName] = useState<string>('');
@@ -254,7 +243,6 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   const [minibatchSize, setMinibatchSize] = useState<number>(128);
   const [ppoEpochs, setPpoEpochs] = useState<number>(4);
   const [lr, setLr] = useState<number>(0.0003);
-  const [coEvolveDefender, setCoEvolveDefender] = useState<boolean>(false);
   const [trainerTab, setTrainerTab] = useState<'configs' | 'stats'>('stats');
   const [fitYAxis, setFitYAxis] = useState<boolean>(false);
   const [mainChartRef, mainChartWidth] = useContainerWidth(960);
@@ -283,10 +271,6 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   const [isRunningRollout, setIsRunningRollout] = useState<boolean>(false);
   const [lastRolloutResult, setLastRolloutResult] =
     useState<AIRolloutResponse | null>(null);
-  const [isEvolving, setIsEvolving] = useState<boolean>(false);
-  const [evolutionResult, setEvolutionResult] = useState<AIEvolutionResult | null>(
-    null
-  );
 
   const tensorCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -327,9 +311,13 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
       if (found.hyperparams.batch_episodes != null) setBatchEpisodes(found.hyperparams.batch_episodes);
       if (found.hyperparams.minibatch_size != null) setMinibatchSize(found.hyperparams.minibatch_size);
       if (found.hyperparams.ppo_epochs != null) setPpoEpochs(found.hyperparams.ppo_epochs);
-      if (found.hyperparams.matchup_mode) setMatchupMode(found.hyperparams.matchup_mode as MatchupMode);
-      if (found.hyperparams.training_mode) setTrainingMode(found.hyperparams.training_mode as TrainingMode);
-      if (found.hyperparams.co_evolve_defender != null) setCoEvolveDefender(Boolean(found.hyperparams.co_evolve_defender));
+      if (
+        found.hyperparams.matchup_mode === 'random' ||
+        found.hyperparams.matchup_mode === 'round_robin' ||
+        found.hyperparams.matchup_mode === 'fixed_current'
+      ) {
+        setMatchupMode(found.hyperparams.matchup_mode);
+      }
     }
 
     if (found.armies && found.armies.length > 0) {
@@ -441,11 +429,9 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
       ppoEpochs,
       lr,
       ticks_per_step: 8,
-      trainingMode,
       matchupMode,
       resumeFrom,
       saveName: saveName.trim() || undefined,
-      coEvolveDefender,
       layoutJson: JSON.stringify(finalVillages[0] ?? layout),
       armyJson: JSON.stringify(finalArmies[0] ?? army),
       armiesJson: JSON.stringify(finalArmies),
@@ -509,26 +495,9 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
     }
   };
 
-  const handleEvolveBase = async () => {
-    setIsEvolving(true);
-    try {
-      const res = await runAIDefenderEvolution({
-        generations: 3,
-        populationSize: 12,
-        baseLayoutJson: JSON.stringify(layout),
-      });
-      if (res) {
-        setEvolutionResult(res);
-        onApplyEvolvedLayout(res.best_layout);
-      }
-    } finally {
-      setIsEvolving(false);
-    }
-  };
-
   const isTraining = Boolean(serverStatus?.training?.is_training);
   const history = serverStatus?.training?.history ?? [];
-  const matrices = serverStatus?.training?.selector_matrices;
+  const matchupStats = serverStatus?.training?.matchup_stats;
   const savedModels = serverStatus?.saved_models ?? [];
 
   const binned = useMemo(() => binTrainingHistory(history, 75), [history]);
@@ -626,16 +595,6 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
     const ability = Math.max(0, rem - deploy - spell);
     return { noop, deploy, spell, ability };
   }, [history]);
-
-  const activeVillageIdx = useMemo(() => {
-    const idx = catalog.preset_layouts.findIndex((l) => l.name === layout.name);
-    return idx >= 0 ? idx : 0;
-  }, [catalog.preset_layouts, layout.name]);
-
-  const activeArmyIdx = useMemo(() => {
-    const idx = catalog.preset_armies.findIndex((a) => a.name === army.name);
-    return idx >= 0 ? idx : 0;
-  }, [catalog.preset_armies, army.name]);
 
   const activeTestModel = savedModels.find((m) => m.filename === testModelFile);
   const testArmies: ArmyLoadout[] = useMemo(() => {
@@ -752,32 +711,16 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
           </div>
 
           <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.75rem', color: '#cbd5e1' }}>
-            <span>Model to Train</span>
-            <select
-              className="clash-select"
-              value={trainingMode}
-              disabled={isTraining}
-              onChange={(e) => setTrainingMode(e.target.value as TrainingMode)}
-            >
-              <option value="live_attacker">⚔️ Attacker 2 (Live Game)</option>
-              <option value="cycle">🔄 Cyclic (All 3 Models)</option>
-              <option value="attacker_selector">🎯 Attacker 1 (Army Select)</option>
-              <option value="defender_selector">🛡️ Defender (Village Select)</option>
-            </select>
-          </label>
-
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.75rem', color: '#cbd5e1' }}>
             <span>Matchup Sampling</span>
             <select
               className="clash-select"
               value={matchupMode}
-              disabled={isTraining || trainingMode !== 'live_attacker'}
+              disabled={isTraining}
               onChange={(e) => setMatchupMode(e.target.value as MatchupMode)}
             >
               <option value="random">🎲 Random Village + Random Army</option>
               <option value="round_robin">🔁 Round-Robin (All 5V × 3A)</option>
               <option value="fixed_current">📌 Current Village + Army</option>
-              <option value="selectors">🤖 AI Selector Models</option>
             </select>
           </label>
 
@@ -1194,7 +1137,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span
               style={{
-                background: MODEL_BADGE[trainingMode]?.color ?? '#facc15',
+                background: '#facc15',
                 color: '#0f172a',
                 fontWeight: 800,
                 padding: '3px 8px',
@@ -1202,7 +1145,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                 fontSize: '0.78rem',
               }}
             >
-              {MODEL_BADGE[trainingMode]?.label ?? trainingMode}
+              ⚔️ Attacker PPO
             </span>
             <span style={{ fontSize: '0.82rem', color: '#cbd5e1' }}>
               Weights: <strong style={{ color: '#facc15' }}>{resumeFrom === 'scratch' ? 'Fresh (Untrained)' : resumeFrom}</strong>
@@ -1475,11 +1418,11 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {(matrices?.army_stats ?? []).map((st) => (
+                {(matchupStats?.army_stats ?? []).map((st) => (
                   <tr key={st.army_idx}>
                     <td title={st.full_name}>{st.name}</td>
                     <td style={{ color: '#38bdf8', fontWeight: 700 }}>
-                      {st.usage_pct ?? st.mean_selector_prob}%
+                      {st.usage_pct ?? 0}%
                     </td>
                     <td style={{ color: '#f97316', fontWeight: 700 }}>
                       {st.recent_avg_pct ?? st.avg_pct}%
@@ -1494,61 +1437,12 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                 ))}
               </tbody>
             </table>
-
-            {matrices && (
-              <table className="ai-matrix-table" style={{ marginTop: 6 }}>
-                <thead>
-                  <tr>
-                    <th>Attacker 1 (Village → Army)</th>
-                    {matrices.armies ? (
-                      matrices.armies.map((an, i) => (
-                        <th key={i} title={an}>
-                          A{i + 1}: {an.split(' ')[0]}
-                        </th>
-                      ))
-                    ) : (
-                      <>
-                        <th>A1: Thrower</th>
-                        <th>A2: Hydra</th>
-                        <th>A3: Bowler</th>
-                      </>
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {matrices.village_to_army_probs.map((row, vIdx) => (
-                    <tr key={vIdx}>
-                      <td>
-                        V{vIdx + 1}: {matrices.villages?.[vIdx]?.split(' ')[0] ?? VILLAGE_SHORT[vIdx] ?? `V${vIdx + 1}`}
-                      </td>
-                      {row.map((prob, aIdx) => {
-                        const pct = Math.round(prob * 100);
-                        return (
-                          <td
-                            key={aIdx}
-                            className="ai-heat-cell"
-                            style={{
-                              background: `rgba(56, 189, 248, ${Math.max(
-                                0.08,
-                                prob * 0.75
-                              )})`,
-                            }}
-                          >
-                            {pct}%
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
           </section>
 
-          {/* COL 2: VILLAGE DEFENSE & MATCHUP STATS */}
+          {/* COL 2: VILLAGE MATCHUP STATS */}
           <section className="ai-card">
             <div className="ai-card-header">
-              <h3>🛡️ Village Defense & Matchup Stats (5 Villages)</h3>
+              <h3>🏰 Village Matchup Performance (5 Villages)</h3>
             </div>
             <table className="ai-matrix-table">
               <thead>
@@ -1556,85 +1450,34 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   <th>TH18 Meta Village</th>
                   <th>Used %</th>
                   <th>Recent 50</th>
-                  <th>All Allowed</th>
+                  <th>All Avg</th>
+                  <th>Peak</th>
                   <th>Avg ★</th>
-                  <th>Hold %</th>
                   <th>Eps</th>
                 </tr>
               </thead>
               <tbody>
-                {(matrices?.village_stats ?? []).map((st) => (
+                {(matchupStats?.village_stats ?? []).map((st) => (
                   <tr key={st.village_idx}>
                     <td title={st.full_name}>
                       V{st.village_idx + 1}: {VILLAGE_SHORT[st.village_idx] ?? st.name}
                     </td>
                     <td style={{ color: '#4ade80', fontWeight: 700 }}>
-                      {st.usage_pct ?? st.mean_selector_prob}%
+                      {st.usage_pct ?? 0}%
                     </td>
                     <td style={{ color: '#f97316', fontWeight: 700 }}>
-                      {st.recent_avg_pct_allowed ?? st.avg_pct_allowed}%
+                      {st.recent_avg_pct ?? st.avg_pct}%
                     </td>
-                    <td style={{ color: '#f87171', fontWeight: 700 }}>
-                      {st.avg_pct_allowed}%
+                    <td style={{ color: '#fde047', fontWeight: 700 }}>
+                      {st.avg_pct}%
                     </td>
-                    <td>{st.avg_stars_allowed}★</td>
-                    <td>{st.hold_rate}%</td>
+                    <td>{st.peak_pct ?? 0}%</td>
+                    <td>{st.avg_stars}★</td>
                     <td>{st.episodes}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-
-            {matrices && (
-              <table className="ai-matrix-table" style={{ marginTop: 6 }}>
-                <thead>
-                  <tr>
-                    <th>Defender (Army → Village)</th>
-                    {matrices.villages ? (
-                      matrices.villages.map((vn, i) => (
-                        <th key={i} title={vn}>
-                          V{i + 1}
-                        </th>
-                      ))
-                    ) : (
-                      <>
-                        <th>V1</th>
-                        <th>V2</th>
-                        <th>V3</th>
-                        <th>V4</th>
-                        <th>V5</th>
-                      </>
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {matrices.army_to_village_probs.map((row, aIdx) => (
-                    <tr key={aIdx}>
-                      <td>
-                        A{aIdx + 1}: {matrices.armies?.[aIdx]?.split(' ')[0] ?? ARMY_SHORT[aIdx] ?? `A${aIdx + 1}`}
-                      </td>
-                      {row.map((prob, vIdx) => {
-                        const pct = Math.round(prob * 100);
-                        return (
-                          <td
-                            key={vIdx}
-                            className="ai-heat-cell"
-                            style={{
-                              background: `rgba(74, 222, 128, ${Math.max(
-                                0.08,
-                                prob * 0.85
-                              )})`,
-                            }}
-                          >
-                            {pct}%
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
           </section>
 
           {/* COL 3: LOSSES, ACTION PACING & RECENT EPISODES */}
@@ -1733,9 +1576,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   <div key={ep.episode} className="ai-history-row">
                     <span
                       style={{
-                        color:
-                          MODEL_BADGE[ep.active_model ?? 'live_attacker']?.color ??
-                          '#fde047',
+                        color: '#fde047',
                         fontWeight: 700,
                       }}
                     >
@@ -2007,23 +1848,18 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
           </div>
         </section>
 
-        {/* 3. TRAINED VILLAGE DEFENSE POOL (FIXED TO MODEL / READ-ONLY) */}
+        {/* 3. TRAINED VILLAGE LAYOUTS POOL (FIXED TO MODEL / READ-ONLY) */}
         <section className="ai-card">
           <div className="ai-card-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <h3>🛡️ Model Village Layouts ({testVillages.length})</h3>
+              <h3>🏰 Model Village Layouts ({testVillages.length})</h3>
               <span className="badge-gold" style={{ fontSize: '0.66rem' }}>
                 🔒 Immutable
               </span>
             </div>
-            <button
-              type="button"
-              className="speed-pill-btn"
-              disabled={!serverStatus?.online || isEvolving}
-              onClick={handleEvolveBase}
-            >
-              {isEvolving ? '⏳' : '🧬 Mutate Base'}
-            </button>
+            <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+              Model Target Pool
+            </span>
           </div>
           <p style={{ fontSize: '0.72rem', color: '#94a3b8', margin: '0 0 6px 0' }}>
             The model was trained to attack these {testVillages.length} base layouts (fixed). Select one to view on the canvas:
@@ -2037,7 +1873,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   key={vil.name}
                   className={`ai-prob-row ${isSelected ? 'active' : ''}`}
                   style={{ gridTemplateColumns: '1fr auto', cursor: 'pointer' }}
-                  onClick={() => onApplyEvolvedLayout(vil)}
+                  onClick={() => onSelectLayout(vil)}
                 >
                   <div style={{ minWidth: 0 }}>
                     <span className="ai-prob-label" style={{ fontWeight: isSelected ? 700 : 500 }}>
@@ -2057,17 +1893,6 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
               );
             })}
           </div>
-          {evolutionResult && (
-            <div style={{ fontSize: '0.72rem', color: '#4ade80', marginTop: 4 }}>
-              ✓ Evolved Anti-3★ Layout Loaded (Max Allowed:{' '}
-              {
-                evolutionResult.generations[
-                  evolutionResult.generations.length - 1
-                ]?.best_attacker_pct
-              }
-              %)
-            </div>
-          )}
         </section>
 
         {/* 3. SPATIAL TENSOR & ROLLOUT TELEMETRY */}

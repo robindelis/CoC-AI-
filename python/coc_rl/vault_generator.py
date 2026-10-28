@@ -136,7 +136,6 @@ def init_default_registry() -> Dict[str, Any]:
                     "gae_lambda": 0.95,
                     "clip_coef": 0.2,
                     "ent_coef": 0.015,
-                    "training_mode": "live_attacker",
                     "matchup_mode": "random",
                 },
                 "sessions": [
@@ -172,7 +171,6 @@ def init_default_registry() -> Dict[str, Any]:
                     "gae_lambda": 0.95,
                     "clip_coef": 0.2,
                     "ent_coef": 0.015,
-                    "training_mode": "live_attacker",
                     "matchup_mode": "random",
                 },
                 "sessions": [
@@ -1379,7 +1377,6 @@ def update_or_register_training_run(
     best_pct: int = 0,
     best_stars: int = 0,
     best_reward: float = 0.0,
-    training_mode: str = "live_attacker",
 ) -> Dict[str, Any]:
     """
     Hook called at the end of training. Recognizes resumed trainings,

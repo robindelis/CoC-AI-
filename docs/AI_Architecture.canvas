@@ -198,27 +198,7 @@
       "width": 680,
       "height": 360,
       "color": "2",
-      "text": "### 4D. Clipped PPO Update (`ppo_update_step`)\n**File**: `python/coc_rl/ppo.py`\nRuns `ppo_epochs = 4` gradient updates (`Adam`, `lr = 3e-4`, `max_grad_norm = 0.5`):\n\n1. Re-evaluate `new_logprob, entropy, new_value` on stored `(obs_b, actions_b, masks_b)`\n2. Normalize advantages: $\\tilde{A} = (\\hat{A} - \\mu_{\\hat{A}}) / (\\sigma_{\\hat{A}} + 10^{-8})$\n3. Probability ratio: $r_t(\\theta) = \\exp(\\log \\pi_\\theta - \\log \\pi_{\\theta_\\text{old}})$\n4. **Clipped Surrogate Loss** ($\\epsilon = 0.2, c_1 = 0.5, c_2 = 0.01$):\n   $$\\mathcal{L}_\\text{total} = \\mathcal{L}_{\\text{CLIP}}(\\theta) + 0.5 \\cdot \\frac{1}{2}\\text{MSE}(V_\\theta, R) - 0.01 \\cdot \\mathcal{H}(\\pi_\\theta)$$\n5. Saves checkpoint to `python/checkpoints/latest_attacker.pt`"
-    },
-    {
-      "id": "group-defender",
-      "type": "group",
-      "x": -40,
-      "y": 1120,
-      "width": 1460,
-      "height": 280,
-      "color": "1",
-      "label": "5. Defender AI: Parallel Evolutionary Base Optimizer (CoCDefenderEvolution)"
-    },
-    {
-      "id": "defender-evo",
-      "type": "text",
-      "x": 0,
-      "y": 1160,
-      "width": 1380,
-      "height": 210,
-      "color": "1",
-      "text": "### Evolutionary Base Layout Mutator & Rayon Multi-Core Evaluator\n- **Files**: `python/coc_rl/envs.py` (`CoCDefenderEvolution`), `crates/coc-py/src/lib.rs` (`evaluate_layouts_parallel`)\n- **Constraint-Preserving Mutation**: Swaps coordinates of same-footprint buildings (`3x3 <-> 3x3`, `4x4 <-> 4x4`) so non-overlap & TH18 building counts are 100% preserved, plus mutates configurable defense modes (`Inferno Single/Multi`, `X-Bow Ground/Air`, `Spell Tower`, `TH18 Guardian`)\n- **Rayon Parallel Fitness**: Evaluates entire population across all CPU cores against preset meta armies; ranks by `defender_score = 100.0 - avg_pct - 20.0 * avg_stars` and breeds top `elite_k = 4` layouts"
+      "text": "### 4D. Clipped PPO Update (`ppo_update_step`)\n**File**: `python/coc_rl/ppo.py`\nRuns `ppo_epochs = 4` gradient updates (`Adam`, `lr = 3e-4`, `max_grad_norm = 0.5`):\n\n1. Re-evaluate `new_logprob, entropy, new_value` on stored `(obs_b, actions_b, masks_b)`\n2. Normalize advantages: $\\tilde{A} = (\\hat{A} - \\mu_{\\hat{A}}) / (\\sigma_{\\hat{A}} + 10^{-8})$\n3. Probability ratio: $r_t(\\theta) = \\exp(\\log \\pi_\\theta - \\log \\pi_{\\theta_\\text{old}})$\n4. **Clipped Surrogate Loss** ($\\epsilon = 0.2, c_1 = 0.5, c_2 = 0.01$):\n   $$\\mathcal{L}_\\text{total} = \\mathcal{L}_{\\text{CLIP}}(\\theta) + 0.5 \\cdot \\frac{1}{2}\\text{MSE}(V_\\theta, R) - 0.01 \\cdot \\mathcal{H}(\\pi_\\theta)$$\n5. Saves checkpoint to `trained_models/latest_attacker.pt`"
     },
     {
       "id": "group-torchview",

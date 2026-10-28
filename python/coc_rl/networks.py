@@ -1,10 +1,8 @@
 """
 PyTorch Neural Network Architectures for Clash of Clans TH18 Deep RL:
-  1. CoCSpatialEncoder: Dual-pathway Spatial CNN Backbone for the (8, 50, 50) Village Grid
-  2. CoCActorCritic: Factorized Multi-Discrete Actor-Critic ([7, 10, 50, 50]) with
+  1. CoCSpatialEncoder: Dual-pathway Spatial CNN Backbone for the (10, 50, 50) Village Grid
+  2. CoCActorCritic: Factorized Multi-Discrete Actor-Critic ([7, 10, 50, 50, 5]) with
      Autoregressive Conditioning, Spatial Tile Pointer, and Invalid-Action Logit Masking
-  3. AttackerArmySelectorNet: Pre-battle Meta-Army Selector (Village Grid -> 3 Armies)
-  4. DefenderVillageSelectorNet: Pre-battle Meta-Village Selector (Army Context -> 5 Villages)
 """
 
 from typing import Dict, Optional, Tuple
@@ -482,96 +480,3 @@ class CoCActorCritic(nn.Module):
             diagnostics["deploy_fraction"] = frac_bins_tensor[chosen_frac_bin].detach()
         return out_action, log_prob, entropy, value, diagnostics
 
-
-class AttackerArmySelectorNet(nn.Module):
-    """
-    Pre-Battle Attacker Army Selector:
-    Encodes the enemy village layout `(B, 10, 50, 50)` via `CoCSpatialEncoder` and outputs
-    a categorical distribution over the available TH18 Meta Armies plus value `V(layout)`.
-    """
-
-    def __init__(self, in_channels: int = 10, num_armies: int = 3):
-        super().__init__()
-        self.num_armies = num_armies
-        self.encoder = CoCSpatialEncoder(in_channels=in_channels, spatial_dim=64, embed_dim=256)
-        self.army_head = nn.Sequential(
-            nn.Linear(256, 128),
-            nn.SiLU(),
-            nn.Linear(128, num_armies),
-        )
-        self.critic_head = nn.Sequential(
-            nn.Linear(256, 128),
-            nn.SiLU(),
-            nn.Linear(128, 1),
-        )
-
-    def forward(self, layout_obs: torch.Tensor) -> Dict[str, torch.Tensor]:
-        _, global_emb = self.encoder(layout_obs)
-        return {
-            "army_logits": self.army_head(global_emb),
-            "value": self.critic_head(global_emb).squeeze(-1),
-        }
-
-    def get_action_and_value(
-        self,
-        layout_obs: torch.Tensor,
-        action: Optional[torch.Tensor] = None,
-        deterministic: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        _, global_emb = self.encoder(layout_obs)
-        logits = self.army_head(global_emb)
-        dist = Categorical(logits=logits)
-        chosen = (logits.argmax(dim=-1) if deterministic else dist.sample()) if action is None else action.long()
-        value = self.critic_head(global_emb).squeeze(-1)
-        return chosen, dist.log_prob(chosen), dist.entropy(), value, dist.probs.detach()
-
-
-class DefenderVillageSelectorNet(nn.Module):
-    """
-    Pre-Battle Defender Village Selector:
-    Encodes the incoming army composition vector `(B, 64)` and outputs a categorical
-    distribution over the available TH18 Meta Village Layouts plus defensive value `V(army)`.
-    """
-
-    def __init__(self, army_context_dim: int = 64, num_villages: int = 5):
-        super().__init__()
-        self.army_context_dim = army_context_dim
-        self.num_villages = num_villages
-        self.army_encoder = nn.Sequential(
-            nn.Linear(army_context_dim, 128),
-            nn.LayerNorm(128),
-            nn.SiLU(),
-            nn.Linear(128, 128),
-            nn.LayerNorm(128),
-            nn.SiLU(),
-        )
-        self.village_head = nn.Sequential(
-            nn.Linear(128, 64),
-            nn.SiLU(),
-            nn.Linear(64, num_villages),
-        )
-        self.critic_head = nn.Sequential(
-            nn.Linear(128, 64),
-            nn.SiLU(),
-            nn.Linear(64, 1),
-        )
-
-    def forward(self, army_context: torch.Tensor) -> Dict[str, torch.Tensor]:
-        h = self.army_encoder(army_context)
-        return {
-            "village_logits": self.village_head(h),
-            "value": self.critic_head(h).squeeze(-1),
-        }
-
-    def get_action_and_value(
-        self,
-        army_context: torch.Tensor,
-        action: Optional[torch.Tensor] = None,
-        deterministic: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        h = self.army_encoder(army_context)
-        logits = self.village_head(h)
-        dist = Categorical(logits=logits)
-        chosen = (logits.argmax(dim=-1) if deterministic else dist.sample()) if action is None else action.long()
-        value = self.critic_head(h).squeeze(-1)
-        return chosen, dist.log_prob(chosen), dist.entropy(), value, dist.probs.detach()

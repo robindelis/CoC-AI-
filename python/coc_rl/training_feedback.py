@@ -123,10 +123,10 @@ def probe_live_model_diagnostics(
     model to decompose factorized head entropies, check critic calibration V(s0),
     inspect parameter weight norms, and measure spatial deployment dispersion & action timing.
     """
-    from train_ai import get_meta_presets, load_all_models, masks_np_to_torch
+    from train_ai import get_meta_presets, load_attacker_model, masks_np_to_torch
 
     t0 = time.perf_counter()
-    live_attacker, _, _, ckpt_meta = load_all_models(
+    live_attacker, ckpt_meta = load_attacker_model(
         device, attacker_model_file=model_file or "latest_attacker.pt"
     )
     live_attacker.eval()
@@ -464,9 +464,9 @@ def gather_training_telemetry(
     )
 
     # 5. Matchup Breakdown
-    selector_matrices = training_state.get("selector_matrices") or {}
-    army_stats = selector_matrices.get("army_stats", [])
-    village_stats = selector_matrices.get("village_stats", [])
+    matchup_stats = training_state.get("matchup_stats") or {}
+    army_stats = matchup_stats.get("army_stats", [])
+    village_stats = matchup_stats.get("village_stats", [])
 
     # 6. Automated Quantitative Signals (Grounded evidence for both UI and LLM)
     signals: List[Dict[str, str]] = []
@@ -545,7 +545,6 @@ def gather_training_telemetry(
         "collected_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "session": {
             "is_training": bool(training_state.get("is_training", False)),
-            "training_mode": training_state.get("training_mode", "live_attacker"),
             "matchup_mode": training_state.get("matchup_mode", "random"),
             "active_checkpoint": active_ckpt_file,
             "current_episode": int(training_state.get("current_episode", n)),

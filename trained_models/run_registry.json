@@ -31,7 +31,6 @@
         "gae_lambda": 0.95,
         "clip_coef": 0.2,
         "ent_coef": 0.015,
-        "training_mode": "live_attacker",
         "matchup_mode": "random"
       },
       "sessions": [
@@ -127,10 +126,8 @@
         "gae_lambda": 0.95,
         "clip_coef": 0.2,
         "ent_coef": 0.015,
-        "training_mode": "live_attacker",
         "matchup_mode": "random",
         "episodes": 2,
-        "co_evolve_defender": false,
         "resumed_from": "latest_attacker.pt"
       },
       "sessions": [

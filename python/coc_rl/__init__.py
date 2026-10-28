@@ -1,9 +1,7 @@
-from .envs import CoCAttackerEnv, CoCDefenderEvolution
+from .envs import CoCAttackerEnv
 from .networks import (
-    AttackerArmySelectorNet,
     CoCActorCritic,
     CoCSpatialEncoder,
-    DefenderVillageSelectorNet,
 )
 from .ppo import (
     compute_custom_reward,
@@ -11,7 +9,6 @@ from .ppo import (
     compute_gae,
     ppo_minibatch_update,
     ppo_update_step,
-    selector_ppo_update_step,
 )
 from .training_feedback import (
     AI_PROVIDERS,
@@ -29,19 +26,17 @@ def ensure_architecture_diagrams(*args, **kwargs):
 
 __all__ = [
     "CoCAttackerEnv",
-    "CoCDefenderEvolution",
     "CoCSpatialEncoder",
     "CoCActorCritic",
-    "AttackerArmySelectorNet",
-    "DefenderVillageSelectorNet",
     "compute_custom_reward",
+    "compute_custom_reward_components",
     "compute_gae",
     "ppo_update_step",
     "ppo_minibatch_update",
-    "selector_ppo_update_step",
     "ensure_architecture_diagrams",
     "AI_PROVIDERS",
     "gather_training_telemetry",
     "generate_ai_training_feedback",
     "load_cached_ai_feedback",
 ]
+

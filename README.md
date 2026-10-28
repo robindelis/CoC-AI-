@@ -68,10 +68,9 @@ Real-time reinforcement learning telemetry powered by local CUDA GPU acceleratio
 ![PPO Training Dashboard and Improvement Curve](docs/screenshots/04_training_improvement_curve.png)
 <p align="center"><em>Attacker improvement curve across 15,000+ episodes, showing rolling 50-episode average and destruction performance.</em></p>
 
-### 3. Game-Theoretic Co-Evolution Matrices
-Multi-agent competitive dynamics between attacking armies and defensive layouts:
-* **Payoff Matrices**: Tracks empirical matchup probabilities and Nash equilibrium dynamics between 3 Town Hall 18 meta army compositions and 5 defensive village layouts.
-* **Selector Policies**: Visualizes Attacker 1 (Village → Army) and Defender (Army → Village) selection probabilities and average destruction percentages allowed.
+### 3. Meta Matchup Analytics & Checkpoint Management
+Performance breakdowns across attacking armies and village layouts:
+* **Matchup Statistics**: Tracks empirical usage rates, recent 50-episode average destruction, overall averages, peak scores, and star rates across the 3 Town Hall 18 meta army compositions and 5 village layouts.
 * **Checkpoint Management**: Direct management, renaming, and inspection of trained `.pt` weights in `trained_models/`.
 
 ![Game-Theoretic Co-Evolution Matrices](docs/screenshots/05_game_theoretic_coevolution.png)

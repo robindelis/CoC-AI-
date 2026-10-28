@@ -122,9 +122,9 @@ const LECTURE_MODULES: LectureModuleMeta[] = [
     id: 'code_and_exam',
     number: '06',
     shortTitle: 'Code Trace & Mastery Quiz',
-    fullTitle: 'Multi-Model Co-Evolution, Exact PyTorch Trace & Graduate Self-Check',
+    fullTitle: 'End-to-End PPO Training Loop, PyTorch Code Trace & Graduate Self-Check',
     subtitle:
-      'Connecting the contextual bandit selectors (Model 1 & Defender) with the sequential PPO controller (Model 2) and testing mathematical mastery.',
+      'Tracing the complete rollout-to-update lifecycle of CoCActorCritic in PyTorch and testing mathematical mastery.',
     keySymbolsTex: String.raw`\mathcal{L}_{\text{total}} = L^{\text{CLIP}} + c_1 \mathcal{L}_{V} - c_2 \mathcal{H}(\pi_\theta),\; \text{KL}_{\text{approx}} \le 0.045`,
     sourceFile: 'python/coc_rl/envs.py • python/coc_rl/ppo.py',
   },
@@ -2330,47 +2330,48 @@ raw_tile_logits = self.tile_conv_head(fused_spatial).view(B, 2500)`}
         )}
 
         {/* ===================================================================
-            MODULE 6: MULTI-MODEL CO-EVOLUTION, CODE TRACE & MASTERY EXAM
+            MODULE 6: END-TO-END PPO PIPELINE, CODE TRACE & MASTERY EXAM
            =================================================================== */}
         {activeModule === 'code_and_exam' && (
           <div className="rl-lecture-body">
             <section className="rl-prof-note">
               <div className="rl-prof-note-header">
                 <span>
-                  👨‍🏫 Professor’s Chalkboard: Putting All 3 Neural Models Together
+                  👨‍🏫 Professor’s Chalkboard: Putting the End-to-End PPO Pipeline Together
                 </span>
-                <span className="rl-badge-concept">Hierarchical Bandit + Sequential PPO</span>
+                <span className="rl-badge-concept">Rollout → GAE → Clipped PPO</span>
               </div>
               <p>
-                In the complete Town Hall 18 AI Studio (<code>python/ai_server.py</code> and{' '}
-                <code>python/coc_rl/networks.py</code>), our training loop coordinates{' '}
-                <strong>three distinct neural networks</strong> in a game-theoretic co-evolution
-                cycle:
+                In the Town Hall 18 AI Studio (<code>python/train_ai.py</code>,{' '}
+                <code>python/coc_rl/networks.py</code>, and <code>python/coc_rl/ppo.py</code>), each
+                training batch executes a three-stage optimization loop for{' '}
+                <code>CoCActorCritic</code>:
               </p>
               <div className="rl-three-col">
                 <div className="rl-concept-card">
-                  <h4>1. Defender Model (Village Selector Bandit)</h4>
+                  <h4>1. Trajectory Rollout Collection</h4>
                   <p>
-                    <code>DefenderVillageSelectorNet</code> observes the catalog of candidate TH18
-                    layouts and chooses a village distribution to <strong>minimize</strong> the
-                    Attacker’s Destruction % and Stars (Adversarial Minimax).
+                    <code>CoCAttackerEnv</code> steps the deterministic Rust combat simulator while{' '}
+                    <code>CoCActorCritic</code> samples masked actions{' '}
+                    <TeX math="a_t \sim \pi_{\theta_{\text{old}}}(a_t \mid s_t)" /> and records{' '}
+                    <TeX math="(s_t, a_t, r_t, V_t, \log \pi_t)" />.
                   </p>
                 </div>
                 <div className="rl-concept-card">
-                  <h4>2. Attacker Model 1 (Army Selector Bandit)</h4>
+                  <h4>2. Backward GAE(γ, λ) Advantage Pass</h4>
                   <p>
-                    <code>AttackerArmySelectorNet</code> inspects the chosen village’s spatial
-                    feature embedding <TeX math="h_{\text{global}} \in \mathbb{R}^{256}" /> and
-                    selects the best pre-battle Army Recipe{' '}
-                    <TeX math="m \sim \pi_\omega(m \mid V)" />.
+                    <code>compute_gae</code> recurses backward from terminal state{' '}
+                    <TeX math="t = T-1 \dots 0" /> to compute low-variance advantages{' '}
+                    <TeX math="\hat{A}_t^{\text{GAE}}" /> and value targets{' '}
+                    <TeX math="\hat{R}_t = \hat{A}_t + V(s_t)" />.
                   </p>
                 </div>
                 <div className="rl-concept-card">
-                  <h4>3. Attacker Model 2 (Sequential PPO Agent)</h4>
+                  <h4>3. Shuffled Minibatch PPO Update</h4>
                   <p>
-                    <code>CoCActorCritic</code> executes the 225-step real-time battle rollout{' '}
-                    <TeX math="a_t \sim \pi_\theta(a_t \mid s_t)" />, collects{' '}
-                    <TeX math="(s_t, a_t, r_t, V_t, \log \pi_t)" />, and updates via GAE + PPO.
+                    <code>ppo_minibatch_update</code> normalizes advantages and runs multi-epoch
+                    clipped surrogate updates with normalized per-head entropy regularization and
+                    Target-KL early stopping.
                   </p>
                 </div>
               </div>

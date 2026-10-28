@@ -65,7 +65,6 @@
     "collected_at": "2026-10-28 19:51:40",
     "session": {
       "is_training": true,
-      "training_mode": "live_attacker",
       "matchup_mode": "random",
       "active_checkpoint": "attacker_ep4_88pct_2star.pt",
       "current_episode": 5425,
@@ -81,9 +80,7 @@
         "ppo_epochs": 4,
         "episodes": 60,
         "ticks_per_step": 8,
-        "training_mode": "live_attacker",
         "matchup_mode": "random",
-        "co_evolve_defender": false,
         "resumed_from": "scratch"
       }
     },
@@ -373,9 +370,7 @@
           "peak_pct": 100,
           "avg_stars": 2.06,
           "avg_reward": 69.82,
-          "triple_rate": 20.0,
-          "mean_selector_prob": 33.3,
-          "selector_model_prob": 31.8
+          "triple_rate": 20.0
         },
         {
           "army_idx": 1,
@@ -388,9 +383,7 @@
           "peak_pct": 100,
           "avg_stars": 1.39,
           "avg_reward": 51.11,
-          "triple_rate": 5.4,
-          "mean_selector_prob": 33.3,
-          "selector_model_prob": 31.9
+          "triple_rate": 5.4
         },
         {
           "army_idx": 2,
@@ -403,9 +396,7 @@
           "peak_pct": 100,
           "avg_stars": 1.73,
           "avg_reward": 60.64,
-          "triple_rate": 9.7,
-          "mean_selector_prob": 33.3,
-          "selector_model_prob": 36.2
+          "triple_rate": 9.7
         }
       ],
       "village_stats": [
@@ -415,12 +406,9 @@
           "full_name": "TH18 Central Box Legends (Cake-A-Pult + Smasher)",
           "episodes": 1084,
           "usage_pct": 20.0,
-          "avg_pct_allowed": 66.3,
-          "recent_avg_pct_allowed": 71.7,
-          "avg_stars_allowed": 1.53,
-          "hold_rate": 88.0,
-          "mean_selector_prob": 20.0,
-          "selector_model_prob": 20.7
+          "avg_pct": 66.3,
+          "recent_avg_pct": 71.7,
+          "avg_stars": 1.53
         },
         {
           "village_idx": 1,
@@ -428,12 +416,9 @@
           "full_name": "TH18 Offset Diamond (Hot Candle + Longshot)",
           "episodes": 1085,
           "usage_pct": 20.0,
-          "avg_pct_allowed": 66.2,
-          "recent_avg_pct_allowed": 70.1,
-          "avg_stars_allowed": 1.67,
-          "hold_rate": 92.0,
-          "mean_selector_prob": 20.0,
-          "selector_model_prob": 20.2
+          "avg_pct": 66.2,
+          "recent_avg_pct": 70.1,
+          "avg_stars": 1.67
         },
         {
           "village_idx": 2,
@@ -441,12 +426,9 @@
           "full_name": "TH18 Anti-Hydra Air Ring (4 Air X-Bows + Sweepers)",
           "episodes": 1085,
           "usage_pct": 20.0,
-          "avg_pct_allowed": 73.8,
-          "recent_avg_pct_allowed": 69.1,
-          "avg_stars_allowed": 1.82,
-          "hold_rate": 81.8,
-          "mean_selector_prob": 20.0,
-          "selector_model_prob": 23.1
+          "avg_pct": 73.8,
+          "recent_avg_pct": 69.1,
+          "avg_stars": 1.82
         },
         {
           "village_idx": 3,
@@ -454,12 +436,9 @@
           "full_name": "TH18 Anti-Fireball Wide Spread (3 Single Infernos)",
           "episodes": 1085,
           "usage_pct": 20.0,
-          "avg_pct_allowed": 72.5,
-          "recent_avg_pct_allowed": 70.8,
-          "avg_stars_allowed": 1.76,
-          "hold_rate": 84.9,
-          "mean_selector_prob": 20.0,
-          "selector_model_prob": 16.6
+          "avg_pct": 72.5,
+          "recent_avg_pct": 70.8,
+          "avg_stars": 1.76
         },
         {
           "village_idx": 4,
@@ -467,12 +446,9 @@
           "full_name": "TH18 Teaser War Base (Double Rage Towers + Killzone)",
           "episodes": 1085,
           "usage_pct": 20.0,
-          "avg_pct_allowed": 69.5,
-          "recent_avg_pct_allowed": 70.4,
-          "avg_stars_allowed": 1.84,
-          "hold_rate": 94.9,
-          "mean_selector_prob": 20.0,
-          "selector_model_prob": 19.3
+          "avg_pct": 69.5,
+          "recent_avg_pct": 70.4,
+          "avg_stars": 1.84
         }
       ]
     },
