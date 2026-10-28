@@ -26,7 +26,6 @@ from coc_rl import (
     compute_custom_reward,
     compute_gae,
     ensure_architecture_diagrams,
-    get_default_arch_config,
     ppo_minibatch_update,
     ppo_update_step,
     selector_ppo_update_step,
@@ -174,14 +173,10 @@ def list_trained_models() -> List[Dict[str, Any]]:
                 meta["armies"] = ckpt["armies"]
             if "villages" in ckpt and isinstance(ckpt["villages"], list) and len(ckpt["villages"]) > 0:
                 meta["villages"] = ckpt["villages"]
-            if "arch_config" in ckpt and isinstance(ckpt["arch_config"], dict):
-                meta["arch_config"] = ckpt["arch_config"]
-            else:
-                meta["arch_config"] = get_default_arch_config()
             meta["army_names"] = [a.get("name", f"Army #{i+1}") for i, a in enumerate(meta["armies"])]
             meta["village_names"] = [v.get("name", f"Village #{i+1}") for i, v in enumerate(meta["villages"])]
         except Exception:
-            meta["arch_config"] = get_default_arch_config()
+            pass
         items.append(meta)
 
     items.sort(key=lambda x: (x["filename"] == "latest_attacker.pt", x["mtime"]), reverse=True)
@@ -207,7 +202,6 @@ def load_all_models(
     attacker_model_file: Optional[str] = "latest_attacker.pt",
     num_armies: Optional[int] = None,
     num_villages: Optional[int] = None,
-    arch_config: Optional[Dict[str, Any]] = None,
 ) -> Tuple[CoCActorCritic, AttackerArmySelectorNet, DefenderVillageSelectorNet, Dict[str, Any]]:
     ensure_trained_models_dir()
     attacker_ckpt_meta: Dict[str, Any] = {}
@@ -218,13 +212,7 @@ def load_all_models(
         except Exception:
             attacker_ckpt_meta = {}
 
-    effective_arch = arch_config
-    if effective_arch is None and "arch_config" in attacker_ckpt_meta and isinstance(attacker_ckpt_meta["arch_config"], dict):
-        effective_arch = attacker_ckpt_meta["arch_config"]
-
-    live_attacker = CoCActorCritic(
-        in_channels=8, army_context_dim=64, arch_config=effective_arch
-    ).to(device)
+    live_attacker = CoCActorCritic(in_channels=8, army_context_dim=64).to(device)
 
     if "model_state_dict" in attacker_ckpt_meta:
         try:
@@ -607,7 +595,6 @@ def train_pytorch_ppo(
     army_json: Optional[str] = None,
     armies_json: Optional[Any] = None,
     villages_json: Optional[Any] = None,
-    arch_config: Optional[Any] = None,
     on_episode_callback: Optional[Callable[[Dict[str, Any]], bool]] = None,
 ) -> Dict[str, Any]:
     """
@@ -622,14 +609,6 @@ def train_pytorch_ppo(
 
     is_resuming = bool(resume_from and resume_from not in ("scratch", "none", "new"))
     loaded_ckpt: Dict[str, Any] = {}
-    parsed_arch_config: Optional[Dict[str, Any]] = None
-    if arch_config:
-        try:
-            parsed_arch_config = (
-                json.loads(arch_config) if isinstance(arch_config, str) else arch_config
-            )
-        except Exception:
-            parsed_arch_config = None
 
     if is_resuming:
         atk_path = resolve_model_path(resume_from)
@@ -639,13 +618,11 @@ def train_pytorch_ppo(
             except Exception:
                 loaded_ckpt = {}
 
-        # Strictly enforce and retrieve the bundled villages, attack compositions & architecture from checkpoint
+        # Strictly enforce and retrieve the bundled villages and attack compositions from checkpoint
         if "armies" in loaded_ckpt and isinstance(loaded_ckpt["armies"], list) and len(loaded_ckpt["armies"]) > 0:
             armies = loaded_ckpt["armies"]
         if "villages" in loaded_ckpt and isinstance(loaded_ckpt["villages"], list) and len(loaded_ckpt["villages"]) > 0:
             layouts = loaded_ckpt["villages"]
-        if "arch_config" in loaded_ckpt and isinstance(loaded_ckpt["arch_config"], dict):
-            parsed_arch_config = loaded_ckpt["arch_config"]
     else:
         # Fresh training: parse selected attack compositions and villages
         if armies_json:
@@ -681,7 +658,6 @@ def train_pytorch_ppo(
         attacker_model_file=resume_from if is_resuming else None,
         num_armies=len(armies),
         num_villages=len(layouts),
-        arch_config=parsed_arch_config,
     )
     ensure_architecture_diagrams(live_attacker)
 
@@ -786,7 +762,6 @@ def train_pytorch_ppo(
             "best_reward": best_reward,
             "model_type": "live_attacker",
             "hyperparams": hyperparams_meta,
-            "arch_config": live_attacker.arch_config,
             "armies": armies,
             "villages": layouts,
             "army_names": army_names,

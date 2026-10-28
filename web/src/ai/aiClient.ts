@@ -4,14 +4,16 @@ import {
   AIInspectResponse,
   AIRolloutResponse,
   AIServerStatus,
-  ArchitectureAnalysisResult,
-  ArchitectureConfig,
   MatchupMode,
   SavedModelMeta,
   TrainingMode,
 } from './aiTypes';
 
 const AI_API_BASE = 'http://localhost:8000/api/ai';
+
+export function getArchitectureSvgUrl(detail: 'overview' | 'detailed' = 'overview'): string {
+  return `${AI_API_BASE}/architecture.svg?detail=${detail}`;
+}
 
 export async function fetchAIServerStatus(): Promise<AIServerStatus | null> {
   try {
@@ -127,30 +129,6 @@ export async function fetchTrainedModelRollout(params: {
   }
 }
 
-export async function previewCustomArchitecture(params: {
-  archConfig: ArchitectureConfig;
-  detail?: 'overview' | 'detailed';
-  direction?: 'LR' | 'TB';
-  includeSvg?: boolean;
-}): Promise<ArchitectureAnalysisResult | null> {
-  try {
-    const res = await fetch(`${AI_API_BASE}/architecture/preview`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        arch_config: params.archConfig,
-        detail: params.detail ?? 'overview',
-        direction: params.direction ?? 'LR',
-        include_svg: params.includeSvg ?? true,
-      }),
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as ArchitectureAnalysisResult;
-  } catch {
-    return null;
-  }
-}
-
 export async function startAIPpoTraining(params: {
   episodes: number;
   batchEpisodes: number;
@@ -167,7 +145,6 @@ export async function startAIPpoTraining(params: {
   armyJson: string;
   armiesJson?: string;
   villagesJson?: string;
-  archConfig?: ArchitectureConfig;
 }): Promise<boolean> {
   try {
     const res = await fetch(`${AI_API_BASE}/train/start`, {
@@ -189,7 +166,6 @@ export async function startAIPpoTraining(params: {
         army_json: params.armyJson,
         armies_json: params.armiesJson,
         villages_json: params.villagesJson,
-        arch_config: params.archConfig,
       }),
     });
     return res.ok;

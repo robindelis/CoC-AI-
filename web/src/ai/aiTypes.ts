@@ -12,91 +12,6 @@ export type MatchupMode =
   | 'fixed_current'
   | 'selectors';
 
-export type LayerBlockType =
-  | 'conv2d'
-  | 'resblock2d'
-  | 'dwsep_conv2d'
-  | 'se_block2d'
-  | 'maxpool2d'
-  | 'avgpool2d'
-  | 'adaptive_avgpool2d'
-  | 'adaptive_maxpool2d'
-  | 'dropout2d'
-  | 'flatten'
-  | 'linear';
-
-export type NormType = 'none' | 'group' | 'batch' | 'layer';
-
-export type ActivationType =
-  | 'silu'
-  | 'relu'
-  | 'gelu'
-  | 'leaky_relu'
-  | 'elu'
-  | 'tanh'
-  | 'none';
-
-export interface NetworkBlockConfig {
-  id: string;
-  type: LayerBlockType;
-  filters?: number;
-  kernel_size?: number;
-  stride?: number;
-  padding?: number;
-  dilation?: number;
-  norm?: NormType;
-  activation?: ActivationType;
-  bias?: boolean;
-  pool_size?: number;
-  reduction?: number;
-  dropout?: number;
-  units?: number;
-}
-
-export interface NetworkHeadsConfig {
-  tile_head_filters: number;
-  tile_head_kernel: number;
-  head_hidden_dim: number;
-  head_activation: ActivationType;
-}
-
-export interface ArchitectureConfig {
-  preset_id?: string;
-  name: string;
-  spatial_blocks: NetworkBlockConfig[];
-  global_blocks: NetworkBlockConfig[];
-  heads: NetworkHeadsConfig;
-}
-
-export interface AnalyzedLayerSummary {
-  id: string;
-  stage: 'spatial' | 'global' | 'heads';
-  type: string;
-  desc: string;
-  input_shape: number[];
-  output_shape: number[];
-  receptive_field: number;
-  params: number;
-  macs: number;
-}
-
-export interface ArchitectureAnalysisResult {
-  valid: boolean;
-  error?: string;
-  name: string;
-  is_default: boolean;
-  total_params: number;
-  trainable_params: number;
-  estimated_vram_mb: number;
-  total_macs: number;
-  spatial_out_shape: number[];
-  spatial_receptive_field: number;
-  embed_dim: number;
-  layers_summary: AnalyzedLayerSummary[];
-  pytorch_repr: string;
-  svg?: string | null;
-}
-
 export interface SavedModelMeta {
   filename: string;
   size_kb: number;
@@ -107,7 +22,6 @@ export interface SavedModelMeta {
   best_stars: number;
   best_reward: number;
   model_type: string;
-  arch_config?: ArchitectureConfig;
   armies?: ArmyLoadout[];
   villages?: VillageLayout[];
   army_names?: string[];

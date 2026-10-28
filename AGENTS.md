@@ -112,3 +112,8 @@ A Clash of Clans Town Hall 18 combat simulator, village layout editor, and reinf
 # 5. Launch the Python GPU AI Studio Server (port 8000)
 .venv/bin/python python/ai_server.py
 ```
+
+## Git Workflow
+
+- **Always push changes to GitHub**: After completing any code or documentation changes, stage, commit with a clear message, and push to the remote GitHub repository (`git push origin main`) every time.
+

@@ -24,17 +24,13 @@ import {
   AIRolloutStep,
   AIServerStatus,
   AITrainingEpisodeRecord,
-  ArchitectureConfig,
   MatchupMode,
   SavedModelMeta,
   SLOT_TYPE_LABELS,
   SPATIAL_CHANNELS,
   TrainingMode,
 } from './aiTypes';
-import {
-  DEFAULT_ARCHITECTURE_CONFIG,
-  NetworkBuilderPanel,
-} from './NetworkBuilderPanel';
+import { NetworkBuilderPanel } from './NetworkBuilderPanel';
 
 interface AIStudioViewProps {
   studioMode: 'trainer' | 'tester';
@@ -245,9 +241,6 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   const [selectedVillageNames, setSelectedVillageNames] = useState<string[]>(() =>
     catalog.preset_layouts.slice(0, 5).map((v) => v.name)
   );
-  const [archConfig, setArchConfig] = useState<ArchitectureConfig>(() =>
-    JSON.parse(JSON.stringify(DEFAULT_ARCHITECTURE_CONFIG))
-  );
 
   // Checkpoint renaming state
   const [renamingModel, setRenamingModel] = useState<string | null>(null);
@@ -322,12 +315,6 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
       setSelectedVillageNames(found.villages.map((v) => v.name));
     } else if (found.village_names && found.village_names.length > 0) {
       setSelectedVillageNames(found.village_names);
-    }
-
-    if (found.arch_config && found.arch_config.spatial_blocks) {
-      setArchConfig(JSON.parse(JSON.stringify(found.arch_config)));
-    } else {
-      setArchConfig(JSON.parse(JSON.stringify(DEFAULT_ARCHITECTURE_CONFIG)));
     }
   }, [resumeFrom, serverStatus?.saved_models]);
 
@@ -436,7 +423,6 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
       armyJson: JSON.stringify(finalArmies[0] ?? army),
       armiesJson: JSON.stringify(finalArmies),
       villagesJson: JSON.stringify(finalVillages),
-      archConfig,
     });
     const st = await fetchAIServerStatus();
     if (st) setServerStatus(st);
@@ -897,15 +883,8 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
           </div>
         </div>
 
-        {/* REFINED NEURAL NETWORK BLOCK BUILDER & CNN VISUALIZER */}
-        <NetworkBuilderPanel
-          archConfig={archConfig}
-          onChangeArchConfig={setArchConfig}
-          isLockedToResume={isLockedToResume}
-          isTraining={isTraining}
-          serverOnline={Boolean(serverStatus?.online)}
-          onUnlockToScratch={() => setResumeFrom('scratch')}
-        />
+        {/* STATIC NEURAL NETWORK ARCHITECTURE VISUALIZER */}
+        <NetworkBuilderPanel serverOnline={Boolean(serverStatus?.online)} />
 
         {/* 6-KPI LIVE SUMMARY STRIP */}
         <div className="ai-kpi-strip">

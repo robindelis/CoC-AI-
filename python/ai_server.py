@@ -24,13 +24,9 @@ from pydantic import BaseModel
 
 import coc_py
 from coc_rl import (
-    CoCActorCritic,
     CoCAttackerEnv,
     CoCDefenderEvolution,
-    analyze_architecture,
     ensure_architecture_diagrams,
-    get_default_arch_config,
-    render_custom_torchview_svg,
 )
 from train_ai import (
     ARMY_SHORT_NAMES,
@@ -134,15 +130,6 @@ class TrainStartRequest(BaseModel):
     army_json: Optional[str] = None
     armies_json: Optional[str] = None
     villages_json: Optional[str] = None
-    arch_config: Optional[Any] = None
-
-
-class ArchitecturePreviewRequest(BaseModel):
-    arch_config: Optional[Dict[str, Any]] = None
-    detail: str = "overview"
-    direction: str = "LR"
-    include_svg: bool = True
-
 
 
 class RenameModelRequest(BaseModel):
@@ -255,25 +242,6 @@ def get_architecture_svg(detail: str = "overview") -> FileResponse:
     rel_path = manifest["files"][key]["svg"]
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     return FileResponse(os.path.join(repo_root, rel_path), media_type="image/svg+xml")
-
-
-@app.post("/api/ai/architecture/preview")
-def preview_custom_architecture(req: ArchitecturePreviewRequest) -> Dict[str, Any]:
-    try:
-        cfg = req.arch_config or get_default_arch_config()
-        analysis = analyze_architecture(cfg)
-        svg_str: Optional[str] = None
-        if req.include_svg:
-            model = CoCActorCritic(in_channels=8, army_context_dim=64, arch_config=cfg)
-            depth = 3 if req.detail == "detailed" else 2
-            direction = "TB" if req.direction == "TB" else "LR"
-            svg_str = render_custom_torchview_svg(
-                model, input_size=(1, 8, 50, 50), depth=depth, graph_dir=direction
-            )
-        return {**analysis, "svg": svg_str}
-    except Exception as e:
-        return {"valid": False, "error": str(e)}
-
 
 
 @app.post("/api/ai/inspect")
@@ -444,7 +412,6 @@ def start_ppo_training(req: TrainStartRequest) -> Dict[str, Any]:
                 army_json=req.army_json,
                 armies_json=req.armies_json,
                 villages_json=req.villages_json,
-                arch_config=req.arch_config,
                 on_episode_callback=_on_ep,
             )
             if "selector_matrices" in res:
