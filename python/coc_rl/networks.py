@@ -48,7 +48,12 @@ class CoCSpatialEncoder(nn.Module):
         # Stage 1: Full-resolution convolutional stem (50x50 -> 50x50)
         # Uses padding=1 to preserve exact tile coordinates and GroupNorm for stable RL updates.
         self.spatial_stem = nn.Sequential(
-            nn.Conv2d(in_channels, 32, kernel_size=3, padding=1, bias=False),
+            nn.Conv2d(
+                in_channels, 32, kernel_size=3, padding=2, dilation=2, bias=False
+            ),
+            nn.GroupNorm(4, 32),
+            nn.SiLU(),
+            nn.Conv2d(32, 32, kernel_size=3, padding=2, dilation=2, bias=False),
             nn.GroupNorm(4, 32),
             nn.SiLU(),
             nn.Conv2d(32, spatial_dim, kernel_size=3, padding=1, bias=False),
@@ -64,8 +69,8 @@ class CoCSpatialEncoder(nn.Module):
                 spatial_dim,
                 spatial_dim,
                 kernel_size=3,
-                padding=2,
-                dilation=2,
+                padding=1,
+                # dilation=2,
                 bias=False,
             ),
             nn.GroupNorm(8, spatial_dim),
@@ -448,6 +453,10 @@ class CoCActorCritic(nn.Module):
             "slot_idx_probs": idx_dist.probs.detach(),
             "tile_heatmap": tile_dist.probs.detach().reshape(B, 50, 50),
             "reg_entropy": reg_entropy,
+            "h_type": type_dist.entropy().detach(),
+            "h_idx": (uses_idx * idx_dist.entropy()).detach(),
+            "h_frac": (uses_frac * frac_dist.entropy()).detach(),
+            "h_tile": (uses_tile * tile_dist.entropy()).detach(),
             "deploy_fraction_probs": frac_dist.probs.detach(),
             "deploy_fraction": frac_bins_tensor[chosen_frac_bin].detach(),
         }

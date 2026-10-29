@@ -1,4 +1,9 @@
 from .envs import CoCAttackerEnv
+from .history_compression import (
+    compress_training_history,
+    decompress_training_history,
+    get_compressed_history_meta,
+)
 from .networks import (
     CoCActorCritic,
     CoCSpatialEncoder,
@@ -38,5 +43,8 @@ __all__ = [
     "gather_training_telemetry",
     "generate_ai_training_feedback",
     "load_cached_ai_feedback",
+    "compress_training_history",
+    "decompress_training_history",
+    "get_compressed_history_meta",
 ]
 

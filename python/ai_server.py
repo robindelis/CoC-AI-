@@ -23,9 +23,12 @@ import coc_py
 from coc_rl import (
     AI_PROVIDERS,
     CoCAttackerEnv,
+    compress_training_history,
+    decompress_training_history,
     ensure_architecture_diagrams,
     gather_training_telemetry,
     generate_ai_training_feedback,
+    get_compressed_history_meta,
     load_cached_ai_feedback,
 )
 from train_ai import (
@@ -35,6 +38,7 @@ from train_ai import (
     compute_matchup_stats,
     delete_custom_army,
     get_all_army_presets,
+    get_model_training_history,
     list_custom_armies,
     list_trained_models,
     load_attacker_model,
@@ -87,8 +91,13 @@ if os.path.exists(_LAST_STATE_PATH):
             _saved_st = json.load(_f)
         if isinstance(_saved_st, dict):
             for _k in list(_training_state.keys()):
-                if _k in _saved_st:
+                if _k in _saved_st and _k != "history":
                     _training_state[_k] = _saved_st[_k]
+            if "history_compressed" in _saved_st:
+                _training_state["history"] = decompress_training_history(_saved_st["history_compressed"])
+                _training_state["compression"] = get_compressed_history_meta(_saved_st["history_compressed"])
+            elif "history" in _saved_st and isinstance(_saved_st["history"], list):
+                _training_state["history"] = decompress_training_history(_saved_st["history"])
             _training_state["is_training"] = False
             _training_state["stop_requested"] = False
     except Exception:
@@ -191,6 +200,16 @@ def get_architecture_spec(force: bool = False) -> Dict[str, Any]:
 @app.get("/api/ai/models")
 def get_saved_models() -> Dict[str, Any]:
     return {"models": list_trained_models()}
+
+
+@app.get("/api/ai/models/history")
+def get_saved_model_history_query(model_file: str = "latest_attacker.pt") -> Dict[str, Any]:
+    return get_model_training_history(model_file)
+
+
+@app.get("/api/ai/models/{model_file}/history")
+def get_saved_model_history_path(model_file: str) -> Dict[str, Any]:
+    return get_model_training_history(model_file)
 
 
 @app.post("/api/ai/models/rename")
@@ -387,8 +406,14 @@ def start_ppo_training(req: TrainStartRequest) -> Dict[str, Any]:
                 _training_state["stop_requested"] = False
                 try:
                     os.makedirs(os.path.dirname(_LAST_STATE_PATH), exist_ok=True)
+                    compressed_blob = compress_training_history(_training_state.get("history", []))
+                    _training_state["compression"] = get_compressed_history_meta(compressed_blob)
+                    state_to_save = {
+                        k: v for k, v in _training_state.items() if k != "history"
+                    }
+                    state_to_save["history_compressed"] = compressed_blob
                     with open(_LAST_STATE_PATH, "w", encoding="utf-8") as _f:
-                        json.dump(_training_state, _f)
+                        json.dump(state_to_save, _f)
                 except Exception:
                     pass
 

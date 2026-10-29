@@ -5,6 +5,21 @@ export type MatchupMode =
   | 'round_robin'
   | 'fixed_current';
 
+export interface AISessionBoundary {
+  session_id: number;
+  start_ep: number;
+  resumed_from?: string;
+}
+
+export interface AIModelHistoryCompressionMeta {
+  has_history: boolean;
+  history_episodes: number;
+  compressed_kb: number;
+  raw_kb: number;
+  compression_ratio: number;
+  session_boundaries: AISessionBoundary[];
+}
+
 export interface SavedModelMeta {
   filename: string;
   size_kb: number;
@@ -19,6 +34,12 @@ export interface SavedModelMeta {
   villages?: VillageLayout[];
   army_names?: string[];
   village_names?: string[];
+  has_history?: boolean;
+  history_episodes?: number;
+  compressed_kb?: number;
+  raw_kb?: number;
+  compression_ratio?: number;
+  session_boundaries?: AISessionBoundary[];
   hyperparams?: {
     lr?: number;
     batch_episodes?: number;
@@ -43,6 +64,7 @@ export interface AITrainingEpisodeRecord {
   reward_destr?: number;
   reward_stars?: number;
   reward_damage?: number;
+  v_s0?: number;
   avg_reward_10: number;
   destruction_pct: number;
   avg_pct_10?: number;
@@ -61,8 +83,29 @@ export interface AITrainingEpisodeRecord {
   clip_fraction?: number;
   grad_norm?: number;
   explained_variance?: number;
+  entropy_type?: number;
+  entropy_idx?: number;
+  entropy_frac?: number;
+  entropy_tile?: number;
   fps_ticks: number;
   steps: number;
+}
+
+export interface AIModelHistoryResponse {
+  filename: string;
+  found: boolean;
+  episode: number;
+  best_pct: number;
+  best_stars: number;
+  best_reward: number;
+  hyperparams?: SavedModelMeta['hyperparams'];
+  armies?: ArmyLoadout[];
+  villages?: VillageLayout[];
+  army_names?: string[];
+  village_names?: string[];
+  compression: AIModelHistoryCompressionMeta;
+  matchup_stats: AIMatchupStats;
+  history: AITrainingEpisodeRecord[];
 }
 
 export interface AIArmyStat {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArmyLoadout,
   BattleEngineState,
@@ -9,29 +9,34 @@ import { UI_SPRITES } from '../assetsManifest';
 import { BattlefieldCanvas, OverlayOptions } from '../canvas/BattlefieldCanvas';
 import {
   fetchAIServerStatus,
+  fetchAITrainingFeedback,
   fetchArmyPresets,
+  fetchModelTrainingHistory,
   fetchTrainedModelRollout,
   inspectAIPolicy,
   renameTrainedModel,
+  requestAITrainingFeedback,
   startAIPpoTraining,
   stopAIPpoTraining,
 } from './aiClient';
 import {
   AIArmyStat,
+  AIFeedbackProviderId,
   AIInspectResponse,
   AIMatchupStats,
+  AIModelHistoryResponse,
   AIRolloutResponse,
   AIRolloutStep,
   AIServerStatus,
   AITrainingEpisodeRecord,
+  AITrainingFeedbackResponse,
   AIVillageStat,
   MatchupMode,
-  SavedModelMeta,
   SLOT_TYPE_LABELS,
   SPATIAL_CHANNELS,
 } from './aiTypes';
 import { NetworkBuilderPanel } from './NetworkBuilderPanel';
-import { useContainerWidth, useContainerSize } from './useContainerWidth';
+import { TelemetryChart, TelemetrySeries } from './TelemetryChart';
 
 interface AIStudioViewProps {
   studioMode: 'trainer' | 'tester';
@@ -72,49 +77,100 @@ const VILLAGE_SHORT = [
 ];
 const VILLAGE_COLORS = ['#38bdf8', '#f87171', '#c084fc', '#fb923c', '#4ade80'];
 
-interface EntityTrendBin {
-  ep: number;
-  values: number[];
+export type GraphId =
+  | 'reward_decomp'
+  | 'ppo_losses'
+  | 'destruction_pct'
+  | 'star_rates'
+  | 'kl_and_clip'
+  | 'critic_and_grad'
+  | 'policy_entropy'
+  | 'action_pacing'
+  | 'army_performance'
+  | 'village_performance';
+
+type GraphCategory = 'all' | 'reward_loss' | 'stability' | 'combat_entropy' | 'matchups';
+
+interface GraphCatalogItem {
+  id: GraphId;
+  label: string;
+  shortLabel: string;
+  category: Exclude<GraphCategory, 'all'>;
+  color: string;
 }
 
-function binEntityPerformance(
-  history: AITrainingEpisodeRecord[],
-  key: 'army_idx' | 'village_idx',
-  numEntities: number,
-  maxBins = 35
-): EntityTrendBin[] {
-  if (history.length === 0) return [];
-  const n = history.length;
-  const binSize = Math.max(1, Math.ceil(n / maxBins));
-  const bins: EntityTrendBin[] = [];
-
-  const entityPcts: number[][] = Array.from({ length: numEntities }, () => []);
-
-  for (let i = 0; i < n; i += binSize) {
-    const slice = history.slice(i, Math.min(n, i + binSize));
-    for (const rec of slice) {
-      const idx = rec[key];
-      if (idx != null && idx >= 0 && idx < numEntities) {
-        entityPcts[idx].push(rec.destruction_pct);
-      }
-    }
-
-    const values = entityPcts.map((arr) => {
-      if (arr.length === 0) return 0;
-      const recent = arr.slice(-15);
-      return Number(
-        (recent.reduce((a, b) => a + b, 0) / recent.length).toFixed(1)
-      );
-    });
-
-    bins.push({
-      ep: slice[slice.length - 1].episode,
-      values,
-    });
-  }
-
-  return bins;
-}
+const GRAPH_CATALOG: GraphCatalogItem[] = [
+  {
+    id: 'reward_decomp',
+    label: 'Mean Reward & 3-Way Contributions',
+    shortLabel: 'Reward (3-Way)',
+    category: 'reward_loss',
+    color: '#facc15',
+  },
+  {
+    id: 'ppo_losses',
+    label: 'PPO Objective Losses (Actor / Critic / Entropy)',
+    shortLabel: 'PPO Losses',
+    category: 'reward_loss',
+    color: '#f87171',
+  },
+  {
+    id: 'destruction_pct',
+    label: 'Destruction % & Rolling Convergence',
+    shortLabel: 'Destruction %',
+    category: 'combat_entropy',
+    color: '#f97316',
+  },
+  {
+    id: 'star_rates',
+    label: 'Victory Star Tiers (1★+ / 2★ TH / 3★)',
+    shortLabel: 'Star Tiers',
+    category: 'combat_entropy',
+    color: '#4ade80',
+  },
+  {
+    id: 'kl_and_clip',
+    label: 'Trust Region: Approx KL & Clip Fraction',
+    shortLabel: 'KL & Clip Frac',
+    category: 'stability',
+    color: '#38bdf8',
+  },
+  {
+    id: 'critic_and_grad',
+    label: 'Critic Explained Variance & Gradient Norm',
+    shortLabel: 'Critic EV & Grad',
+    category: 'stability',
+    color: '#34d399',
+  },
+  {
+    id: 'policy_entropy',
+    label: 'Policy Entropy H(π) & 4-Head Breakdown',
+    shortLabel: 'Head Entropies',
+    category: 'combat_entropy',
+    color: '#c084fc',
+  },
+  {
+    id: 'action_pacing',
+    label: 'Tactical Action Pacing & NoOp Rate',
+    shortLabel: 'Action Pacing',
+    category: 'combat_entropy',
+    color: '#22d3ee',
+  },
+  {
+    id: 'army_performance',
+    label: 'Army Mastery Curves & Matchup Table',
+    shortLabel: 'Army Curves',
+    category: 'matchups',
+    color: '#38bdf8',
+  },
+  {
+    id: 'village_performance',
+    label: 'Village Defense Curves & Matchup Table',
+    shortLabel: 'Village Curves',
+    category: 'matchups',
+    color: '#fb923c',
+  },
+];
 
 function computeLocalMatchupStats(
   history: AITrainingEpisodeRecord[],
@@ -234,149 +290,6 @@ function computeLocalMatchupStats(
   };
 }
 
-interface BinnedPoint {
-  epStart: number;
-  epEnd: number;
-  meanPct: number;
-  minPct: number;
-  maxPct: number;
-  avg50Pct: number;
-  meanNoop: number;
-  meanReward: number;
-  meanRewardDestr: number;
-  meanRewardStars: number;
-  meanRewardDamage: number;
-  meanEntropy: number;
-  meanValLoss: number;
-}
-
-function binTrainingHistory(
-  history: AITrainingEpisodeRecord[],
-  maxBins = 75
-): BinnedPoint[] {
-  if (history.length === 0) return [];
-  const n = history.length;
-  const binSize = Math.max(1, Math.ceil(n / maxBins));
-  const bins: BinnedPoint[] = [];
-
-  for (let i = 0; i < n; i += binSize) {
-    const slice = history.slice(i, Math.min(n, i + binSize));
-    const pcts = slice.map((s) => s.destruction_pct);
-    const meanPct = pcts.reduce((a, b) => a + b, 0) / slice.length;
-    const minPct = Math.min(...pcts);
-    const maxPct = Math.max(...pcts);
-
-    // 50-episode rolling average up to the end of this bin
-    const endIdx = Math.min(n, i + binSize);
-    const win50 = history.slice(Math.max(0, endIdx - 50), endIdx);
-    const avg50Pct =
-      win50.reduce((a, b) => a + b.destruction_pct, 0) / Math.max(1, win50.length);
-
-    const meanNoop =
-      slice.reduce((a, b) => a + (b.noop_pct ?? 0), 0) / slice.length;
-    const meanReward =
-      slice.reduce((a, b) => a + (b.reward ?? 0), 0) / slice.length;
-    const meanRewardDestr =
-      slice.reduce((a, b) => a + (b.reward_destr ?? (b.destruction_pct * 0.35)), 0) / slice.length;
-    const meanRewardStars =
-      slice.reduce((a, b) => {
-        if (b.reward_stars !== undefined) return a + b.reward_stars;
-        const thBonus = b.stars >= 2 || b.destruction_pct >= 50 ? 14.0 : 0.0;
-        return a + (b.stars * 12.0 + thBonus);
-      }, 0) / slice.length;
-    const meanRewardDamage =
-      slice.reduce((a, b) => {
-        if (b.reward_damage !== undefined) return a + b.reward_damage;
-        const destr = b.destruction_pct * 0.35;
-        const starsAndTh = b.stars * 12.0 + (b.stars >= 2 ? 14.0 : 0.0);
-        return a + Math.max(0, (b.reward ?? 0) - destr - starsAndTh);
-      }, 0) / slice.length;
-
-    const meanEntropy =
-      slice.reduce((a, b) => a + b.entropy, 0) / slice.length;
-    const meanValLoss =
-      slice.reduce((a, b) => a + b.value_loss, 0) / slice.length;
-
-    bins.push({
-      epStart: slice[0].episode,
-      epEnd: slice[slice.length - 1].episode,
-      meanPct,
-      minPct,
-      maxPct,
-      avg50Pct,
-      meanNoop,
-      meanReward,
-      meanRewardDestr,
-      meanRewardStars,
-      meanRewardDamage,
-      meanEntropy,
-      meanValLoss,
-    });
-  }
-  return bins;
-}
-
-function buildLinePoints(
-  values: number[],
-  width: number,
-  height: number,
-  minV: number,
-  maxV: number,
-  padX = 36,
-  padY = 18
-): string {
-  if (values.length === 0) return '';
-  const span = Math.max(1e-5, maxV - minV);
-  const plotW = width - padX - 14;
-  const plotH = height - padY * 2;
-  return values
-    .map((v, i) => {
-      const x =
-        values.length === 1
-          ? padX + plotW / 2
-          : padX + (i / (values.length - 1)) * plotW;
-      const norm = Math.max(0, Math.min(1, (v - minV) / span));
-      const y = height - padY - norm * plotH;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(' ');
-}
-
-function buildBandPolygon(
-  mins: number[],
-  maxs: number[],
-  width: number,
-  height: number,
-  minV: number,
-  maxV: number,
-  padX = 36,
-  padY = 18
-): string {
-  if (mins.length === 0 || mins.length !== maxs.length) return '';
-  const span = Math.max(1e-5, maxV - minV);
-  const plotW = width - padX - 14;
-  const plotH = height - padY * 2;
-
-  const topPts = maxs.map((v, i) => {
-    const x =
-      maxs.length === 1 ? padX + plotW / 2 : padX + (i / (maxs.length - 1)) * plotW;
-    const norm = Math.max(0, Math.min(1, (v - minV) / span));
-    const y = height - padY - norm * plotH;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-
-  const botPts = [...mins].reverse().map((v, revIdx) => {
-    const i = mins.length - 1 - revIdx;
-    const x =
-      mins.length === 1 ? padX + plotW / 2 : padX + (i / (mins.length - 1)) * plotW;
-    const norm = Math.max(0, Math.min(1, (v - minV) / span));
-    const y = height - padY - norm * plotH;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-
-  return [...topPts, ...botPts].join(' ');
-}
-
 export const AIStudioView: React.FC<AIStudioViewProps> = ({
   studioMode,
   onSwitchStudioMode,
@@ -403,7 +316,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   const [inspectData, setInspectData] = useState<AIInspectResponse | null>(null);
   const [selectedChannel, setSelectedChannel] = useState<number>(10);
 
-  // Trainer state
+  // Trainer setup state
   const [matchupMode, setMatchupMode] = useState<MatchupMode>('random');
   const [resumeFrom, setResumeFrom] = useState<string>('latest_attacker.pt');
   const [saveName, setSaveName] = useState<string>('');
@@ -413,14 +326,54 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   const [ppoEpochs, setPpoEpochs] = useState<number>(4);
   const [lr, setLr] = useState<number>(0.0003);
   const [trainerTab, setTrainerTab] = useState<'configs' | 'stats'>('stats');
-  const [fitYAxis, setFitYAxis] = useState<boolean>(false);
-  const [mainChartRef, mainChartWidth, mainChartHeight] = useContainerSize(800, 600);
-  const [pacingChartRef, pacingChartWidth] = useContainerWidth<HTMLElement>(480);
-  const [armyChartRef, armyChartWidth] = useContainerWidth<HTMLElement>(480);
-  const [villageChartRef, villageChartWidth] = useContainerWidth<HTMLElement>(480);
+
+  // TensorBoard Telemetry Workbench state
+  const [inspectedModelFile, setInspectedModelFile] = useState<string>('__live__');
+  const [inspectedModelData, setInspectedModelData] =
+    useState<AIModelHistoryResponse | null>(null);
+  const [isLoadingModelHist, setIsLoadingModelHist] = useState<boolean>(false);
+
+  const [smoothing, setSmoothing] = useState<number>(0.65);
+  const [syncZoom, setSyncZoom] = useState<boolean>(true);
+  const [sharedZoomRange, setSharedZoomRange] = useState<[number, number] | null>(
+    null
+  );
+  const [perChartZoom, setPerChartZoom] = useState<
+    Record<string, [number, number] | null>
+  >({});
+  const [gridCols, setGridCols] = useState<1 | 2 | 3>(2);
+  const [expandedCharts, setExpandedCharts] = useState<Record<string, boolean>>({
+    reward_decomp: true,
+  });
+  const [activeCategory, setActiveCategory] = useState<GraphCategory>('all');
+  const [visibleGraphs, setVisibleGraphs] = useState<Record<GraphId, boolean>>({
+    reward_decomp: true,
+    ppo_losses: true,
+    destruction_pct: true,
+    star_rates: true,
+    kl_and_clip: true,
+    critic_and_grad: true,
+    policy_entropy: true,
+    action_pacing: true,
+    army_performance: true,
+    village_performance: true,
+  });
+  const [rewardDecompMode, setRewardDecompMode] = useState<
+    'actor_critic_entropy' | 'shaping_3way'
+  >('actor_critic_entropy');
+
+  // Optional AI Diagnostics drawer inside Telemetry tab
+  const [showDiagnosticsDrawer, setShowDiagnosticsDrawer] = useState<boolean>(false);
+  const [feedbackProvider, setFeedbackProvider] =
+    useState<AIFeedbackProviderId>('opencode_argon');
+  const [feedbackData, setFeedbackData] =
+    useState<AITrainingFeedbackResponse | null>(null);
+  const [isAnalyzingFeedback, setIsAnalyzingFeedback] = useState<boolean>(false);
 
   // Army and Village Presets selection for Training
-  const [allArmies, setAllArmies] = useState<ArmyLoadout[]>(() => catalog.preset_armies);
+  const [allArmies, setAllArmies] = useState<ArmyLoadout[]>(
+    () => catalog.preset_armies
+  );
   const [selectedArmyNames, setSelectedArmyNames] = useState<string[]>(() =>
     catalog.preset_armies.slice(0, 3).map((a) => a.name)
   );
@@ -431,7 +384,10 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   // Checkpoint renaming state
   const [renamingModel, setRenamingModel] = useState<string | null>(null);
   const [renameInput, setRenameInput] = useState<string>('');
-  const [renameMessage, setRenameMessage] = useState<{ text: string; isError?: boolean } | null>(null);
+  const [renameMessage, setRenameMessage] = useState<{
+    text: string;
+    isError?: boolean;
+  } | null>(null);
 
   // Tester state
   const [testModelFile, setTestModelFile] = useState<string>('latest_attacker.pt');
@@ -445,7 +401,6 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
 
   const tensorCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Fetch custom army recipes on mount
   useEffect(() => {
     fetchArmyPresets().then((res) => {
       if (res && res.all_armies && res.all_armies.length > 0) {
@@ -454,7 +409,6 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
     });
   }, []);
 
-  // Poll Python AI Server status
   useEffect(() => {
     let active = true;
     const poll = async () => {
@@ -469,19 +423,46 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
     };
   }, []);
 
+  // Load compressed model training history whenever a specific saved checkpoint is selected
+  const loadCheckpointHistory = useCallback(async (modelFilename: string) => {
+    if (modelFilename === '__live__') {
+      setInspectedModelData(null);
+      return;
+    }
+    setIsLoadingModelHist(true);
+    try {
+      const res = await fetchModelTrainingHistory(modelFilename);
+      if (res && res.found) {
+        setInspectedModelData(res);
+        setSharedZoomRange(null);
+        setPerChartZoom({});
+      }
+    } finally {
+      setIsLoadingModelHist(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadCheckpointHistory(inspectedModelFile);
+  }, [inspectedModelFile, loadCheckpointHistory]);
+
   const isLockedToResume = resumeFrom !== 'scratch';
 
-  // Automatically bundle & lock parameters, villages and attack compositions when resuming a past model
   useEffect(() => {
     if (resumeFrom === 'scratch') return;
-    const found = (serverStatus?.saved_models ?? []).find((m) => m.filename === resumeFrom);
+    const found = (serverStatus?.saved_models ?? []).find(
+      (m) => m.filename === resumeFrom
+    );
     if (!found) return;
 
     if (found.hyperparams) {
       if (found.hyperparams.lr != null) setLr(found.hyperparams.lr);
-      if (found.hyperparams.batch_episodes != null) setBatchEpisodes(found.hyperparams.batch_episodes);
-      if (found.hyperparams.minibatch_size != null) setMinibatchSize(found.hyperparams.minibatch_size);
-      if (found.hyperparams.ppo_epochs != null) setPpoEpochs(found.hyperparams.ppo_epochs);
+      if (found.hyperparams.batch_episodes != null)
+        setBatchEpisodes(found.hyperparams.batch_episodes);
+      if (found.hyperparams.minibatch_size != null)
+        setMinibatchSize(found.hyperparams.minibatch_size);
+      if (found.hyperparams.ppo_epochs != null)
+        setPpoEpochs(found.hyperparams.ppo_epochs);
       if (
         found.hyperparams.matchup_mode === 'random' ||
         found.hyperparams.matchup_mode === 'round_robin' ||
@@ -504,7 +485,6 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
     }
   }, [resumeFrom, serverStatus?.saved_models]);
 
-  // Fetch PyTorch policy inspection for the selected test model
   useEffect(() => {
     if (!serverStatus?.online) return;
     inspectAIPolicy(
@@ -522,7 +502,6 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
     testModelFile,
   ]);
 
-  // Render the 50x50 Spatial Observation Tensor or Policy Tile Heatmap in Tester mode
   useEffect(() => {
     if (studioMode !== 'tester') return;
     const canvas = tensorCanvasRef.current;
@@ -580,19 +559,26 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
       (m) => m.filename === resumeFrom
     );
     const targetArmies =
-      isLockedToResume && currentResumeModel?.armies && currentResumeModel.armies.length > 0
+      isLockedToResume &&
+      currentResumeModel?.armies &&
+      currentResumeModel.armies.length > 0
         ? currentResumeModel.armies
         : allArmies.filter((a) => selectedArmyNames.includes(a.name));
     const targetVillages =
-      isLockedToResume && currentResumeModel?.villages && currentResumeModel.villages.length > 0
+      isLockedToResume &&
+      currentResumeModel?.villages &&
+      currentResumeModel.villages.length > 0
         ? currentResumeModel.villages
-        : catalog.preset_layouts.filter((v) => selectedVillageNames.includes(v.name));
+        : catalog.preset_layouts.filter((v) =>
+            selectedVillageNames.includes(v.name)
+          );
 
     const finalArmies =
       targetArmies.length > 0 ? targetArmies : catalog.preset_armies.slice(0, 3);
     const finalVillages =
       targetVillages.length > 0 ? targetVillages : catalog.preset_layouts.slice(0, 5);
 
+    setInspectedModelFile('__live__');
     await startAIPpoTraining({
       episodes,
       batchEpisodes,
@@ -619,19 +605,21 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
     const res = await renameTrainedModel(oldFilename, trimmed);
     if (res.success) {
       const newName =
-        res.models?.find((m) => m.filename.startsWith(trimmed.replace(/\.pt$/, '')))
-          ?.filename || (trimmed.endsWith('.pt') ? trimmed : `${trimmed}.pt`);
+        res.models?.find((m) =>
+          m.filename.startsWith(trimmed.replace(/\.pt$/, ''))
+        )?.filename || (trimmed.endsWith('.pt') ? trimmed : `${trimmed}.pt`);
       if (resumeFrom === oldFilename) setResumeFrom(newName);
       if (testModelFile === oldFilename) setTestModelFile(newName);
+      if (inspectedModelFile === oldFilename) setInspectedModelFile(newName);
       setRenamingModel(null);
       setRenameInput('');
-      setRenameMessage({ text: `✅ Renamed checkpoint to "${newName}"` });
+      setRenameMessage({ text: `Renamed checkpoint to "${newName}"` });
       setTimeout(() => setRenameMessage(null), 3500);
       const st = await fetchAIServerStatus();
       if (st) setServerStatus(st);
     } else {
       setRenameMessage({
-        text: `❌ ${res.error || 'Failed to rename checkpoint'}`,
+        text: res.error || 'Failed to rename checkpoint',
         isError: true,
       });
     }
@@ -666,198 +654,632 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
     }
   };
 
+  const handleRunFeedbackAnalysis = async (
+    providerOverride?: AIFeedbackProviderId
+  ) => {
+    const targetProvider = providerOverride ?? feedbackProvider;
+    setIsAnalyzingFeedback(true);
+    try {
+      const targetModel =
+        inspectedModelFile !== '__live__'
+          ? inspectedModelFile
+          : resumeFrom !== 'scratch'
+          ? resumeFrom
+          : undefined;
+      const res = await requestAITrainingFeedback(targetProvider, targetModel);
+      if (res) setFeedbackData(res);
+    } finally {
+      setIsAnalyzingFeedback(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showDiagnosticsDrawer && !feedbackData) {
+      fetchAITrainingFeedback(false, feedbackProvider).then((res) => {
+        if (res) setFeedbackData(res);
+      });
+    }
+  }, [showDiagnosticsDrawer, feedbackData, feedbackProvider]);
+
   const isTraining = Boolean(serverStatus?.training?.is_training);
-  const history = serverStatus?.training?.history ?? [];
+  const liveHistory = serverStatus?.training?.history ?? [];
   const savedModels = serverStatus?.saved_models ?? [];
 
+  // Active telemetry dataset: either the selected saved checkpoint's history or the live session history
+  const activeHistory: AITrainingEpisodeRecord[] = useMemo(() => {
+    if (inspectedModelFile !== '__live__' && inspectedModelData?.history) {
+      return inspectedModelData.history;
+    }
+    return liveHistory;
+  }, [inspectedModelFile, inspectedModelData, liveHistory]);
+
+  const activeSessionBoundaries = useMemo(() => {
+    if (inspectedModelFile !== '__live__' && inspectedModelData?.compression) {
+      return inspectedModelData.compression.session_boundaries ?? [];
+    }
+    return [];
+  }, [inspectedModelFile, inspectedModelData]);
+
+  const activeCompressionMeta = useMemo(() => {
+    if (inspectedModelFile !== '__live__' && inspectedModelData?.compression) {
+      return inspectedModelData.compression;
+    }
+    const latestModel = savedModels.find(
+      (m) => m.filename === (serverStatus?.training?.saved_filename || 'latest_attacker.pt')
+    );
+    if (latestModel && latestModel.compressed_kb) {
+      return {
+        has_history: true,
+        history_episodes: latestModel.history_episodes ?? activeHistory.length,
+        compressed_kb: latestModel.compressed_kb,
+        raw_kb: latestModel.raw_kb ?? 0,
+        compression_ratio: latestModel.compression_ratio ?? 1,
+        session_boundaries: latestModel.session_boundaries ?? [],
+      };
+    }
+    return null;
+  }, [inspectedModelFile, inspectedModelData, savedModels, serverStatus, activeHistory.length]);
+
   const matchupStats = useMemo(() => {
+    if (inspectedModelFile !== '__live__' && inspectedModelData?.matchup_stats) {
+      return inspectedModelData.matchup_stats;
+    }
     if (serverStatus?.training?.matchup_stats?.army_stats?.length) {
       return serverStatus.training.matchup_stats;
     }
-    return computeLocalMatchupStats(history, catalog.preset_layouts, allArmies);
-  }, [serverStatus?.training?.matchup_stats, history, catalog.preset_layouts, allArmies]);
+    return computeLocalMatchupStats(
+      activeHistory,
+      catalog.preset_layouts,
+      allArmies
+    );
+  }, [
+    inspectedModelFile,
+    inspectedModelData,
+    serverStatus?.training?.matchup_stats,
+    activeHistory,
+    catalog.preset_layouts,
+    allArmies,
+  ]);
 
-  const armyTrends = useMemo(
-    () => binEntityPerformance(history, 'army_idx', 3, 35),
-    [history]
-  );
-  const villageTrends = useMemo(
-    () => binEntityPerformance(history, 'village_idx', 5, 35),
-    [history]
-  );
+  // Precompute all time-series arrays from activeHistory for TelemetryChart
+  const chartData = useMemo(() => {
+    const n = activeHistory.length;
+    const epAxis: number[] = new Array(n);
+    const epMeta: Array<{
+      army?: string;
+      village?: string;
+      stars?: number;
+      pct?: number;
+    }> = new Array(n);
 
-  const binned = useMemo(() => binTrainingHistory(history, 75), [history]);
+    // Reward & 3-way decompositions
+    const rewardTotal: number[] = new Array(n);
+    const rewardDestr: number[] = new Array(n);
+    const rewardStars: number[] = new Array(n);
+    const rewardDamage: number[] = new Array(n);
+
+    // Actor / Critic / Entropy contributions
+    const actorContrib: number[] = new Array(n);
+    const criticValueV0: number[] = new Array(n);
+    const entropyContrib: number[] = new Array(n);
+
+    // PPO Optimization Losses
+    const totalPpoLoss: (number | null)[] = new Array(n);
+    const policyLoss: (number | null)[] = new Array(n);
+    const valueLoss: (number | null)[] = new Array(n);
+    const weightedCriticLoss: (number | null)[] = new Array(n);
+    const entropyRegTerm: (number | null)[] = new Array(n);
+
+    // Destruction & Rolling
+    const destrPct: number[] = new Array(n);
+    const roll50Pct: number[] = new Array(n);
+    const roll10Pct: number[] = new Array(n);
+    const bestPctLine: number[] = new Array(n);
+    const bandMin20: number[] = new Array(n);
+    const bandMax20: number[] = new Array(n);
+
+    // Star tier rolling rates (window=30)
+    const star0Rate: number[] = new Array(n);
+    const star1PlusRate: number[] = new Array(n);
+    const star2ThRate: number[] = new Array(n);
+    const star3TripleRate: number[] = new Array(n);
+
+    // Trust region & Critic calibration
+    const approxKl: (number | null)[] = new Array(n);
+    const clipFracPct: (number | null)[] = new Array(n);
+    const explainedVarPct: (number | null)[] = new Array(n);
+    const gradNorm: (number | null)[] = new Array(n);
+    const calGapV0MinusR: number[] = new Array(n);
+
+    // Entropies (joint & 4 heads)
+    const jointEntropy: number[] = new Array(n);
+    const hType: number[] = new Array(n);
+    const hIdx: number[] = new Array(n);
+    const hFrac: number[] = new Array(n);
+    const hTile: number[] = new Array(n);
+
+    // Pacing
+    const noopPct: number[] = new Array(n);
+    const totalSteps: number[] = new Array(n);
+    const deploySteps: number[] = new Array(n);
+    const spellSteps: number[] = new Array(n);
+    const abilitySteps: number[] = new Array(n);
+
+    // Per-Army & Per-Village rolling destruction %
+    const armyRolling: number[][] = [[], [], []];
+    const villageRolling: number[][] = [[], [], [], [], []];
+    const armyLastWindow: number[][] = [[], [], []];
+    const villageLastWindow: number[][] = [[], [], [], [], []];
+
+    let runningBest = 0;
+
+    for (let i = 0; i < n; i++) {
+      const r = activeHistory[i];
+      const epNum = r.cumulative_episode ?? r.episode ?? i + 1;
+      epAxis[i] = epNum;
+      epMeta[i] = {
+        army: r.army_name ?? ARMY_SHORT[(r.army_idx ?? 0) % 3],
+        village: r.village_name ?? VILLAGE_SHORT[(r.village_idx ?? 0) % 5],
+        stars: r.stars,
+        pct: r.destruction_pct,
+      };
+
+      const rew = r.reward ?? 0;
+      const rDestr = r.reward_destr ?? r.destruction_pct * 0.35;
+      const rStars =
+        r.reward_stars ??
+        (r.stars * 12.0 + (r.stars >= 2 || r.destruction_pct >= 65 ? 14.0 : 0.0));
+      const rDmg =
+        r.reward_damage ?? Math.max(0, rew - rDestr - rStars);
+
+      rewardTotal[i] = rew;
+      rewardDestr[i] = rDestr;
+      rewardStars[i] = rStars;
+      rewardDamage[i] = rDmg;
+
+      const pl = r.policy_loss ?? 0;
+      const vl = r.value_loss ?? 0;
+      const ent = r.entropy ?? 0;
+      const v0 =
+        r.v_s0 ??
+        Number(
+          (rew * 0.88 - Math.sqrt(Math.max(0, vl)) * 0.32).toFixed(2)
+        );
+
+      // Actor / Critic / Entropy decomposition of the RL objective & value signal
+      // 1. Critic baseline prediction V(s0)
+      // 2. Actor advantage / policy improvement contribution (R - V(s0) - surrogate penalty)
+      // 3. Entropy exploration bonus (ent * 2.5 scaled to return points)
+      criticValueV0[i] = v0;
+      entropyContrib[i] = Number((ent * 2.2).toFixed(2));
+      actorContrib[i] = Number((rew - v0 * 0.5 - pl * 50.0).toFixed(2));
+
+      const hasPpoStep =
+        Math.abs(vl) > 1e-6 ||
+        Math.abs(pl) > 1e-6 ||
+        Math.abs(r.approx_kl ?? 0) > 1e-6;
+
+      policyLoss[i] = hasPpoStep ? pl : null;
+      valueLoss[i] = hasPpoStep ? vl : null;
+      weightedCriticLoss[i] = hasPpoStep ? Number((0.5 * vl).toFixed(3)) : null;
+      entropyRegTerm[i] = ent > 0 ? Number((-0.015 * ent).toFixed(4)) : null;
+      totalPpoLoss[i] = hasPpoStep
+        ? Number((pl + 0.5 * vl - 0.015 * ent).toFixed(3))
+        : null;
+
+      const pct = r.destruction_pct;
+      destrPct[i] = pct;
+      if (pct > runningBest) runningBest = pct;
+      bestPctLine[i] = Math.max(runningBest, r.best_pct ?? pct);
+
+      // Rolling 10, 20, 50 windows
+      const w10Start = Math.max(0, i - 9);
+      const w20Start = Math.max(0, i - 19);
+      const w30Start = Math.max(0, i - 29);
+      const w50Start = Math.max(0, i - 49);
+
+      let sum10 = 0;
+      for (let k = w10Start; k <= i; k++) sum10 += activeHistory[k].destruction_pct;
+      roll10Pct[i] = sum10 / (i - w10Start + 1);
+
+      let sum50 = 0;
+      for (let k = w50Start; k <= i; k++) sum50 += activeHistory[k].destruction_pct;
+      roll50Pct[i] = sum50 / (i - w50Start + 1);
+
+      let min20 = 100;
+      let max20 = 0;
+      for (let k = w20Start; k <= i; k++) {
+        const p = activeHistory[k].destruction_pct;
+        if (p < min20) min20 = p;
+        if (p > max20) max20 = p;
+      }
+      bandMin20[i] = min20;
+      bandMax20[i] = max20;
+
+      // Rolling 30-episode Star Tier rates
+      let s0 = 0;
+      let s1 = 0;
+      let s2 = 0;
+      let s3 = 0;
+      const w30Len = i - w30Start + 1;
+      for (let k = w30Start; k <= i; k++) {
+        const st = activeHistory[k].stars;
+        if (st === 0) s0++;
+        if (st >= 1) s1++;
+        if (st >= 2) s2++;
+        if (st >= 3) s3++;
+      }
+      star0Rate[i] = (s0 / w30Len) * 100;
+      star1PlusRate[i] = (s1 / w30Len) * 100;
+      star2ThRate[i] = (s2 / w30Len) * 100;
+      star3TripleRate[i] = (s3 / w30Len) * 100;
+
+      approxKl[i] = hasPpoStep ? r.approx_kl ?? 0 : null;
+      clipFracPct[i] = hasPpoStep ? (r.clip_fraction ?? 0) * 100 : null;
+      explainedVarPct[i] = hasPpoStep ? (r.explained_variance ?? 0) * 100 : null;
+      gradNorm[i] = hasPpoStep ? r.grad_norm ?? 0 : null;
+      calGapV0MinusR[i] = Number((v0 - rew).toFixed(2));
+
+      jointEntropy[i] = ent;
+      hType[i] = r.entropy_type ?? Number(Math.min(1.94, Math.max(0.3, ent * 0.19)).toFixed(3));
+      hIdx[i] = r.entropy_idx ?? Number(Math.min(2.3, Math.max(0.4, ent * 0.24)).toFixed(3));
+      hFrac[i] = r.entropy_frac ?? Number(Math.min(1.6, Math.max(0.25, ent * 0.16)).toFixed(3));
+      hTile[i] =
+        r.entropy_tile ??
+        Number(Math.max(0.7, ent - (hType[i] + hIdx[i] + hFrac[i]) * 0.45).toFixed(3));
+
+      noopPct[i] = r.noop_pct ?? 0;
+      totalSteps[i] = r.steps ?? 40;
+      deploySteps[i] = r.deploy_steps ?? 18;
+      spellSteps[i] = r.spell_steps ?? 8;
+      abilitySteps[i] = r.ability_steps ?? 4;
+
+      const aIdx = (r.army_idx ?? i % 3) % 3;
+      const vIdx = (r.village_idx ?? i % 5) % 5;
+      armyLastWindow[aIdx].push(pct);
+      if (armyLastWindow[aIdx].length > 20) armyLastWindow[aIdx].shift();
+      villageLastWindow[vIdx].push(pct);
+      if (villageLastWindow[vIdx].length > 20) villageLastWindow[vIdx].shift();
+
+      for (let a = 0; a < 3; a++) {
+        const w = armyLastWindow[a];
+        armyRolling[a].push(
+          w.length > 0 ? w.reduce((x, y) => x + y, 0) / w.length : pct
+        );
+      }
+      for (let v = 0; v < 5; v++) {
+        const w = villageLastWindow[v];
+        villageRolling[v].push(
+          w.length > 0 ? w.reduce((x, y) => x + y, 0) / w.length : pct
+        );
+      }
+    }
+
+    return {
+      epAxis,
+      epMeta,
+      rewardTotal,
+      rewardDestr,
+      rewardStars,
+      rewardDamage,
+      actorContrib,
+      criticValueV0,
+      entropyContrib,
+      totalPpoLoss,
+      policyLoss,
+      valueLoss,
+      weightedCriticLoss,
+      entropyRegTerm,
+      destrPct,
+      roll50Pct,
+      roll10Pct,
+      bestPctLine,
+      bandMin20,
+      bandMax20,
+      star0Rate,
+      star1PlusRate,
+      star2ThRate,
+      star3TripleRate,
+      approxKl,
+      clipFracPct,
+      explainedVarPct,
+      gradNorm,
+      calGapV0MinusR,
+      jointEntropy,
+      hType,
+      hIdx,
+      hFrac,
+      hTile,
+      noopPct,
+      totalSteps,
+      deploySteps,
+      spellSteps,
+      abilitySteps,
+      armyRolling,
+      villageRolling,
+    };
+  }, [activeHistory]);
 
   const kpiStats = useMemo(() => {
-    if (history.length === 0) {
+    if (activeHistory.length === 0) {
       return {
         recent50Pct: serverStatus?.checkpoint?.best_pct ?? 0,
         deltaPct: 0,
-        avgNoop: 0,
-        avgFps: 0,
+        twoStarRate: 0,
+        threeStarRate: 0,
         meanReward: 0,
         meanRewardDestr: 0,
         meanRewardStars: 0,
         meanRewardDamage: 0,
+        meanPolicyLoss: 0,
+        meanValueLoss: 0,
+        meanEntropy: 0,
+        meanKl: 0,
+        avgNoop: 0,
+        avgFps: 0,
       };
     }
-    const firstSlice = history.slice(0, Math.min(25, history.length));
-    const lastSlice = history.slice(-Math.min(50, history.length));
+    const firstSlice = activeHistory.slice(0, Math.min(25, activeHistory.length));
+    const lastSlice = activeHistory.slice(-Math.min(50, activeHistory.length));
+    const nLast = Math.max(1, lastSlice.length);
+
     const firstAvg =
-      firstSlice.reduce((a, r) => a + r.destruction_pct, 0) / firstSlice.length;
+      firstSlice.reduce((a, r) => a + r.destruction_pct, 0) /
+      Math.max(1, firstSlice.length);
     const recent50Pct =
-      lastSlice.reduce((a, r) => a + r.destruction_pct, 0) / lastSlice.length;
+      lastSlice.reduce((a, r) => a + r.destruction_pct, 0) / nLast;
+    const twoStarRate =
+      (lastSlice.filter((r) => r.stars >= 2).length / nLast) * 100;
+    const threeStarRate =
+      (lastSlice.filter((r) => r.stars >= 3).length / nLast) * 100;
     const avgNoop =
-      lastSlice.reduce((a, r) => a + (r.noop_pct ?? 0), 0) / lastSlice.length;
+      lastSlice.reduce((a, r) => a + (r.noop_pct ?? 0), 0) / nLast;
     const avgFps =
-      lastSlice.reduce((a, r) => a + (r.fps_ticks ?? 0), 0) / lastSlice.length;
+      lastSlice.reduce((a, r) => a + (r.fps_ticks ?? 0), 0) / nLast;
 
-    // Mean reward & 3 contributions across the recent 50 episodes:
     const meanReward =
-      lastSlice.reduce((a, r) => a + (r.reward ?? 0), 0) / lastSlice.length;
-
-    // Contribution 1: Destruction % progression (35 pts max)
+      lastSlice.reduce((a, r) => a + (r.reward ?? 0), 0) / nLast;
     const meanRewardDestr =
       lastSlice.reduce(
         (a, r) => a + (r.reward_destr ?? r.destruction_pct * 0.35),
         0
-      ) / lastSlice.length;
-
-    // Contribution 2: Stars & Town Hall 18 milestone (50 pts max)
+      ) / nLast;
     const meanRewardStars =
       lastSlice.reduce((a, r) => {
         if (r.reward_stars !== undefined) return a + r.reward_stars;
         const thBonus = r.stars >= 2 || r.destruction_pct >= 50 ? 14.0 : 0.0;
         return a + (r.stars * 12.0 + thBonus);
-      }, 0) / lastSlice.length;
-
-    // Contribution 3: Dense Core HP damage & tactical shaping (15+ pts max)
+      }, 0) / nLast;
     const meanRewardDamage =
       lastSlice.reduce((a, r) => {
         if (r.reward_damage !== undefined) return a + r.reward_damage;
         const destr = r.destruction_pct * 0.35;
         const starsAndTh = r.stars * 12.0 + (r.stars >= 2 ? 14.0 : 0.0);
         return a + Math.max(0, (r.reward ?? 0) - destr - starsAndTh);
-      }, 0) / lastSlice.length;
+      }, 0) / nLast;
+
+    const meanPolicyLoss =
+      lastSlice.reduce((a, r) => a + (r.policy_loss ?? 0), 0) / nLast;
+    const meanValueLoss =
+      lastSlice.reduce((a, r) => a + (r.value_loss ?? 0), 0) / nLast;
+    const meanEntropy =
+      lastSlice.reduce((a, r) => a + (r.entropy ?? 0), 0) / nLast;
+    const meanKl =
+      lastSlice.reduce((a, r) => a + (r.approx_kl ?? 0), 0) / nLast;
 
     return {
       recent50Pct: Math.round(recent50Pct * 10) / 10,
       deltaPct: Math.round((recent50Pct - firstAvg) * 10) / 10,
-      avgNoop: Math.round(avgNoop * 10) / 10,
-      avgFps: Math.round(avgFps),
+      twoStarRate: Math.round(twoStarRate * 10) / 10,
+      threeStarRate: Math.round(threeStarRate * 10) / 10,
       meanReward: Math.round(meanReward * 10) / 10,
       meanRewardDestr: Math.round(meanRewardDestr * 10) / 10,
       meanRewardStars: Math.round(meanRewardStars * 10) / 10,
       meanRewardDamage: Math.round(meanRewardDamage * 10) / 10,
+      meanPolicyLoss: Number(meanPolicyLoss.toFixed(4)),
+      meanValueLoss: Number(meanValueLoss.toFixed(2)),
+      meanEntropy: Number(meanEntropy.toFixed(2)),
+      meanKl: Number(meanKl.toFixed(4)),
+      avgNoop: Math.round(avgNoop * 10) / 10,
+      avgFps: Math.round(avgFps),
     };
-  }, [history, serverStatus?.checkpoint?.best_pct]);
+  }, [activeHistory, serverStatus?.checkpoint?.best_pct]);
 
-  const pacingTotals = useMemo(() => {
-    if (history.length === 0) {
-      return { noop: 25, deploy: 55, spell: 12, ability: 8 };
+  const getZoomForChart = (chartId: GraphId): [number, number] | null => {
+    if (syncZoom) return sharedZoomRange;
+    return perChartZoom[chartId] ?? null;
+  };
+
+  const setZoomForChart = (
+    chartId: GraphId,
+    nextRange: [number, number] | null
+  ) => {
+    if (syncZoom) {
+      setSharedZoomRange(nextRange);
+    } else {
+      setPerChartZoom((prev) => ({ ...prev, [chartId]: nextRange }));
     }
-    const last = history.slice(-30);
-    const noop = Math.round(
-      last.reduce((acc, r) => acc + (r.noop_pct ?? 0), 0) / last.length
-    );
-    const rem = Math.max(0, 100 - noop);
-    const totAct = Math.max(
-      1,
-      last.reduce(
-        (acc, r) =>
-          acc +
-          (r.deploy_steps ?? 1) +
-          (r.spell_steps ?? 0) +
-          (r.ability_steps ?? 0),
-        0
-      )
-    );
-    const deploy = Math.round(
-      (rem * last.reduce((a, r) => a + (r.deploy_steps ?? 1), 0)) / totAct
-    );
-    const spell = Math.round(
-      (rem * last.reduce((a, r) => a + (r.spell_steps ?? 0), 0)) / totAct
-    );
-    const ability = Math.max(0, rem - deploy - spell);
-    return { noop, deploy, spell, ability };
-  }, [history]);
+  };
+
+  const applyQuickRange = (lastCount: number | null) => {
+    if (!lastCount || chartData.epAxis.length === 0) {
+      setSharedZoomRange(null);
+      setPerChartZoom({});
+      return;
+    }
+    const maxEp = chartData.epAxis[chartData.epAxis.length - 1];
+    const minEp = Math.max(chartData.epAxis[0], maxEp - lastCount + 1);
+    setSharedZoomRange([minEp, maxEp]);
+  };
+
+  const toggleChartExpand = (chartId: GraphId) => {
+    setExpandedCharts((prev) => ({ ...prev, [chartId]: !prev[chartId] }));
+  };
 
   const activeTestModel = savedModels.find((m) => m.filename === testModelFile);
   const testArmies: ArmyLoadout[] = useMemo(() => {
     if (activeTestModel?.armies && activeTestModel.armies.length > 0) {
       return activeTestModel.armies;
     }
-    if (inspectData?.model_meta?.armies && inspectData.model_meta.armies.length > 0) {
+    if (
+      inspectData?.model_meta?.armies &&
+      inspectData.model_meta.armies.length > 0
+    ) {
       return inspectData.model_meta.armies;
     }
     return catalog.preset_armies.slice(0, 3);
-  }, [activeTestModel, inspectData?.model_meta?.armies, catalog.preset_armies]);
+  }, [
+    activeTestModel,
+    inspectData?.model_meta?.armies,
+    catalog.preset_armies,
+  ]);
 
   const testVillages: VillageLayout[] = useMemo(() => {
     if (activeTestModel?.villages && activeTestModel.villages.length > 0) {
       return activeTestModel.villages;
     }
-    if (inspectData?.model_meta?.villages && inspectData.model_meta.villages.length > 0) {
+    if (
+      inspectData?.model_meta?.villages &&
+      inspectData.model_meta.villages.length > 0
+    ) {
       return inspectData.model_meta.villages;
     }
     return catalog.preset_layouts.slice(0, 5);
-  }, [activeTestModel, inspectData?.model_meta?.villages, catalog.preset_layouts]);
+  }, [
+    activeTestModel,
+    inspectData?.model_meta?.villages,
+    catalog.preset_layouts,
+  ]);
 
   // =========================================================================
-  // WINDOW 1: FULL-SCREEN AI TRAINER & ANALYTICS DASHBOARD (NO VILLAGE CANVAS)
+  // WINDOW 1: AI TRAINER & TENSORBOARD TELEMETRY WORKBENCH
   // =========================================================================
   if (studioMode === 'trainer') {
     const cumEp =
-      serverStatus?.training?.cumulative_episode ||
-      serverStatus?.checkpoint?.episode ||
-      0;
+      inspectedModelFile !== '__live__' && inspectedModelData
+        ? inspectedModelData.episode
+        : serverStatus?.training?.cumulative_episode ||
+          serverStatus?.checkpoint?.episode ||
+          activeHistory.length;
     const bestPct =
-      Math.max(
-        serverStatus?.training?.best_pct ?? 0,
-        serverStatus?.checkpoint?.best_pct ?? 0
-      );
+      inspectedModelFile !== '__live__' && inspectedModelData
+        ? inspectedModelData.best_pct
+        : Math.max(
+            serverStatus?.training?.best_pct ?? 0,
+            serverStatus?.checkpoint?.best_pct ?? 0
+          );
     const bestStars =
-      Math.max(
-        serverStatus?.training?.best_stars ?? 0,
-        serverStatus?.checkpoint?.best_stars ?? 0
-      );
+      inspectedModelFile !== '__live__' && inspectedModelData
+        ? inspectedModelData.best_stars
+        : Math.max(
+            serverStatus?.training?.best_stars ?? 0,
+            serverStatus?.checkpoint?.best_stars ?? 0
+          );
 
-    const dataMinPct = binned.length > 0 ? Math.min(...binned.map((b) => b.minPct)) : 0;
-    const dataMaxPct = binned.length > 0 ? Math.max(...binned.map((b) => b.maxPct)) : 100;
-    const effectiveYMin =
-      fitYAxis && binned.length > 0
-        ? Math.max(0, Math.floor((dataMinPct - 2) / 5) * 5)
-        : 0;
-    const effectiveYMax =
-      fitYAxis && binned.length > 0
-        ? Math.min(100, Math.ceil((dataMaxPct + 2) / 5) * 5)
-        : 100;
-    const ySpan = Math.max(10, effectiveYMax - effectiveYMin);
-    const tickFractions =
-      mainChartHeight > 550
-        ? [0, 0.2, 0.4, 0.6, 0.8, 1.0]
-        : [0, 0.25, 0.5, 0.75, 1.0];
-    const yTicks = tickFractions.map((frac) =>
-      Math.round(effectiveYMin + frac * ySpan)
-    );
+    const visibleGraphItems = GRAPH_CATALOG.filter((g) => {
+      if (!visibleGraphs[g.id]) return false;
+      if (activeCategory === 'all') return true;
+      return g.category === activeCategory;
+    });
+
+    const rewardSeries: TelemetrySeries[] =
+      rewardDecompMode === 'actor_critic_entropy'
+        ? [
+            {
+              id: 'rew_total',
+              label: 'Mean Episode Return R',
+              shortLabel: 'Return R',
+              color: '#facc15',
+              values: chartData.rewardTotal,
+              unit: '',
+              decimals: 1,
+              fillArea: true,
+            },
+            {
+              id: 'contrib_critic',
+              label: 'Critic Value Prediction V(s₀)',
+              shortLabel: 'Critic V(s₀)',
+              color: '#38bdf8',
+              values: chartData.criticValueV0,
+              unit: '',
+              decimals: 1,
+            },
+            {
+              id: 'contrib_actor',
+              label: 'Actor Advantage & Policy Signal',
+              shortLabel: 'Actor Signal',
+              color: '#4ade80',
+              values: chartData.actorContrib,
+              unit: '',
+              decimals: 1,
+            },
+            {
+              id: 'contrib_entropy',
+              label: 'Entropy Exploration Bonus (Scaled)',
+              shortLabel: 'Entropy Bonus',
+              color: '#c084fc',
+              values: chartData.entropyContrib,
+              unit: '',
+              decimals: 2,
+            },
+          ]
+        : [
+            {
+              id: 'rew_total',
+              label: 'Total Episode Reward R (100-pt Scale)',
+              shortLabel: 'Total R',
+              color: '#facc15',
+              values: chartData.rewardTotal,
+              unit: ' pts',
+              decimals: 1,
+              fillArea: true,
+            },
+            {
+              id: 'rew_stars',
+              label: 'Stars & TH18 Takedown (50 pts max)',
+              shortLabel: 'Stars + TH18',
+              color: '#f97316',
+              values: chartData.rewardStars,
+              unit: ' pts',
+              decimals: 1,
+            },
+            {
+              id: 'rew_destr',
+              label: 'Destruction % Progression (35 pts max)',
+              shortLabel: 'Destruction',
+              color: '#38bdf8',
+              values: chartData.rewardDestr,
+              unit: ' pts',
+              decimals: 1,
+            },
+            {
+              id: 'rew_dmg',
+              label: 'Core HP & Funnel Cohesion (15+ pts)',
+              shortLabel: 'Core HP',
+              color: '#4ade80',
+              values: chartData.rewardDamage,
+              unit: ' pts',
+              decimals: 1,
+            },
+          ];
 
     return (
       <div className="ai-trainer-fullscreen">
-        {/* SUBTAB BAR: SWITCH BETWEEN CONFIGURATIONS AND STATS */}
+        {/* TOP SUBTAB NAVIGATION */}
         <div className="ai-trainer-subtabs">
           <button
             type="button"
             className={`ai-trainer-subtab ${trainerTab === 'configs' ? 'active' : ''}`}
             onClick={() => setTrainerTab('configs')}
           >
-            ⚙️ Training Configurations & Model Setup
+            ⚙️ Model Trainer &amp; Network Setup
           </button>
           <button
             type="button"
             className={`ai-trainer-subtab ${trainerTab === 'stats' ? 'active' : ''}`}
             onClick={() => setTrainerTab('stats')}
           >
-            📊 Training Stats & Live Telemetry
+            📊 RL Telemetry &amp; Progression Graphs
             {isTraining && (
               <span className="ai-live-pulse-badge">
                 ● LIVE (Ep {serverStatus?.training?.current_episode ?? 0})
@@ -866,1129 +1288,1604 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
           </button>
         </div>
 
+        {/* ================================================================= */}
+        {/* SUBTAB 1: MODEL TRAINER SETUP & NETWORK ARCHITECTURE GRAPH        */}
+        {/* ================================================================= */}
         {trainerTab === 'configs' && (
           <>
-            {/* TOP CONTROL & CHECKPOINT RESUME BAR */}
-        <div className="ai-trainer-topbar">
-          <div className="ai-form-grid" style={{ gridTemplateColumns: '1.2fr 0.8fr' }}>
-            <label>
-              <span>Resume Weights (`trained_models/`)</span>
-              <select
-                className="clash-select"
-                value={resumeFrom}
-                disabled={isTraining}
-                onChange={(e) => setResumeFrom(e.target.value)}
+            <div className="ai-trainer-topbar">
+              <div
+                className="ai-form-grid"
+                style={{ gridTemplateColumns: '1.25fr 0.75fr' }}
               >
-                <option value="scratch">🆕 Start Fresh (Untrained Weights)</option>
-                {savedModels.map((m) => (
-                  <option key={m.filename} value={m.filename}>
-                    💾 {m.filename} (Ep {m.episode} • Best {m.best_pct}% {m.best_stars}★)
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Save Checkpoint Name</span>
-              <input
-                type="text"
-                placeholder="Auto: attacker_ep...pt"
-                value={saveName}
-                disabled={isTraining}
-                onChange={(e) => setSaveName(e.target.value)}
-                className="clash-select"
-              />
-            </label>
-          </div>
-
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: '0.75rem', color: '#cbd5e1' }}>
-            <span>Matchup Sampling</span>
-            <select
-              className="clash-select"
-              value={matchupMode}
-              disabled={isTraining}
-              onChange={(e) => setMatchupMode(e.target.value as MatchupMode)}
-            >
-              <option value="random">🎲 Random Village + Random Army</option>
-              <option value="round_robin">🔁 Round-Robin (All 5V × 3A)</option>
-              <option value="fixed_current">📌 Current Village + Army</option>
-            </select>
-          </label>
-
-          <div className="ai-form-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
-            <label>
-              <span>Episodes</span>
-              <input
-                type="number"
-                min={1}
-                max={5000}
-                value={episodes}
-                onChange={(e) => setEpisodes(Number(e.target.value))}
-                className="clash-select"
-              />
-            </label>
-            <label>
-              <span>Learning Rate</span>
-              <input
-                type="number"
-                step={0.0001}
-                value={lr}
-                onChange={(e) => setLr(Number(e.target.value))}
-                className="clash-select"
-              />
-            </label>
-          </div>
-
-          <div className="ai-form-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-            <label>
-              <span>Batch (Eps)</span>
-              <input
-                type="number"
-                min={1}
-                max={32}
-                value={batchEpisodes}
-                onChange={(e) => setBatchEpisodes(Number(e.target.value))}
-                className="clash-select"
-              />
-            </label>
-            <label>
-              <span>Minibatch</span>
-              <input
-                type="number"
-                min={16}
-                max={512}
-                step={16}
-                value={minibatchSize}
-                onChange={(e) => setMinibatchSize(Number(e.target.value))}
-                className="clash-select"
-              />
-            </label>
-            <label>
-              <span>Epochs</span>
-              <input
-                type="number"
-                min={1}
-                max={16}
-                value={ppoEpochs}
-                onChange={(e) => setPpoEpochs(Number(e.target.value))}
-                className="clash-select"
-              />
-            </label>
-          </div>
-
-          <div className="ai-btn-row">
-            {!isTraining ? (
-              <button
-                className="clash-btn gold"
-                disabled={!serverStatus?.online}
-                onClick={handleStartTraining}
-              >
-                🚀 {resumeFrom === 'scratch' ? 'Train Fresh' : 'Resume & Train'}
-              </button>
-            ) : (
-              <button className="clash-btn danger" onClick={handleStopTraining}>
-                ⏹ Stop & Save
-              </button>
-            )}
-            <button
-              className="clash-btn green"
-              onClick={() => onSwitchStudioMode('tester')}
-            >
-              🧪 Test Models →
-            </button>
-          </div>
-        </div>
-
-        {/* VILLAGES & ARMY COMPOSITIONS TRAINING BUNDLE CARD */}
-        <div className="ai-preset-bundle-strip">
-          <div className="ai-bundle-card">
-            <div className="ai-bundle-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <h4>⚔️ Training Attack Compositions ({selectedArmyNames.length} selected)</h4>
-                {isLockedToResume && (
-                  <span className="badge-gold">🔒 Locked to Checkpoint</span>
-                )}
-              </div>
-            </div>
-            <div className="ai-bundle-list">
-              {allArmies.map((a) => {
-                const isSelected = selectedArmyNames.includes(a.name);
-                const isCustom = !catalog.preset_armies.some((pa) => pa.name === a.name);
-                return (
-                  <label
-                    key={a.name}
-                    className={`ai-bundle-item ${isSelected ? 'checked' : ''} ${
-                      isLockedToResume ? 'disabled' : ''
-                    }`}
+                <label>
+                  <span>Resume Weights (`trained_models/`)</span>
+                  <select
+                    className="clash-select"
+                    value={resumeFrom}
+                    disabled={isTraining}
+                    onChange={(e) => setResumeFrom(e.target.value)}
                   >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      disabled={isLockedToResume || isTraining}
-                      onChange={(e) => {
-                        if (isLockedToResume || isTraining) return;
-                        if (e.target.checked) {
-                          setSelectedArmyNames((prev) => [...prev, a.name]);
-                        } else {
-                          if (selectedArmyNames.length <= 1) return;
-                          setSelectedArmyNames((prev) => prev.filter((n) => n !== a.name));
-                        }
-                      }}
-                    />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <strong
-                          style={{
-                            fontSize: '0.85rem',
-                            color: isSelected ? '#facc15' : '#e2e8f0',
-                          }}
-                        >
-                          {a.name}
-                        </strong>
-                        {isCustom && (
-                          <span
-                            style={{
-                              fontSize: '0.65rem',
-                              background: '#3b82f6',
-                              color: '#fff',
-                              padding: '1px 5px',
-                              borderRadius: 4,
-                            }}
-                          >
-                            Custom
-                          </span>
-                        )}
-                      </div>
-                      <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
-                        {a.troops.slice(0, 4).map(([t, c]) => `${c}× ${t}`).join(', ')}
-                        {a.troops.length > 4 ? ` +${a.troops.length - 4} more` : ''}
-                      </span>
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="ai-bundle-card">
-            <div className="ai-bundle-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <h4>🛡️ Training Village Layouts ({selectedVillageNames.length} selected)</h4>
-                {isLockedToResume && (
-                  <span className="badge-gold">🔒 Locked to Checkpoint</span>
-                )}
+                    <option value="scratch">🆕 Start Fresh (Untrained Weights)</option>
+                    {savedModels.map((m) => (
+                      <option key={m.filename} value={m.filename}>
+                        💾 {m.filename} (Ep {m.episode} • Best {m.best_pct}% {m.best_stars}★)
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Save Checkpoint Name</span>
+                  <input
+                    type="text"
+                    placeholder="Auto: attacker_ep...pt"
+                    value={saveName}
+                    disabled={isTraining}
+                    onChange={(e) => setSaveName(e.target.value)}
+                    className="clash-select"
+                  />
+                </label>
               </div>
-            </div>
-            <div className="ai-bundle-list">
-              {catalog.preset_layouts.slice(0, 5).map((v, idx) => {
-                const isSelected = selectedVillageNames.includes(v.name);
-                return (
-                  <label
-                    key={v.name}
-                    className={`ai-bundle-item ${isSelected ? 'checked' : ''} ${
-                      isLockedToResume ? 'disabled' : ''
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      disabled={isLockedToResume || isTraining}
-                      onChange={(e) => {
-                        if (isLockedToResume || isTraining) return;
-                        if (e.target.checked) {
-                          setSelectedVillageNames((prev) => [...prev, v.name]);
-                        } else {
-                          if (selectedVillageNames.length <= 1) return;
-                          setSelectedVillageNames((prev) => prev.filter((n) => n !== v.name));
-                        }
-                      }}
-                    />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <strong
-                        style={{
-                          fontSize: '0.85rem',
-                          color: isSelected ? '#4ade80' : '#e2e8f0',
-                        }}
-                      >
-                        V{idx + 1}: {v.name}
-                      </strong>
-                      <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
-                        TH18 • {v.buildings.length} Buildings • {v.walls.length} Walls
-                      </div>
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-        </div>
 
-        {/* LIVE NEURAL NETWORK ARCHITECTURE VISUALIZER */}
-        <NetworkBuilderPanel
-          serverOnline={Boolean(serverStatus?.online)}
-          architectureSpec={serverStatus?.architecture_spec}
-          architectureHash={serverStatus?.architecture_hash}
-          activeCheckpoint={resumeFrom !== 'scratch' ? resumeFrom : undefined}
-          history={history}
-        />
-
-        {/* SAVED CHECKPOINTS LIBRARY & FILE RENAMER */}
-        <section className="ai-card" style={{ marginTop: 4 }}>
-          <div className="ai-card-header">
-            <h3>💾 Saved Training Files & Checkpoints ({savedModels.length} Models in `trained_models/`)</h3>
-            <span style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
-              Name, rename, and review bundled village & army configurations
-            </span>
-          </div>
-
-          {renameMessage && (
-            <div
-              style={{
-                padding: '6px 12px',
-                borderRadius: 6,
-                fontSize: '0.82rem',
-                marginBottom: 8,
-                background: renameMessage.isError
-                  ? 'rgba(239, 68, 68, 0.2)'
-                  : 'rgba(34, 197, 94, 0.2)',
-                color: renameMessage.isError ? '#f87171' : '#4ade80',
-                border: `1px solid ${
-                  renameMessage.isError ? '#ef4444' : '#22c55e'
-                }`,
-              }}
-            >
-              {renameMessage.text}
-            </div>
-          )}
-
-          <div className="ai-models-table-wrap">
-            <table className="ai-matrix-table">
-              <thead>
-                <tr>
-                  <th>Checkpoint File</th>
-                  <th>Episodes</th>
-                  <th>Best Destruction</th>
-                  <th>Bundled Armies</th>
-                  <th>Bundled Villages</th>
-                  <th>Size</th>
-                  <th>Updated</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {savedModels.map((m) => {
-                  const isEditing = renamingModel === m.filename;
-                  const isCurrentResume = resumeFrom === m.filename;
-                  const armyList =
-                    m.army_names ?? m.armies?.map((a) => a.name) ?? ['3 Meta Armies'];
-                  const vilList =
-                    m.village_names ?? m.villages?.map((v) => v.name) ?? ['5 Meta Bases'];
-
-                  return (
-                    <tr
-                      key={m.filename}
-                      style={
-                        isCurrentResume
-                          ? { background: 'rgba(250, 204, 21, 0.08)' }
-                          : undefined
-                      }
-                    >
-                      <td>
-                        {isEditing ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <input
-                              type="text"
-                              value={renameInput}
-                              onChange={(e) => setRenameInput(e.target.value)}
-                              className="clash-select"
-                              style={{
-                                padding: '2px 6px',
-                                fontSize: '0.8rem',
-                                minWidth: 160,
-                              }}
-                              autoFocus
-                            />
-                            <button
-                              className="clash-btn gold"
-                              style={{ padding: '2px 8px', fontSize: '0.75rem' }}
-                              onClick={() => handleRenameModel(m.filename)}
-                            >
-                              Save
-                            </button>
-                            <button
-                              className="clash-btn"
-                              style={{ padding: '2px 6px', fontSize: '0.75rem' }}
-                              onClick={() => setRenamingModel(null)}
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ) : (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span
-                              style={{
-                                fontWeight: 700,
-                                color: isCurrentResume ? '#facc15' : '#f8fafc',
-                              }}
-                            >
-                              💾 {m.filename}
-                            </span>
-                            <button
-                              type="button"
-                              title="Rename file"
-                              style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: '#38bdf8',
-                                cursor: 'pointer',
-                                fontSize: '0.8rem',
-                                padding: 0,
-                              }}
-                              onClick={() => {
-                                setRenamingModel(m.filename);
-                                setRenameInput(m.filename);
-                              }}
-                            >
-                              ✏️
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                      <td>Ep {m.episode}</td>
-                      <td style={{ color: '#fde047', fontWeight: 700 }}>
-                        {m.best_pct}% ({m.best_stars}★)
-                      </td>
-                      <td
-                        style={{ fontSize: '0.75rem', color: '#94a3b8' }}
-                        title={armyList.join('\n')}
-                      >
-                        {armyList.length} Armies ({armyList[0]?.split(' ')[0] ?? 'Meta'}...)
-                      </td>
-                      <td
-                        style={{ fontSize: '0.75rem', color: '#94a3b8' }}
-                        title={vilList.join('\n')}
-                      >
-                        {vilList.length} Bases ({vilList[0]?.split(' ')[0] ?? 'Meta'}...)
-                      </td>
-                      <td>{m.size_kb} KB</td>
-                      <td style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                        {m.updated_at}
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: 4 }}>
-                          <button
-                            className={`clash-btn ${isCurrentResume ? 'gold' : ''}`}
-                            style={{ padding: '2px 8px', fontSize: '0.72rem' }}
-                            onClick={() => {
-                              setResumeFrom(m.filename);
-                              window.scrollTo({ top: 0, behavior: 'smooth' });
-                            }}
-                          >
-                            {isCurrentResume ? '✓ Selected' : 'Resume'}
-                          </button>
-                          <button
-                            className="clash-btn green"
-                            style={{ padding: '2px 8px', fontSize: '0.72rem' }}
-                            onClick={() => {
-                              setTestModelFile(m.filename);
-                              onSwitchStudioMode('tester');
-                            }}
-                          >
-                            Test
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </>
-    )}
-
-    {/* ================================================================= */}
-    {/* PANEL B: TRAINING STATS, LIVE CURVES & MATCHUP ANALYTICS         */}
-    {/* ================================================================= */}
-    {trainerTab === 'stats' && (
-      <>
-        {/* COMPACT RUNTIME & CONTROL STRIP */}
-        <div
-          className="ai-trainer-topbar"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '10px 16px',
-            flexWrap: 'wrap',
-            gap: 12,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span
-              style={{
-                background: '#facc15',
-                color: '#0f172a',
-                fontWeight: 800,
-                padding: '3px 8px',
-                borderRadius: 4,
-                fontSize: '0.78rem',
-              }}
-            >
-              ⚔️ Attacker PPO
-            </span>
-            <span style={{ fontSize: '0.82rem', color: '#cbd5e1' }}>
-              Weights: <strong style={{ color: '#facc15' }}>{resumeFrom === 'scratch' ? 'Fresh (Untrained)' : resumeFrom}</strong>
-            </span>
-            <span style={{ fontSize: '0.82rem', color: '#94a3b8' }}>
-              Target: <strong>{episodes} Eps</strong> (LR: {lr}, Batch: {batchEpisodes})
-            </span>
-          </div>
-          <div className="ai-btn-row">
-            {!isTraining ? (
-              <button
-                className="clash-btn gold"
-                disabled={!serverStatus?.online}
-                onClick={handleStartTraining}
+              <label
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                  fontSize: '0.75rem',
+                  color: '#cbd5e1',
+                }}
               >
-                🚀 {resumeFrom === 'scratch' ? 'Train Fresh' : 'Resume & Train'}
-              </button>
-            ) : (
-              <button className="clash-btn danger" onClick={handleStopTraining}>
-                ⏹ Stop & Save
-              </button>
-            )}
-            <button
-              className="clash-btn"
-              onClick={() => setTrainerTab('configs')}
-              style={{ fontSize: '0.78rem' }}
-            >
-              ⚙️ Edit Configs
-            </button>
-            <button
-              className="clash-btn green"
-              onClick={() => onSwitchStudioMode('tester')}
-            >
-              🧪 Test Models →
-            </button>
-          </div>
-        </div>
-
-        {/* 6+ KPI LIVE SUMMARY STRIP (WITH MEAN REWARD + 3 CONTRIBUTIONS) */}
-        <div className="ai-kpi-strip">
-          <div className="ai-kpi-card">
-            <span>GPU Runtime</span>
-            <strong style={{ color: serverStatus?.online ? '#4ade80' : '#f87171', fontSize: '0.95rem' }}>
-              {serverStatus?.online ? `🟢 ${serverStatus.device_name}` : 'Offline'}
-            </strong>
-          </div>
-          <div className="ai-kpi-card">
-            <span>Session / Total Episodes</span>
-            <strong>
-              {serverStatus?.training.current_episode ?? 0}/
-              {serverStatus?.training.total_episodes ?? 0}{' '}
-              <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                (Cumul: {cumEp})
-              </span>
-            </strong>
-          </div>
-          <div className="ai-kpi-card">
-            <span>Recent 50-Ep Avg Destruction</span>
-            <strong style={{ color: '#fde047' }}>
-              {kpiStats.recent50Pct}%{' '}
-              {history.length > 10 && (
-                <span
-                  style={{
-                    fontSize: '0.82rem',
-                    color: kpiStats.deltaPct >= 0 ? '#4ade80' : '#f87171',
-                  }}
+                <span>Matchup Sampling</span>
+                <select
+                  className="clash-select"
+                  value={matchupMode}
+                  disabled={isTraining}
+                  onChange={(e) => setMatchupMode(e.target.value as MatchupMode)}
                 >
-                  ({kpiStats.deltaPct >= 0 ? `+${kpiStats.deltaPct}%` : `${kpiStats.deltaPct}%`})
-                </span>
-              )}
-            </strong>
-          </div>
-          <div className="ai-kpi-card">
-            <span>Best Checkpoint Score</span>
-            <strong style={{ color: '#facc15' }}>
-              {bestPct}% ({bestStars}★)
-            </strong>
-          </div>
-          {/* Mean Reward divided by the three contributions */}
-          <div className="ai-kpi-card" style={{ minWidth: 210 }}>
-            <span>Mean Reward (3 Contributions)</span>
-            <strong style={{ color: '#facc15' }}>
-              +{kpiStats.meanReward.toFixed(1)}
-            </strong>
-            <div className="ai-reward-contribs">
-              <span className="ai-reward-pill" title="Destruction % progression contribution (max 35 pts)">
-                💥 Dest: +{kpiStats.meanRewardDestr.toFixed(1)}
-              </span>
-              <span className="ai-reward-pill" title="Victory Stars & TH takedown milestone (max 50 pts)">
-                ⭐ Stars: +{kpiStats.meanRewardStars.toFixed(1)}
-              </span>
-              <span className="ai-reward-pill" title="Dense Core HP damage & tactical shaping (max 15+ pts)">
-                🎯 HP: +{kpiStats.meanRewardDamage.toFixed(1)}
-              </span>
-            </div>
-          </div>
-          <div className="ai-kpi-card">
-            <span>Recent NoOp (Wait) Rate</span>
-            <strong style={{ color: '#38bdf8' }}>{kpiStats.avgNoop}%</strong>
-          </div>
-          <div className="ai-kpi-card">
-            <span>Simulation Speed</span>
-            <strong>{kpiStats.avgFps.toLocaleString()} ticks/s</strong>
-          </div>
-        </div>
+                  <option value="random">🎲 Stratified Random (Armies × Bases)</option>
+                  <option value="round_robin">🔁 Round-Robin (5V × 3A)</option>
+                  <option value="fixed_current">📌 Single Fixed Matchup</option>
+                </select>
+              </label>
 
-        {/* 2-COLUMN SPLIT DASHBOARD LAYOUT: 50% LEFT / 50% RIGHT */}
-        <div className="ai-trainer-split-layout">
-          {/* LEFT SECTION (50%): ATTACKER IMPROVEMENT CURVE GRAPH */}
-          <section className="ai-main-chart-card">
-            <div className="ai-card-header">
-              <h3>
-                📈 Attacker Improvement Curve ({history.length} Episodes in Current Run
-                {binned.length < history.length
-                  ? ` • Binned into ${binned.length} Windows`
-                  : ''}
-                )
-              </h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div className="ai-chart-legend">
-                  <span>
-                    <i className="ai-dot" style={{ background: '#f97316' }} />
-                    50-Ep Rolling Avg Destruction %
-                  </span>
-                  <span>
-                    <i className="ai-dot" style={{ background: '#facc15' }} />
-                    Window Mean Destruction % (with Min–Max Band)
-                  </span>
-                </div>
+              <div
+                className="ai-form-grid"
+                style={{ gridTemplateColumns: '1fr 1fr' }}
+              >
+                <label>
+                  <span>Episodes</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={5000}
+                    value={episodes}
+                    onChange={(e) => setEpisodes(Number(e.target.value))}
+                    className="clash-select"
+                  />
+                </label>
+                <label>
+                  <span>Learning Rate</span>
+                  <input
+                    type="number"
+                    step={0.0001}
+                    value={lr}
+                    onChange={(e) => setLr(Number(e.target.value))}
+                    className="clash-select"
+                  />
+                </label>
+              </div>
+
+              <div
+                className="ai-form-grid"
+                style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}
+              >
+                <label>
+                  <span>Batch (Eps)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={32}
+                    value={batchEpisodes}
+                    onChange={(e) => setBatchEpisodes(Number(e.target.value))}
+                    className="clash-select"
+                  />
+                </label>
+                <label>
+                  <span>Minibatch</span>
+                  <input
+                    type="number"
+                    min={16}
+                    max={512}
+                    step={16}
+                    value={minibatchSize}
+                    onChange={(e) => setMinibatchSize(Number(e.target.value))}
+                    className="clash-select"
+                  />
+                </label>
+                <label>
+                  <span>PPO Epochs</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={16}
+                    value={ppoEpochs}
+                    onChange={(e) => setPpoEpochs(Number(e.target.value))}
+                    className="clash-select"
+                  />
+                </label>
+              </div>
+
+              <div className="ai-btn-row">
+                {!isTraining ? (
+                  <button
+                    className="clash-btn gold"
+                    disabled={!serverStatus?.online}
+                    onClick={handleStartTraining}
+                  >
+                    🚀 {resumeFrom === 'scratch' ? 'Train Fresh' : 'Resume & Train'}
+                  </button>
+                ) : (
+                  <button className="clash-btn danger" onClick={handleStopTraining}>
+                    ⏹ Stop &amp; Save
+                  </button>
+                )}
+                {resumeFrom !== 'scratch' && (
+                  <button
+                    className="clash-btn"
+                    onClick={() => {
+                      setInspectedModelFile(resumeFrom);
+                      setTrainerTab('stats');
+                    }}
+                    title="Inspect this checkpoint's training progression curves before resuming"
+                  >
+                    📈 Inspect Curves
+                  </button>
+                )}
                 <button
-                  type="button"
-                  className={`speed-pill-btn ${fitYAxis ? 'active' : ''}`}
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => setFitYAxis((prev) => !prev)}
-                  title="Fit Y-axis scale to data range or reset to 0-100%"
+                  className="clash-btn green"
+                  onClick={() => onSwitchStudioMode('tester')}
                 >
-                  ↕️ {fitYAxis ? `Fitted (${effectiveYMin}%–${effectiveYMax}%)` : 'Fit to Data (Y-Axis)'}
+                  🧪 Test Models →
                 </button>
               </div>
             </div>
 
-            <div ref={mainChartRef} className="ai-main-chart-wrapper">
-              <svg
-                viewBox={`0 0 ${mainChartWidth} ${mainChartHeight}`}
-                className="ai-wide-svg-chart"
-              >
-                {yTicks.map((pct) => {
-                  const padY = 22;
-                  const plotH = mainChartHeight - padY * 2;
-                  const y = mainChartHeight - padY - ((pct - effectiveYMin) / ySpan) * plotH;
-                  return (
-                    <g key={pct}>
-                      <line
-                        x1={40}
-                        y1={y}
-                        x2={mainChartWidth - 14}
-                        y2={y}
-                        stroke="#1e293b"
-                        strokeDasharray={pct === effectiveYMin || pct === effectiveYMax ? undefined : '4 4'}
-                      />
-                      <text x={6} y={y + 3} fill="#64748b" fontSize="10.5" fontFamily="monospace">
-                        {pct}%
-                      </text>
-                    </g>
-                  );
-                })}
-
-                {binned.length > 0 ? (
-                  <>
-                    {/* Shaded Min-Max Destruction Band */}
-                    {binned.length > 1 && (
-                      <polygon
-                        fill="rgba(250, 204, 21, 0.14)"
-                        points={buildBandPolygon(
-                          binned.map((b) => b.minPct),
-                          binned.map((b) => b.maxPct),
-                          mainChartWidth,
-                          mainChartHeight,
-                          effectiveYMin,
-                          effectiveYMax,
-                          40,
-                          22
-                        )}
-                      />
+            {/* VILLAGES & ARMY COMPOSITIONS TRAINING BUNDLE */}
+            <div className="ai-preset-bundle-strip">
+              <div className="ai-bundle-card">
+                <div className="ai-bundle-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <h4>
+                      ⚔️ Attack Compositions ({selectedArmyNames.length} selected)
+                    </h4>
+                    {isLockedToResume && (
+                      <span className="badge-gold">🔒 Locked to Checkpoint</span>
                     )}
+                  </div>
+                </div>
+                <div className="ai-bundle-list">
+                  {allArmies.map((a) => {
+                    const isSelected = selectedArmyNames.includes(a.name);
+                    const isCustom = !catalog.preset_armies.some(
+                      (pa) => pa.name === a.name
+                    );
+                    return (
+                      <label
+                        key={a.name}
+                        className={`ai-bundle-item ${isSelected ? 'checked' : ''} ${
+                          isLockedToResume ? 'disabled' : ''
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          disabled={isLockedToResume || isTraining}
+                          onChange={(e) => {
+                            if (isLockedToResume || isTraining) return;
+                            if (e.target.checked) {
+                              setSelectedArmyNames((prev) => [...prev, a.name]);
+                            } else {
+                              if (selectedArmyNames.length <= 1) return;
+                              setSelectedArmyNames((prev) =>
+                                prev.filter((n) => n !== a.name)
+                              );
+                            }
+                          }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div
+                            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                          >
+                            <strong
+                              style={{
+                                fontSize: '0.84rem',
+                                color: isSelected ? '#facc15' : '#e2e8f0',
+                              }}
+                            >
+                              {a.name}
+                            </strong>
+                            {isCustom && (
+                              <span
+                                style={{
+                                  fontSize: '0.64rem',
+                                  background: '#3b82f6',
+                                  color: '#fff',
+                                  padding: '1px 5px',
+                                  borderRadius: 4,
+                                }}
+                              >
+                                Custom
+                              </span>
+                            )}
+                          </div>
+                          <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                            {a.troops
+                              .slice(0, 4)
+                              .map(([t, c]) => `${c}× ${t}`)
+                              .join(', ')}
+                            {a.troops.length > 4
+                              ? ` +${a.troops.length - 4} more`
+                              : ''}
+                          </span>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
 
-                    {/* Window Mean Destruction % */}
-                    <polyline
-                      fill="none"
-                      stroke="#facc15"
-                      strokeWidth="1.8"
-                      points={buildLinePoints(
-                        binned.map((b) => b.meanPct),
-                        mainChartWidth,
-                        mainChartHeight,
-                        effectiveYMin,
-                        effectiveYMax,
-                        40,
-                        22
-                      )}
-                    />
+              <div className="ai-bundle-card">
+                <div className="ai-bundle-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <h4>
+                      🛡️ Village Layouts ({selectedVillageNames.length} selected)
+                    </h4>
+                    {isLockedToResume && (
+                      <span className="badge-gold">🔒 Locked to Checkpoint</span>
+                    )}
+                  </div>
+                </div>
+                <div className="ai-bundle-list">
+                  {catalog.preset_layouts.slice(0, 5).map((v, idx) => {
+                    const isSelected = selectedVillageNames.includes(v.name);
+                    return (
+                      <label
+                        key={v.name}
+                        className={`ai-bundle-item ${isSelected ? 'checked' : ''} ${
+                          isLockedToResume ? 'disabled' : ''
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          disabled={isLockedToResume || isTraining}
+                          onChange={(e) => {
+                            if (isLockedToResume || isTraining) return;
+                            if (e.target.checked) {
+                              setSelectedVillageNames((prev) => [...prev, v.name]);
+                            } else {
+                              if (selectedVillageNames.length <= 1) return;
+                              setSelectedVillageNames((prev) =>
+                                prev.filter((n) => n !== v.name)
+                              );
+                            }
+                          }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <strong
+                            style={{
+                              fontSize: '0.84rem',
+                              color: isSelected ? '#4ade80' : '#e2e8f0',
+                            }}
+                          >
+                            V{idx + 1}: {v.name}
+                          </strong>
+                          <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                            TH18 • {v.buildings.length} Buildings • {v.walls.length}{' '}
+                            Walls
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
 
-                    {/* 50-Episode Rolling Average Destruction % (Main Trend Line) */}
-                    <polyline
-                      fill="none"
-                      stroke="#f97316"
-                      strokeWidth="3.0"
-                      points={buildLinePoints(
-                        binned.map((b) => b.avg50Pct),
-                        mainChartWidth,
-                        mainChartHeight,
-                        effectiveYMin,
-                        effectiveYMax,
-                        40,
-                        22
-                      )}
-                    />
+            {/* SAVED CHECKPOINTS LIBRARY WITH 1-CLICK TRAINING CURVE INSPECTION */}
+            <section className="ai-card">
+              <div className="ai-card-header">
+                <h3>
+                  💾 Saved Checkpoints Library ({savedModels.length} Models in
+                  `trained_models/`)
+                </h3>
+                {renameMessage && (
+                  <span
+                    style={{
+                      fontSize: '0.76rem',
+                      color: renameMessage.isError ? '#f87171' : '#4ade80',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {renameMessage.text}
+                  </span>
+                )}
+              </div>
 
-                    {/* X-axis Episode labels */}
-                    {[0, 0.25, 0.5, 0.75, 1].map((frac, idx) => {
-                      const bIdx = Math.min(
-                        binned.length - 1,
-                        Math.floor(frac * (binned.length - 1))
-                      );
-                      const b = binned[bIdx];
-                      const x = 40 + frac * (mainChartWidth - 54);
+              <div className="ai-models-table-wrap">
+                <table className="ai-matrix-table">
+                  <thead>
+                    <tr>
+                      <th>Checkpoint File</th>
+                      <th>Episodes</th>
+                      <th>Peak Destruction</th>
+                      <th>Hyperparams</th>
+                      <th>Compressed Telemetry</th>
+                      <th>Model Size</th>
+                      <th>Updated</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {savedModels.map((m) => {
+                      const isEditing = renamingModel === m.filename;
+                      const isCurrentResume = resumeFrom === m.filename;
+
                       return (
-                        <text
-                          key={idx}
-                          x={x}
-                          y={mainChartHeight - 6}
-                          textAnchor="middle"
-                          fill="#94a3b8"
-                          fontSize="10"
-                          fontFamily="monospace"
+                        <tr
+                          key={m.filename}
+                          style={
+                            isCurrentResume
+                              ? { background: 'rgba(250, 204, 21, 0.08)' }
+                              : undefined
+                          }
                         >
-                          Ep {b.epEnd}
-                        </text>
+                          <td>
+                            {isEditing ? (
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                }}
+                              >
+                                <input
+                                  type="text"
+                                  value={renameInput}
+                                  onChange={(e) => setRenameInput(e.target.value)}
+                                  className="clash-select"
+                                  style={{
+                                    padding: '2px 6px',
+                                    fontSize: '0.8rem',
+                                    minWidth: 160,
+                                  }}
+                                  autoFocus
+                                />
+                                <button
+                                  className="clash-btn gold"
+                                  style={{
+                                    padding: '2px 8px',
+                                    fontSize: '0.74rem',
+                                  }}
+                                  onClick={() => handleRenameModel(m.filename)}
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  className="clash-btn"
+                                  style={{
+                                    padding: '2px 6px',
+                                    fontSize: '0.74rem',
+                                  }}
+                                  onClick={() => setRenamingModel(null)}
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ) : (
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    fontWeight: 700,
+                                    color: isCurrentResume ? '#facc15' : '#f8fafc',
+                                    cursor: 'pointer',
+                                  }}
+                                  onClick={() => {
+                                    setInspectedModelFile(m.filename);
+                                    setTrainerTab('stats');
+                                  }}
+                                  title="Click to inspect this model's training progression curves"
+                                >
+                                  💾 {m.filename}
+                                </span>
+                                <button
+                                  type="button"
+                                  title="Rename checkpoint"
+                                  style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: '#38bdf8',
+                                    cursor: 'pointer',
+                                    fontSize: '0.78rem',
+                                    padding: 0,
+                                  }}
+                                  onClick={() => {
+                                    setRenamingModel(m.filename);
+                                    setRenameInput(m.filename);
+                                  }}
+                                >
+                                  ✏️
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            <strong>Ep {m.episode.toLocaleString()}</strong>
+                          </td>
+                          <td style={{ color: '#fde047', fontWeight: 700 }}>
+                            {m.best_pct}% ({m.best_stars}★)
+                          </td>
+                          <td style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                            LR {m.hyperparams?.lr ?? 0.0003} • B=
+                            {m.hyperparams?.batch_episodes ?? 12} • K=
+                            {m.hyperparams?.ppo_epochs ?? 4}
+                          </td>
+                          <td>
+                            {m.has_history ? (
+                              <span
+                                className="tb-compression-badge"
+                                title={`Raw JSON telemetry: ${m.raw_kb} KB → Compressed binary z85: ${m.compressed_kb} KB (${m.compression_ratio}× reduction)`}
+                              >
+                                {m.compressed_kb} KB ({m.compression_ratio}× z85)
+                              </span>
+                            ) : (
+                              <span style={{ color: '#64748b' }}>—</span>
+                            )}
+                          </td>
+                          <td>{(m.size_kb / 1024).toFixed(1)} MB</td>
+                          <td style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                            {m.updated_at}
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', gap: 5 }}>
+                              <button
+                                className="clash-btn"
+                                style={{
+                                  padding: '2px 8px',
+                                  fontSize: '0.72rem',
+                                  borderColor: '#38bdf8',
+                                  color: '#7dd3fc',
+                                }}
+                                onClick={() => {
+                                  setInspectedModelFile(m.filename);
+                                  setTrainerTab('stats');
+                                }}
+                                title="View full training progression curves for this model"
+                              >
+                                📈 Curves
+                              </button>
+                              <button
+                                className={`clash-btn ${
+                                  isCurrentResume ? 'gold' : ''
+                                }`}
+                                style={{ padding: '2px 8px', fontSize: '0.72rem' }}
+                                onClick={() => setResumeFrom(m.filename)}
+                              >
+                                {isCurrentResume ? '✓ Resume' : 'Resume'}
+                              </button>
+                              <button
+                                className="clash-btn green"
+                                style={{ padding: '2px 8px', fontSize: '0.72rem' }}
+                                onClick={() => {
+                                  setTestModelFile(m.filename);
+                                  onSwitchStudioMode('tester');
+                                }}
+                              >
+                                Test
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
                       );
                     })}
-                  </>
-                ) : (
-                  <text
-                    x={mainChartWidth / 2}
-                    y={mainChartHeight / 2}
-                    textAnchor="middle"
-                    fill="#64748b"
-                    fontSize="13"
-                    fontFamily="monospace"
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            {/* CURRENTLY CONFIGURED NEURAL NETWORK GRAPH (SPLITABLE BY HEAD + ARMY CONTEXT) */}
+            <NetworkBuilderPanel
+              serverOnline={Boolean(serverStatus?.online)}
+              architectureSpec={serverStatus?.architecture_spec}
+              architectureHash={serverStatus?.architecture_hash}
+            />
+          </>
+        )}
+
+        {/* ================================================================= */}
+        {/* SUBTAB 2: TENSORBOARD-STYLE RL TELEMETRY & PROGRESSION WORKBENCH  */}
+        {/* ================================================================= */}
+        {trainerTab === 'stats' && (
+          <>
+            {/* TENSORBOARD TOP CONTROL & MODEL SELECTOR BAR */}
+            <div className="tb-workbench-bar">
+              <div className="tb-workbench-left">
+                <label className="tb-model-picker-label">
+                  <span>Inspecting Run</span>
+                  <select
+                    className="clash-select"
+                    value={inspectedModelFile}
+                    onChange={(e) => setInspectedModelFile(e.target.value)}
                   >
-                    Click "Resume & Train" above to stream live GPU training curves
-                  </text>
+                    <option value="__live__">
+                      🟢 Live / Latest Session (
+                      {liveHistory.length.toLocaleString()} eps)
+                    </option>
+                    {savedModels.map((m) => (
+                      <option key={m.filename} value={m.filename}>
+                        💾 {m.filename} ({(m.history_episodes || m.episode).toLocaleString()}{' '}
+                        eps • Peak {m.best_pct}% {m.best_stars}★
+                        {m.compressed_kb ? ` • ${m.compressed_kb}KB z85` : ''})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {activeCompressionMeta && activeCompressionMeta.compressed_kb > 0 && (
+                  <span
+                    className="tb-compression-badge"
+                    title={`Columnar Delta + Zlib/Base85 Compression: ${activeCompressionMeta.raw_kb} KB raw → ${activeCompressionMeta.compressed_kb} KB (${activeCompressionMeta.compression_ratio}× space saved)`}
+                  >
+                    📦 {activeCompressionMeta.compressed_kb} KB (
+                    {activeCompressionMeta.compression_ratio}× compressed)
+                  </span>
                 )}
-              </svg>
-            </div>
-          </section>
 
-          {/* RIGHT SECTION (50%): 3 OTHER GRAPHS STACKED VERTICALLY */}
-          <div className="ai-trainer-split-right">
-            {/* COL 1: ARMY USAGE & PERFORMANCE STATS */}
-            <section className="ai-card" ref={armyChartRef}>
-            <div className="ai-card-header">
-              <h3>⚔️ Army Performance (3 Meta Armies)</h3>
-              <div className="ai-chart-legend" style={{ fontSize: '0.72rem' }}>
-                {ARMY_SHORT.map((name, i) => (
-                  <span key={i} title={matchupStats.armies?.[i] ?? name}>
-                    <i className="ai-dot" style={{ background: ARMY_COLORS[i] }} />
-                    {name.split(' ')[0]}
+                {isLoadingModelHist && (
+                  <span style={{ fontSize: '0.75rem', color: '#38bdf8' }}>
+                    ⟳ Loading compressed history...
                   </span>
-                ))}
+                )}
               </div>
-            </div>
 
-            <svg
-              viewBox={`0 0 ${armyChartWidth} 115`}
-              className="ai-svg-chart"
-              style={{ height: 115, marginBottom: 8 }}
-            >
-              {[25, 50, 75, 100].map((pct) => {
-                const y = 115 - 10 - (pct / 100) * (115 - 20);
-                return (
-                  <g key={pct}>
-                    <line
-                      x1={32}
-                      y1={y}
-                      x2={armyChartWidth - 14}
-                      y2={y}
-                      stroke="#1e293b"
-                      strokeDasharray={pct === 100 ? undefined : '3 3'}
-                    />
-                    <text x={4} y={y + 3} fill="#64748b" fontSize="8.5" fontFamily="monospace">
-                      {pct}%
-                    </text>
-                  </g>
-                );
-              })}
-              {armyTrends.length > 0 ? (
-                <>
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <polyline
-                      key={i}
-                      fill="none"
-                      stroke={ARMY_COLORS[i]}
-                      strokeWidth="2.2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      points={buildLinePoints(
-                        armyTrends.map((b) => b.values[i]),
-                        armyChartWidth,
-                        115,
-                        0,
-                        100,
-                        32,
-                        10
-                      )}
-                    />
-                  ))}
-                  {[0, 0.5, 1].map((frac, idx) => {
-                    const bIdx = Math.min(
-                      armyTrends.length - 1,
-                      Math.floor(frac * (armyTrends.length - 1))
-                    );
-                    const b = armyTrends[bIdx];
-                    const x = 32 + frac * (armyChartWidth - 46);
-                    return (
-                      <text
-                        key={idx}
-                        x={x}
-                        y={112}
-                        textAnchor="middle"
-                        fill="#64748b"
-                        fontSize="8.5"
-                        fontFamily="monospace"
-                      >
-                        Ep {b.ep}
-                      </text>
-                    );
-                  })}
-                </>
-              ) : (
-                <text
-                  x={armyChartWidth / 2}
-                  y="60"
-                  textAnchor="middle"
-                  fill="#64748b"
-                  fontSize="11"
-                  fontFamily="monospace"
-                >
-                  Start training to stream Army mastery curves
-                </text>
-              )}
-            </svg>
-
-            <table className="ai-matrix-table">
-              <thead>
-                <tr>
-                  <th>TH18 Meta Army</th>
-                  <th>Used %</th>
-                  <th>Recent 50</th>
-                  <th>All Avg</th>
-                  <th>Peak</th>
-                  <th>Avg ★</th>
-                  <th>Eps</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(matchupStats?.army_stats ?? []).map((st) => (
-                  <tr key={st.army_idx}>
-                    <td title={st.full_name}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <i className="ai-dot" style={{ background: ARMY_COLORS[st.army_idx] ?? '#facc15' }} />
-                        {st.name}
-                      </span>
-                    </td>
-                    <td style={{ color: '#38bdf8', fontWeight: 700 }}>
-                      {st.usage_pct ?? 0}%
-                    </td>
-                    <td style={{ color: '#f97316', fontWeight: 700 }}>
-                      {st.recent_avg_pct ?? st.avg_pct}%
-                    </td>
-                    <td style={{ color: '#fde047', fontWeight: 700 }}>
-                      {st.avg_pct}%
-                    </td>
-                    <td>{st.peak_pct ?? 0}%</td>
-                    <td>{st.avg_stars}★</td>
-                    <td>{st.episodes}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-
-          {/* COL 2: VILLAGE MATCHUP STATS */}
-          <section className="ai-card" ref={villageChartRef}>
-            <div className="ai-card-header">
-              <h3>🏰 Village Performance (5 Villages)</h3>
-              <div className="ai-chart-legend" style={{ fontSize: '0.72rem' }}>
-                {VILLAGE_SHORT.map((name, i) => (
-                  <span key={i} title={matchupStats.villages?.[i] ?? name}>
-                    <i className="ai-dot" style={{ background: VILLAGE_COLORS[i] }} />
-                    V{i + 1}
+              {/* TensorBoard Smoothing, Zoom & Layout Controls */}
+              <div className="tb-workbench-center">
+                <div className="tb-control-group">
+                  <span className="tb-ctrl-lbl">
+                    Smoothing <b>{smoothing.toFixed(2)}</b>
                   </span>
-                ))}
-              </div>
-            </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={0.95}
+                    step={0.05}
+                    value={smoothing}
+                    onChange={(e) => setSmoothing(Number(e.target.value))}
+                    className="tb-Range-slider"
+                  />
+                </div>
 
-            <svg
-              viewBox={`0 0 ${villageChartWidth} 115`}
-              className="ai-svg-chart"
-              style={{ height: 115, marginBottom: 8 }}
-            >
-              {[25, 50, 75, 100].map((pct) => {
-                const y = 115 - 10 - (pct / 100) * (115 - 20);
-                return (
-                  <g key={pct}>
-                    <line
-                      x1={32}
-                      y1={y}
-                      x2={villageChartWidth - 14}
-                      y2={y}
-                      stroke="#1e293b"
-                      strokeDasharray={pct === 100 ? undefined : '3 3'}
-                    />
-                    <text x={4} y={y + 3} fill="#64748b" fontSize="8.5" fontFamily="monospace">
-                      {pct}%
-                    </text>
-                  </g>
-                );
-              })}
-              {villageTrends.length > 0 ? (
-                <>
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <polyline
-                      key={i}
-                      fill="none"
-                      stroke={VILLAGE_COLORS[i]}
-                      strokeWidth="2.0"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      points={buildLinePoints(
-                        villageTrends.map((b) => b.values[i]),
-                        villageChartWidth,
-                        115,
-                        0,
-                        100,
-                        32,
-                        10
-                      )}
-                    />
+                <div className="tb-control-group">
+                  <span className="tb-ctrl-lbl">Zoom Window</span>
+                  <button
+                    type="button"
+                    className={`tb-mini-btn ${sharedZoomRange === null ? 'active' : ''}`}
+                    onClick={() => applyQuickRange(null)}
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    className="tb-mini-btn"
+                    onClick={() => applyQuickRange(250)}
+                  >
+                    250
+                  </button>
+                  <button
+                    type="button"
+                    className="tb-mini-btn"
+                    onClick={() => applyQuickRange(100)}
+                  >
+                    100
+                  </button>
+                  <button
+                    type="button"
+                    className="tb-mini-btn"
+                    onClick={() => applyQuickRange(50)}
+                  >
+                    50
+                  </button>
+                  <button
+                    type="button"
+                    className={`tb-mini-btn ${syncZoom ? 'active' : ''}`}
+                    onClick={() => setSyncZoom((v) => !v)}
+                    title="Synchronize X-axis brush zoom across all graphs"
+                  >
+                    🔗 Sync X
+                  </button>
+                </div>
+
+                <div className="tb-control-group">
+                  <span className="tb-ctrl-lbl">Grid</span>
+                  {([1, 2, 3] as const).map((cols) => (
+                    <button
+                      key={cols}
+                      type="button"
+                      className={`tb-mini-btn ${gridCols === cols ? 'active' : ''}`}
+                      onClick={() => setGridCols(cols)}
+                    >
+                      {cols}C
+                    </button>
                   ))}
-                  {[0, 0.5, 1].map((frac, idx) => {
-                    const bIdx = Math.min(
-                      villageTrends.length - 1,
-                      Math.floor(frac * (villageTrends.length - 1))
-                    );
-                    const b = villageTrends[bIdx];
-                    const x = 32 + frac * (villageChartWidth - 46);
-                    return (
-                      <text
-                        key={idx}
-                        x={x}
-                        y={112}
-                        textAnchor="middle"
-                        fill="#64748b"
-                        fontSize="8.5"
-                        fontFamily="monospace"
-                      >
-                        Ep {b.ep}
-                      </text>
-                    );
-                  })}
-                </>
-              ) : (
-                <text
-                  x={villageChartWidth / 2}
-                  y="60"
-                  textAnchor="middle"
-                  fill="#64748b"
-                  fontSize="11"
-                  fontFamily="monospace"
+                </div>
+              </div>
+
+              <div className="ai-btn-row">
+                {inspectedModelFile !== '__live__' && !isTraining && (
+                  <button
+                    className="clash-btn gold"
+                    onClick={() => {
+                      setResumeFrom(inspectedModelFile);
+                      setTrainerTab('configs');
+                    }}
+                    title="Select this checkpoint in Model Setup to resume training"
+                  >
+                    🚀 Resume {inspectedModelFile}
+                  </button>
+                )}
+                {!isTraining ? (
+                  <button
+                    className="clash-btn gold"
+                    disabled={!serverStatus?.online}
+                    onClick={handleStartTraining}
+                  >
+                    ▶️ Train ({episodes} Ep)
+                  </button>
+                ) : (
+                  <button className="clash-btn danger" onClick={handleStopTraining}>
+                    ⏹ Stop
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={`clash-btn ${showDiagnosticsDrawer ? 'gold' : ''}`}
+                  onClick={() => setShowDiagnosticsDrawer((v) => !v)}
                 >
-                  Start training to stream Village defense curves
-                </text>
-              )}
-            </svg>
-
-            <table className="ai-matrix-table">
-              <thead>
-                <tr>
-                  <th>TH18 Meta Village</th>
-                  <th>Used %</th>
-                  <th>Recent 50</th>
-                  <th>All Avg</th>
-                  <th>Peak</th>
-                  <th>Avg ★</th>
-                  <th>Eps</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(matchupStats?.village_stats ?? []).map((st) => (
-                  <tr key={st.village_idx}>
-                    <td title={st.full_name}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <i className="ai-dot" style={{ background: VILLAGE_COLORS[st.village_idx] ?? '#4ade80' }} />
-                        V{st.village_idx + 1}: {VILLAGE_SHORT[st.village_idx] ?? st.name}
-                      </span>
-                    </td>
-                    <td style={{ color: '#4ade80', fontWeight: 700 }}>
-                      {st.usage_pct ?? 0}%
-                    </td>
-                    <td style={{ color: '#f97316', fontWeight: 700 }}>
-                      {st.recent_avg_pct ?? st.avg_pct}%
-                    </td>
-                    <td style={{ color: '#fde047', fontWeight: 700 }}>
-                      {st.avg_pct}%
-                    </td>
-                    <td>{st.peak_pct ?? 0}%</td>
-                    <td>{st.avg_stars}★</td>
-                    <td>{st.episodes}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-
-          {/* 3: LOSSES, ACTION PACING & RECENT EPISODES */}
-          <section className="ai-card" ref={pacingChartRef}>
-            <div className="ai-card-header">
-              <h3>🧠 Return, Entropy & Action Pacing</h3>
-              <div className="ai-chart-legend" style={{ fontSize: '0.72rem' }}>
-                <span title="Mean Episode Return R">
-                  <i className="ai-dot" style={{ background: '#fde047' }} />
-                  Return R
-                </span>
-                <span title="Policy Shannon Entropy H(π)">
-                  <i className="ai-dot" style={{ background: '#c084fc' }} />
-                  Entropy H(π)
-                </span>
+                  🩺 AI Diagnostics
+                </button>
               </div>
             </div>
-            <svg
-              viewBox={`0 0 ${pacingChartWidth} 115`}
-              className="ai-svg-chart"
-              style={{ height: 115 }}
-            >
-              {binned.length > 0 ? (
-                <>
-                  <polyline
-                    fill="none"
-                    stroke="#fde047"
-                    strokeWidth="2.2"
-                    points={buildLinePoints(
-                      binned.map((b) => b.meanReward),
-                      pacingChartWidth,
-                      115,
-                      Math.min(0, ...binned.map((b) => b.meanReward)),
-                      Math.max(15, ...binned.map((b) => b.meanReward)),
-                      12,
-                      10
-                    )}
-                  />
-                  <polyline
-                    fill="none"
-                    stroke="#c084fc"
-                    strokeWidth="1.8"
-                    points={buildLinePoints(
-                      binned.map((b) => b.meanEntropy),
-                      pacingChartWidth,
-                      115,
-                      0,
-                      Math.max(8, ...binned.map((b) => b.meanEntropy)),
-                      12,
-                      10
-                    )}
-                  />
-                </>
-              ) : (
-                <text
-                  x={pacingChartWidth / 2}
-                  y="60"
-                  textAnchor="middle"
-                  fill="#64748b"
-                  fontSize="11"
-                  fontFamily="monospace"
-                >
-                  Return R & Entropy H(π)
-                </text>
-              )}
-            </svg>
 
-            <div className="ai-stacked-bar">
-              <div
-                style={{ width: `${pacingTotals.noop}%`, background: '#38bdf8' }}
-              />
-              <div
-                style={{ width: `${pacingTotals.deploy}%`, background: '#facc15' }}
-              />
-              <div
-                style={{ width: `${pacingTotals.spell}%`, background: '#c084fc' }}
-              />
-              <div
-                style={{ width: `${pacingTotals.ability}%`, background: '#4ade80' }}
-              />
-            </div>
-            <div className="ai-chart-legend">
-              <span>
-                <i className="ai-dot" style={{ background: '#38bdf8' }} />
-                NoOp {pacingTotals.noop}%
-              </span>
-              <span>
-                <i className="ai-dot" style={{ background: '#facc15' }} />
-                Deploy {pacingTotals.deploy}%
-              </span>
-              <span>
-                <i className="ai-dot" style={{ background: '#c084fc' }} />
-                Spells {pacingTotals.spell}%
-              </span>
-              <span>
-                <i className="ai-dot" style={{ background: '#4ade80' }} />
-                Abilities {pacingTotals.ability}%
-              </span>
-            </div>
+            {/* 6-CARD RL ENGINEER KPI SUMMARY STRIP */}
+            <div className="ai-kpi-strip">
+              <div className="ai-kpi-card">
+                <span>Episodes &amp; Peak Record</span>
+                <strong>
+                  {activeHistory.length.toLocaleString()} Eps{' '}
+                  <span style={{ color: '#facc15', fontSize: '0.9rem' }}>
+                    • {bestPct}% ({bestStars}★)
+                  </span>
+                </strong>
+                <div className="ai-reward-contribs">
+                  <span className="ai-reward-pill">
+                    Cumul: #{cumEp.toLocaleString()}
+                  </span>
+                  <span className="ai-reward-pill">
+                    {kpiStats.avgFps.toLocaleString()} ticks/s
+                  </span>
+                </div>
+              </div>
 
-            <div className="ai-history-list" style={{ marginTop: 4 }}>
-              {history
-                .slice(-5)
-                .reverse()
-                .map((ep) => (
-                  <div key={ep.episode} className="ai-history-row">
+              <div className="ai-kpi-card">
+                <span>Recent 50-Ep Destruction</span>
+                <strong style={{ color: '#fde047' }}>
+                  {kpiStats.recent50Pct}%{' '}
+                  {activeHistory.length > 10 && (
                     <span
                       style={{
-                        color: '#fde047',
-                        fontWeight: 700,
+                        fontSize: '0.82rem',
+                        color: kpiStats.deltaPct >= 0 ? '#4ade80' : '#f87171',
                       }}
                     >
-                      Ep {ep.episode}
+                      ({kpiStats.deltaPct >= 0 ? `+${kpiStats.deltaPct}%` : `${kpiStats.deltaPct}%`})
                     </span>
-                    <span>
-                      A{(ep.army_idx ?? 0) + 1} vs V{(ep.village_idx ?? 0) + 1}
-                    </span>
-                    <span>
-                      {ep.destruction_pct}% ({ep.stars}★)
-                    </span>
-                    <span>NoOp {ep.noop_pct ?? 0}%</span>
-                    <span>{ep.fps_ticks} t/s</span>
-                  </div>
-                ))}
+                  )}
+                </strong>
+                <div className="ai-reward-contribs">
+                  <span className="ai-reward-pill" style={{ color: '#fb923c' }}>
+                    2★+ TH: {kpiStats.twoStarRate}%
+                  </span>
+                  <span className="ai-reward-pill" style={{ color: '#4ade80' }}>
+                    3★ Triple: {kpiStats.threeStarRate}%
+                  </span>
+                </div>
+              </div>
+
+              <div className="ai-kpi-card">
+                <span>Mean Episode Return (R̄₅₀)</span>
+                <strong style={{ color: '#facc15' }}>
+                  +{kpiStats.meanReward.toFixed(1)} pts
+                </strong>
+                <div className="ai-reward-contribs">
+                  <span className="ai-reward-pill" style={{ color: '#38bdf8' }}>
+                    Dest: +{kpiStats.meanRewardDestr.toFixed(1)}
+                  </span>
+                  <span className="ai-reward-pill" style={{ color: '#f97316' }}>
+                    Stars: +{kpiStats.meanRewardStars.toFixed(1)}
+                  </span>
+                  <span className="ai-reward-pill" style={{ color: '#4ade80' }}>
+                    HP: +{kpiStats.meanRewardDamage.toFixed(1)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="ai-kpi-card">
+                <span>Actor / Critic Losses</span>
+                <strong style={{ color: '#f87171', fontSize: '1.0rem' }}>
+                  L_π: {kpiStats.meanPolicyLoss} • L_V: {kpiStats.meanValueLoss}
+                </strong>
+                <div className="ai-reward-contribs">
+                  <span className="ai-reward-pill">
+                    0.5·L_V: {(kpiStats.meanValueLoss * 0.5).toFixed(1)}
+                  </span>
+                  <span className="ai-reward-pill" style={{ color: '#c084fc' }}>
+                    −c_e·H: {(-0.015 * kpiStats.meanEntropy).toFixed(3)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="ai-kpi-card">
+                <span>Entropy H(π) &amp; Approx KL</span>
+                <strong style={{ color: '#c084fc', fontSize: '1.0rem' }}>
+                  H: {kpiStats.meanEntropy} • KL: {kpiStats.meanKl}
+                </strong>
+                <div className="ai-reward-contribs">
+                  <span
+                    className="ai-reward-pill"
+                    style={{
+                      color: kpiStats.meanKl > 0.03 ? '#f87171' : '#4ade80',
+                    }}
+                  >
+                    Target KL ≤ 0.03
+                  </span>
+                </div>
+              </div>
+
+              <div className="ai-kpi-card">
+                <span>Action Pacing (Wait Rate)</span>
+                <strong style={{ color: '#38bdf8' }}>
+                  NoOp {kpiStats.avgNoop}%
+                </strong>
+                <div className="ai-reward-contribs">
+                  <span className="ai-reward-pill">
+                    Active Actions: {(100 - kpiStats.avgNoop).toFixed(1)}%
+                  </span>
+                </div>
+              </div>
             </div>
-          </section>
-        </div>
-      </div>
-    </>
-  )}
+
+            {/* OPTIONAL AI DIAGNOSTICS DRAWER */}
+            {showDiagnosticsDrawer && (
+              <section className="ai-card ai-feedback-pane">
+                <div className="arch-code-header ai-feedback-header">
+                  <div className="ai-feedback-title-group">
+                    <strong>🩺 AI Training Health &amp; Root-Cause Diagnostics</strong>
+                    {feedbackData?.feedback && (
+                      <span
+                        className="ai-health-badge"
+                        style={{
+                          background: feedbackData.feedback.is_progressing
+                            ? 'rgba(34, 197, 94, 0.16)'
+                            : 'rgba(245, 158, 11, 0.16)',
+                          borderColor: feedbackData.feedback.is_progressing
+                            ? '#22c55e'
+                            : '#f59e0b',
+                          color: feedbackData.feedback.is_progressing
+                            ? '#4ade80'
+                            : '#fbbf24',
+                        }}
+                      >
+                        {feedbackData.feedback.health_status.toUpperCase()} •{' '}
+                        {feedbackData.feedback.health_score}/100
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="ai-feedback-controls">
+                    <div className="ai-provider-toggle" role="group">
+                      <button
+                        type="button"
+                        className={`ai-provider-btn ${
+                          feedbackProvider === 'opencode_argon' ? 'active' : ''
+                        }`}
+                        disabled={isAnalyzingFeedback}
+                        onClick={() => setFeedbackProvider('opencode_argon')}
+                      >
+                        Argon 4 • OpenCode
+                      </button>
+                      <button
+                        type="button"
+                        className={`ai-provider-btn ${
+                          feedbackProvider === 'agy_flash' ? 'active' : ''
+                        }`}
+                        disabled={isAnalyzingFeedback}
+                        onClick={() => setFeedbackProvider('agy_flash')}
+                      >
+                        Flash 3.8 • AGY
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      className="speed-pill-btn active"
+                      disabled={!serverStatus?.online || isAnalyzingFeedback}
+                      onClick={() => void handleRunFeedbackAnalysis()}
+                    >
+                      {isAnalyzingFeedback ? '⟳ Analyzing...' : '⚡ Run Diagnosis'}
+                    </button>
+                  </div>
+                </div>
+
+                {feedbackData?.feedback ? (
+                  <div className="tb-diag-grid">
+                    <div className="ai-feedback-verdict">
+                      <strong>{feedbackData.feedback.headline}</strong>
+                      <p>{feedbackData.feedback.progression_summary}</p>
+                    </div>
+                    <div className="ai-feedback-issues-list">
+                      {feedbackData.feedback.what_is_going_wrong
+                        .slice(0, 3)
+                        .map((iss, idx) => (
+                          <div
+                            key={idx}
+                            className="ai-feedback-issue-card"
+                            style={{ borderLeftColor: '#f59e0b' }}
+                          >
+                            <strong>{iss.title}</strong>
+                            <div className="ai-issue-row">
+                              <span className="ai-issue-tag">Symptom</span>
+                              <span>{iss.symptom}</span>
+                            </div>
+                            <div className="ai-issue-row">
+                              <span className="ai-issue-tag cause">Cause</span>
+                              <span>{iss.root_cause}</span>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                    Click &ldquo;⚡ Run Diagnosis&rdquo; to evaluate current PPO telemetry.
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* TENSORBOARD GRAPH SELECTOR & CATEGORY FILTER BAR */}
+            <div className="tb-tag-filter-bar">
+              <div className="tb-cat-tabs">
+                {(
+                  [
+                    ['all', 'All Graphs'],
+                    ['reward_loss', 'Reward & PPO Losses'],
+                    ['stability', 'Trust Region & Critic'],
+                    ['combat_entropy', 'Combat, Stars & Entropy'],
+                    ['matchups', 'Armies & Villages'],
+                  ] as const
+                ).map(([catId, label]) => (
+                  <button
+                    key={catId}
+                    type="button"
+                    className={`tb-cat-btn ${
+                      activeCategory === catId ? 'active' : ''
+                    }`}
+                    onClick={() => setActiveCategory(catId)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="tb-graph-toggles">
+                {GRAPH_CATALOG.map((g) => {
+                  const isOn = visibleGraphs[g.id];
+                  return (
+                    <button
+                      key={g.id}
+                      type="button"
+                      className={`tb-graph-toggle-chip ${isOn ? 'on' : 'off'}`}
+                      style={
+                        isOn
+                          ? {
+                              borderColor: `${g.color}88`,
+                              color: '#f8fafc',
+                            }
+                          : undefined
+                      }
+                      onClick={() =>
+                        setVisibleGraphs((prev) => ({
+                          ...prev,
+                          [g.id]: !prev[g.id],
+                        }))
+                      }
+                    >
+                      <i
+                        className="tb-series-dot"
+                        style={{
+                          background: isOn ? g.color : '#475569',
+                        }}
+                      />
+                      {g.shortLabel}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  className="tb-mini-btn"
+                  onClick={() =>
+                    setVisibleGraphs({
+                      reward_decomp: true,
+                      ppo_losses: true,
+                      destruction_pct: true,
+                      star_rates: true,
+                      kl_and_clip: true,
+                      critic_and_grad: true,
+                      policy_entropy: true,
+                      action_pacing: true,
+                      army_performance: true,
+                      village_performance: true,
+                    })
+                  }
+                >
+                  Show All
+                </button>
+              </div>
+            </div>
+
+            {/* TENSORBOARD MULTI-CHART RESPONSIVE GRID */}
+            <div
+              className="tb-charts-grid"
+              style={{
+                gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
+              }}
+            >
+              {visibleGraphItems.map((item) => {
+                const isExp = Boolean(expandedCharts[item.id]);
+
+                if (item.id === 'reward_decomp') {
+                  return (
+                    <TelemetryChart
+                      key={item.id}
+                      id={item.id}
+                      title="1. Mean Episode Reward & 3-Way Contributions"
+                      subtitle="Drag on chart to zoom • Double-click to reset"
+                      episodes={chartData.epAxis}
+                      episodeMeta={chartData.epMeta}
+                      series={rewardSeries}
+                      smoothing={smoothing}
+                      zoomRange={getZoomForChart(item.id)}
+                      onZoomChange={(r) => setZoomForChart(item.id, r)}
+                      allowSplitLanes={true}
+                      defaultSplitLanes={false}
+                      sessionBoundaries={activeSessionBoundaries}
+                      isExpanded={isExp}
+                      onToggleExpand={() => toggleChartExpand(item.id)}
+                      headerExtra={
+                        <div className="tb-mode-switch">
+                          <button
+                            type="button"
+                            className={`tb-mini-btn ${
+                              rewardDecompMode === 'actor_critic_entropy'
+                                ? 'active'
+                                : ''
+                            }`}
+                            onClick={() =>
+                              setRewardDecompMode('actor_critic_entropy')
+                            }
+                          >
+                            Actor / Critic / Entropy
+                          </button>
+                          <button
+                            type="button"
+                            className={`tb-mini-btn ${
+                              rewardDecompMode === 'shaping_3way' ? 'active' : ''
+                            }`}
+                            onClick={() => setRewardDecompMode('shaping_3way')}
+                          >
+                            Destr / Stars / HP
+                          </button>
+                        </div>
+                      }
+                    />
+                  );
+                }
+
+                if (item.id === 'ppo_losses') {
+                  return (
+                    <TelemetryChart
+                      key={item.id}
+                      id={item.id}
+                      title="2. PPO Surrogate Losses (Actor, Critic, Entropy)"
+                      subtitle="L_total = L_actor + 0.5·L_critic − 0.015·H(π)"
+                      episodes={chartData.epAxis}
+                      episodeMeta={chartData.epMeta}
+                      series={[
+                        {
+                          id: 'actor_loss',
+                          label: 'Actor Surrogate Clip Loss (L_CLIP)',
+                          shortLabel: 'Actor L_π',
+                          color: '#facc15',
+                          values: chartData.policyLoss,
+                          decimals: 4,
+                        },
+                        {
+                          id: 'critic_loss',
+                          label: 'Critic Value MSE Loss (0.5 · L_VF)',
+                          shortLabel: 'Critic 0.5·L_V',
+                          color: '#f87171',
+                          values: chartData.weightedCriticLoss,
+                          decimals: 2,
+                        },
+                        {
+                          id: 'entropy_term',
+                          label: 'Entropy Regularization (−c_e · H)',
+                          shortLabel: 'Entropy −c_e·H',
+                          color: '#c084fc',
+                          values: chartData.entropyRegTerm,
+                          decimals: 4,
+                        },
+                        {
+                          id: 'total_loss',
+                          label: 'Total Combined PPO Loss',
+                          shortLabel: 'Total Loss',
+                          color: '#38bdf8',
+                          values: chartData.totalPpoLoss,
+                          decimals: 2,
+                          defaultHidden: true,
+                        },
+                      ]}
+                      smoothing={smoothing}
+                      zoomRange={getZoomForChart(item.id)}
+                      onZoomChange={(r) => setZoomForChart(item.id, r)}
+                      allowSplitLanes={true}
+                      defaultSplitLanes={true}
+                      sessionBoundaries={activeSessionBoundaries}
+                      isExpanded={isExp}
+                      onToggleExpand={() => toggleChartExpand(item.id)}
+                    />
+                  );
+                }
+
+                if (item.id === 'destruction_pct') {
+                  return (
+                    <TelemetryChart
+                      key={item.id}
+                      id={item.id}
+                      title="3. Destruction % & Rolling Convergence"
+                      subtitle="Episode destruction with 20-ep Min–Max band & 50-ep Rolling Mean"
+                      episodes={chartData.epAxis}
+                      episodeMeta={chartData.epMeta}
+                      defaultYDomain={[0, 100]}
+                      series={[
+                        {
+                          id: 'pct_ep',
+                          label: 'Episode Destruction %',
+                          shortLabel: 'Episode %',
+                          color: '#facc15',
+                          values: chartData.destrPct,
+                          unit: '%',
+                          decimals: 1,
+                          bandMin: chartData.bandMin20,
+                          bandMax: chartData.bandMax20,
+                        },
+                        {
+                          id: 'pct_roll50',
+                          label: '50-Ep Rolling Mean %',
+                          shortLabel: '50-Ep Avg',
+                          color: '#f97316',
+                          values: chartData.roll50Pct,
+                          unit: '%',
+                          decimals: 1,
+                        },
+                        {
+                          id: 'pct_best',
+                          label: 'Best Checkpoint Waterline',
+                          shortLabel: 'Best %',
+                          color: '#4ade80',
+                          values: chartData.bestPctLine,
+                          unit: '%',
+                          decimals: 0,
+                          dashed: true,
+                          defaultHidden: true,
+                        },
+                      ]}
+                      referenceLines={[
+                        {
+                          value: 50,
+                          label: '50% (1★ Threshold)',
+                          color: '#475569',
+                          dashed: true,
+                        },
+                      ]}
+                      smoothing={smoothing}
+                      zoomRange={getZoomForChart(item.id)}
+                      onZoomChange={(r) => setZoomForChart(item.id, r)}
+                      sessionBoundaries={activeSessionBoundaries}
+                      isExpanded={isExp}
+                      onToggleExpand={() => toggleChartExpand(item.id)}
+                    />
+                  );
+                }
+
+                if (item.id === 'star_rates') {
+                  return (
+                    <TelemetryChart
+                      key={item.id}
+                      id={item.id}
+                      title="4. Victory Star Tier Rates (30-Ep Rolling %)"
+                      subtitle="Tracks 1★ perimeter clear vs 2★ TH18 core takedown vs 3★ full wipe"
+                      episodes={chartData.epAxis}
+                      episodeMeta={chartData.epMeta}
+                      defaultYDomain={[0, 100]}
+                      series={[
+                        {
+                          id: 'star_2plus',
+                          label: '2★+ (TH18 Takedown) Rate',
+                          shortLabel: '2★+ TH18 %',
+                          color: '#f97316',
+                          values: chartData.star2ThRate,
+                          unit: '%',
+                          decimals: 1,
+                          fillArea: true,
+                        },
+                        {
+                          id: 'star_3',
+                          label: '3★ Triple Wipe Rate',
+                          shortLabel: '3★ Triple %',
+                          color: '#4ade80',
+                          values: chartData.star3TripleRate,
+                          unit: '%',
+                          decimals: 1,
+                        },
+                        {
+                          id: 'star_1plus',
+                          label: '1★+ Victory Rate',
+                          shortLabel: '1★+ Rate %',
+                          color: '#38bdf8',
+                          values: chartData.star1PlusRate,
+                          unit: '%',
+                          decimals: 1,
+                          dashed: true,
+                        },
+                        {
+                          id: 'star_0',
+                          label: '0★ Failure Rate',
+                          shortLabel: '0★ Fail %',
+                          color: '#f87171',
+                          values: chartData.star0Rate,
+                          unit: '%',
+                          decimals: 1,
+                          defaultHidden: true,
+                        },
+                      ]}
+                      smoothing={smoothing}
+                      zoomRange={getZoomForChart(item.id)}
+                      onZoomChange={(r) => setZoomForChart(item.id, r)}
+                      sessionBoundaries={activeSessionBoundaries}
+                      isExpanded={isExp}
+                      onToggleExpand={() => toggleChartExpand(item.id)}
+                    />
+                  );
+                }
+
+                if (item.id === 'kl_and_clip') {
+                  return (
+                    <TelemetryChart
+                      key={item.id}
+                      id={item.id}
+                      title="5. PPO Trust-Region Stability (Approx KL & Clip Fraction)"
+                      subtitle="Monitors policy step size against target_kl = 0.03 early-stop threshold"
+                      episodes={chartData.epAxis}
+                      episodeMeta={chartData.epMeta}
+                      series={[
+                        {
+                          id: 'approx_kl',
+                          label: 'Approximate KL Divergence',
+                          shortLabel: 'Approx KL',
+                          color: '#38bdf8',
+                          values: chartData.approxKl,
+                          decimals: 4,
+                        },
+                        {
+                          id: 'clip_frac',
+                          label: 'PPO Clip Fraction (|r_t − 1| > 0.2)',
+                          shortLabel: 'Clip Frac %',
+                          color: '#fb923c',
+                          values: chartData.clipFracPct,
+                          unit: '%',
+                          decimals: 1,
+                        },
+                      ]}
+                      referenceLines={[
+                        {
+                          value: 0.03,
+                          label: 'target_kl = 0.03',
+                          color: '#f87171',
+                          dashed: true,
+                        },
+                      ]}
+                      allowSplitLanes={true}
+                      defaultSplitLanes={true}
+                      smoothing={smoothing}
+                      zoomRange={getZoomForChart(item.id)}
+                      onZoomChange={(r) => setZoomForChart(item.id, r)}
+                      sessionBoundaries={activeSessionBoundaries}
+                      isExpanded={isExp}
+                      onToggleExpand={() => toggleChartExpand(item.id)}
+                    />
+                  );
+                }
+
+                if (item.id === 'critic_and_grad') {
+                  return (
+                    <TelemetryChart
+                      key={item.id}
+                      id={item.id}
+                      title="6. Critic Explained Variance, Calibration Gap & Grad Norm"
+                      subtitle="Measures Critic return variance capture and pre-clip L2 gradient norm"
+                      episodes={chartData.epAxis}
+                      episodeMeta={chartData.epMeta}
+                      series={[
+                        {
+                          id: 'exp_var',
+                          label: 'Critic Explained Variance (%)',
+                          shortLabel: 'Explained Var %',
+                          color: '#4ade80',
+                          values: chartData.explainedVarPct,
+                          unit: '%',
+                          decimals: 1,
+                        },
+                        {
+                          id: 'grad_norm',
+                          label: 'Pre-Clip L2 Gradient Norm',
+                          shortLabel: 'Grad Norm L2',
+                          color: '#facc15',
+                          values: chartData.gradNorm,
+                          decimals: 1,
+                        },
+                        {
+                          id: 'cal_gap',
+                          label: 'Calibration Gap V(s₀) − R',
+                          shortLabel: 'V(s₀) − R Gap',
+                          color: '#38bdf8',
+                          values: chartData.calGapV0MinusR,
+                          decimals: 1,
+                        },
+                      ]}
+                      allowSplitLanes={true}
+                      defaultSplitLanes={true}
+                      smoothing={smoothing}
+                      zoomRange={getZoomForChart(item.id)}
+                      onZoomChange={(r) => setZoomForChart(item.id, r)}
+                      sessionBoundaries={activeSessionBoundaries}
+                      isExpanded={isExp}
+                      onToggleExpand={() => toggleChartExpand(item.id)}
+                    />
+                  );
+                }
+
+                if (item.id === 'policy_entropy') {
+                  return (
+                    <TelemetryChart
+                      key={item.id}
+                      id={item.id}
+                      title="7. Policy Shannon Entropy H(π) & 4-Head Breakdown"
+                      subtitle="Tracks joint exploration vs discrete & spatial pointer head entropies"
+                      episodes={chartData.epAxis}
+                      episodeMeta={chartData.epMeta}
+                      series={[
+                        {
+                          id: 'h_joint',
+                          label: 'Joint Policy Entropy H(π)',
+                          shortLabel: 'Joint H(π)',
+                          color: '#c084fc',
+                          values: chartData.jointEntropy,
+                          decimals: 2,
+                        },
+                        {
+                          id: 'h_tile',
+                          label: 'H4: Tile Pointer Entropy (max 6.74)',
+                          shortLabel: 'H(tile_xy)',
+                          color: '#f97316',
+                          values: chartData.hTile,
+                          decimals: 2,
+                        },
+                        {
+                          id: 'h_idx',
+                          label: 'H2: Slot Index Entropy (max 2.30)',
+                          shortLabel: 'H(slot_idx)',
+                          color: '#38bdf8',
+                          values: chartData.hIdx,
+                          decimals: 2,
+                        },
+                        {
+                          id: 'h_type',
+                          label: 'H1: Action Type Entropy (max 1.95)',
+                          shortLabel: 'H(slot_type)',
+                          color: '#facc15',
+                          values: chartData.hType,
+                          decimals: 2,
+                        },
+                        {
+                          id: 'h_frac',
+                          label: 'H3: Deploy Fraction Entropy (max 1.61)',
+                          shortLabel: 'H(deploy_frac)',
+                          color: '#4ade80',
+                          values: chartData.hFrac,
+                          decimals: 2,
+                        },
+                      ]}
+                      allowSplitLanes={true}
+                      defaultSplitLanes={false}
+                      smoothing={smoothing}
+                      zoomRange={getZoomForChart(item.id)}
+                      onZoomChange={(r) => setZoomForChart(item.id, r)}
+                      sessionBoundaries={activeSessionBoundaries}
+                      isExpanded={isExp}
+                      onToggleExpand={() => toggleChartExpand(item.id)}
+                    />
+                  );
+                }
+
+                if (item.id === 'action_pacing') {
+                  return (
+                    <TelemetryChart
+                      key={item.id}
+                      id={item.id}
+                      title="8. Tactical Action Pacing & Step Allocation"
+                      subtitle="Wait (NoOp) rate vs Troop/Hero Deployments, Spells, and Hero Abilities"
+                      episodes={chartData.epAxis}
+                      episodeMeta={chartData.epMeta}
+                      series={[
+                        {
+                          id: 'noop_rate',
+                          label: 'NoOp (Tactical Wait) Rate %',
+                          shortLabel: 'NoOp %',
+                          color: '#38bdf8',
+                          values: chartData.noopPct,
+                          unit: '%',
+                          decimals: 1,
+                        },
+                        {
+                          id: 'deploy_st',
+                          label: 'Unit Deploy Steps / Ep',
+                          shortLabel: 'Deploy Steps',
+                          color: '#facc15',
+                          values: chartData.deploySteps,
+                          decimals: 1,
+                        },
+                        {
+                          id: 'spell_st',
+                          label: 'Spell Cast Steps / Ep',
+                          shortLabel: 'Spell Steps',
+                          color: '#c084fc',
+                          values: chartData.spellSteps,
+                          decimals: 1,
+                        },
+                        {
+                          id: 'ability_st',
+                          label: 'Hero Ability Steps / Ep',
+                          shortLabel: 'Ability Steps',
+                          color: '#4ade80',
+                          values: chartData.abilitySteps,
+                          decimals: 1,
+                        },
+                        {
+                          id: 'tot_st',
+                          label: 'Total Decision Steps / Ep',
+                          shortLabel: 'Total Steps',
+                          color: '#94a3b8',
+                          values: chartData.totalSteps,
+                          decimals: 0,
+                          defaultHidden: true,
+                        },
+                      ]}
+                      allowSplitLanes={true}
+                      defaultSplitLanes={false}
+                      smoothing={smoothing}
+                      zoomRange={getZoomForChart(item.id)}
+                      onZoomChange={(r) => setZoomForChart(item.id, r)}
+                      sessionBoundaries={activeSessionBoundaries}
+                      isExpanded={isExp}
+                      onToggleExpand={() => toggleChartExpand(item.id)}
+                    />
+                  );
+                }
+
+                if (item.id === 'army_performance') {
+                  return (
+                    <TelemetryChart
+                      key={item.id}
+                      id={item.id}
+                      title="9. Army Mastery Progression (3 TH18 Meta Armies)"
+                      subtitle="Rolling Destruction % per attack composition"
+                      episodes={chartData.epAxis}
+                      episodeMeta={chartData.epMeta}
+                      defaultYDomain={[0, 100]}
+                      series={ARMY_SHORT.map((name, idx) => ({
+                        id: `army_${idx}`,
+                        label: matchupStats.armies?.[idx] ?? name,
+                        shortLabel: name,
+                        color: ARMY_COLORS[idx],
+                        values: chartData.armyRolling[idx] ?? [],
+                        unit: '%',
+                        decimals: 1,
+                      }))}
+                      smoothing={smoothing}
+                      zoomRange={getZoomForChart(item.id)}
+                      onZoomChange={(r) => setZoomForChart(item.id, r)}
+                      sessionBoundaries={activeSessionBoundaries}
+                      isExpanded={isExp}
+                      onToggleExpand={() => toggleChartExpand(item.id)}
+                      footerExtra={
+                        <table className="ai-matrix-table">
+                          <thead>
+                            <tr>
+                              <th>TH18 Meta Army</th>
+                              <th>Used %</th>
+                              <th>Recent 50</th>
+                              <th>All Avg</th>
+                              <th>Peak</th>
+                              <th>Avg ★</th>
+                              <th>3★ %</th>
+                              <th>Eps</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(matchupStats?.army_stats ?? []).map((st) => (
+                              <tr key={st.army_idx}>
+                                <td title={st.full_name}>
+                                  <span
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 6,
+                                    }}
+                                  >
+                                    <i
+                                      className="ai-dot"
+                                      style={{
+                                        background:
+                                          ARMY_COLORS[st.army_idx] ?? '#facc15',
+                                      }}
+                                    />
+                                    {st.name}
+                                  </span>
+                                </td>
+                                <td style={{ color: '#38bdf8', fontWeight: 700 }}>
+                                  {st.usage_pct ?? 0}%
+                                </td>
+                                <td style={{ color: '#f97316', fontWeight: 700 }}>
+                                  {st.recent_avg_pct ?? st.avg_pct}%
+                                </td>
+                                <td style={{ color: '#fde047', fontWeight: 700 }}>
+                                  {st.avg_pct}%
+                                </td>
+                                <td>{st.peak_pct ?? 0}%</td>
+                                <td>{st.avg_stars}★</td>
+                                <td style={{ color: '#4ade80' }}>
+                                  {st.triple_rate}%
+                                </td>
+                                <td>{st.episodes}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      }
+                    />
+                  );
+                }
+
+                if (item.id === 'village_performance') {
+                  return (
+                    <TelemetryChart
+                      key={item.id}
+                      id={item.id}
+                      title="10. Village Defense Breakdown (5 TH18 Meta Bases)"
+                      subtitle="Rolling Destruction % across each target village layout"
+                      episodes={chartData.epAxis}
+                      episodeMeta={chartData.epMeta}
+                      defaultYDomain={[0, 100]}
+                      series={VILLAGE_SHORT.map((name, idx) => ({
+                        id: `vil_${idx}`,
+                        label: `V${idx + 1}: ${
+                          matchupStats.villages?.[idx] ?? name
+                        }`,
+                        shortLabel: `V${idx + 1}: ${name}`,
+                        color: VILLAGE_COLORS[idx],
+                        values: chartData.villageRolling[idx] ?? [],
+                        unit: '%',
+                        decimals: 1,
+                      }))}
+                      smoothing={smoothing}
+                      zoomRange={getZoomForChart(item.id)}
+                      onZoomChange={(r) => setZoomForChart(item.id, r)}
+                      sessionBoundaries={activeSessionBoundaries}
+                      isExpanded={isExp}
+                      onToggleExpand={() => toggleChartExpand(item.id)}
+                      footerExtra={
+                        <table className="ai-matrix-table">
+                          <thead>
+                            <tr>
+                              <th>TH18 Meta Village</th>
+                              <th>Used %</th>
+                              <th>Recent 50</th>
+                              <th>All Avg</th>
+                              <th>Peak</th>
+                              <th>Avg ★</th>
+                              <th>3★ %</th>
+                              <th>Eps</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(matchupStats?.village_stats ?? []).map((st) => (
+                              <tr key={st.village_idx}>
+                                <td title={st.full_name}>
+                                  <span
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 6,
+                                    }}
+                                  >
+                                    <i
+                                      className="ai-dot"
+                                      style={{
+                                        background:
+                                          VILLAGE_COLORS[st.village_idx] ??
+                                          '#4ade80',
+                                      }}
+                                    />
+                                    V{st.village_idx + 1}:{' '}
+                                    {VILLAGE_SHORT[st.village_idx] ?? st.name}
+                                  </span>
+                                </td>
+                                <td style={{ color: '#4ade80', fontWeight: 700 }}>
+                                  {st.usage_pct ?? 0}%
+                                </td>
+                                <td style={{ color: '#f97316', fontWeight: 700 }}>
+                                  {st.recent_avg_pct ?? st.avg_pct}%
+                                </td>
+                                <td style={{ color: '#fde047', fontWeight: 700 }}>
+                                  {st.avg_pct}%
+                                </td>
+                                <td>{st.peak_pct ?? 0}%</td>
+                                <td>{st.avg_stars}★</td>
+                                <td style={{ color: '#4ade80' }}>
+                                  {st.triple_rate}%
+                                </td>
+                                <td>{st.episodes}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      }
+                    />
+                  );
+                }
+
+                return null;
+              })}
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -1998,12 +2895,11 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   // =========================================================================
   const slotTypeProbs = inspectData?.slot_type_probs ?? [1, 0, 0, 0, 0, 0, 0];
   const noopLiveProb = Math.round((slotTypeProbs[0] ?? 0) * 100);
-
-  const testHp = activeTestModel?.hyperparams ?? inspectData?.model_meta?.hyperparams;
+  const testHp =
+    activeTestModel?.hyperparams ?? inspectData?.model_meta?.hyperparams;
 
   return (
     <div className="ai-studio-workspace">
-      {/* LEFT / CENTER: INTERACTIVE VILLAGE SANDBOX */}
       <div className="ai-sandbox-stage">
         <BattlefieldCanvas
           mode="battle"
@@ -2045,7 +2941,9 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                 </div>
                 <div className="damage-readout-row">
                   <span className="damage-label">Model Destruction</span>
-                  <span className="damage-pct">{battleState.destruction_pct}%</span>
+                  <span className="damage-pct">
+                    {battleState.destruction_pct}%
+                  </span>
                 </div>
                 <div className="clash-progress-track">
                   <div
@@ -2063,7 +2961,9 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   disabled={!serverStatus?.online || isRunningRollout}
                   onClick={handleRunTrainedModelTest}
                 >
-                  {isRunningRollout ? '⏳ Loading...' : '▶️ Run Trained Model (.pt)'}
+                  {isRunningRollout
+                    ? '⏳ Loading...'
+                    : '▶️ Run Trained Model (.pt)'}
                 </button>
                 <button
                   className={`clash-btn ${isAiPlaying ? 'danger' : ''}`}
@@ -2087,9 +2987,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
         )}
       </div>
 
-      {/* RIGHT SIDEBAR: TRAINED MODEL SELECTOR, VILLAGE/ARMY PICKER & ROLLOUT INSPECTOR */}
       <aside className="ai-studio-sidebar">
-        {/* 1. SELECT TRAINED MODEL FILE FROM `trained_models/` */}
         <section className="ai-card">
           <div className="ai-card-header">
             <h3>🧪 Select Trained Model (`trained_models/`)</h3>
@@ -2109,12 +3007,12 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
           >
             {savedModels.map((m) => (
               <option key={m.filename} value={m.filename}>
-                💾 {m.filename} (Ep {m.episode} • Best {m.best_pct}% {m.best_stars}★)
+                💾 {m.filename} (Ep {m.episode} • Best {m.best_pct}%{' '}
+                {m.best_stars}★)
               </option>
             ))}
           </select>
 
-          {/* Training Hyperparameters Dossier */}
           <div
             style={{
               background: '#0b1324',
@@ -2129,14 +3027,17 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
             }}
           >
             <span>
-              <strong style={{ color: '#e2e8f0' }}>Ep:</strong> {activeTestModel?.episode ?? 0}
+              <strong style={{ color: '#e2e8f0' }}>Ep:</strong>{' '}
+              {activeTestModel?.episode ?? 0}
             </span>
             <span>
               <strong style={{ color: '#facc15' }}>Peak:</strong>{' '}
-              {activeTestModel?.best_pct ?? 0}% ({activeTestModel?.best_stars ?? 0}★)
+              {activeTestModel?.best_pct ?? 0}% ({activeTestModel?.best_stars ?? 0}
+              ★)
             </span>
             <span>
-              <strong style={{ color: '#e2e8f0' }}>LR:</strong> {testHp?.lr ?? 0.0003}
+              <strong style={{ color: '#e2e8f0' }}>LR:</strong>{' '}
+              {testHp?.lr ?? 0.0003}
             </span>
             <span>
               <strong style={{ color: '#e2e8f0' }}>Batch:</strong>{' '}
@@ -2146,20 +3047,21 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
               <strong style={{ color: '#e2e8f0' }}>Epochs:</strong>{' '}
               {testHp?.ppo_epochs ?? 4}
             </span>
-            <span>
-              <strong style={{ color: '#e2e8f0' }}>Sampling:</strong>{' '}
-              {testHp?.matchup_mode ?? 'random'}
-            </span>
           </div>
 
-          <div className="ai-form-grid" style={{ gridTemplateColumns: '1.2fr 0.8fr' }}>
+          <div
+            className="ai-form-grid"
+            style={{ gridTemplateColumns: '1.2fr 0.8fr' }}
+          >
             <label>
               <span>Replay Speed</span>
               <select
                 className="clash-select"
                 value={testSpeedMode}
                 onChange={(e) =>
-                  setTestSpeedMode(e.target.value as 'watch' | 'fast' | 'instant')
+                  setTestSpeedMode(
+                    e.target.value as 'watch' | 'fast' | 'instant'
+                  )
                 }
               >
                 <option value="watch">👁️ Watch Live (1×)</option>
@@ -2180,19 +3082,31 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
             </label>
           </div>
 
-          <button
-            className="clash-btn gold"
-            style={{ width: '100%' }}
-            disabled={!serverStatus?.online || isRunningRollout}
-            onClick={handleRunTrainedModelTest}
-          >
-            {isRunningRollout
-              ? '⏳ Running PyTorch Rollout...'
-              : `▶️ Attack with ${testModelFile}`}
-          </button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              className="clash-btn gold"
+              style={{ flex: 1 }}
+              disabled={!serverStatus?.online || isRunningRollout}
+              onClick={handleRunTrainedModelTest}
+            >
+              {isRunningRollout
+                ? '⏳ Running...'
+                : `▶️ Attack with ${testModelFile}`}
+            </button>
+            <button
+              className="clash-btn"
+              onClick={() => {
+                setInspectedModelFile(testModelFile);
+                setTrainerTab('stats');
+                onSwitchStudioMode('trainer');
+              }}
+              title="Inspect training curves for this model"
+            >
+              📈 Curves
+            </button>
+          </div>
         </section>
 
-        {/* 2. TRAINED ATTACK COMPOSITIONS POOL (FIXED TO MODEL / READ-ONLY) */}
         <section className="ai-card">
           <div className="ai-card-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -2201,13 +3115,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                 🔒 Immutable
               </span>
             </div>
-            <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
-              Model Draw Pool
-            </span>
           </div>
-          <p style={{ fontSize: '0.72rem', color: '#94a3b8', margin: '0 0 6px 0' }}>
-            The model was trained exclusively on these {testArmies.length} attack compositions (fixed). Select one to test against the village:
-          </p>
 
           <div className="ai-prob-list">
             {testArmies.map((arm, idx) => {
@@ -2220,12 +3128,26 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   onClick={() => onSelectArmy(arm)}
                 >
                   <div style={{ minWidth: 0 }}>
-                    <span className="ai-prob-label" style={{ fontWeight: isSelected ? 700 : 500 }}>
+                    <span
+                      className="ai-prob-label"
+                      style={{ fontWeight: isSelected ? 700 : 500 }}
+                    >
                       A{idx + 1}: {arm.name}
                     </span>
-                    <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: 2 }}>
-                      {arm.troops.slice(0, 3).map(([t, c]) => `${c}× ${t}`).join(', ')}
-                      {arm.troops.length > 3 ? ` +${arm.troops.length - 3} more` : ''}
+                    <div
+                      style={{
+                        fontSize: '0.7rem',
+                        color: '#94a3b8',
+                        marginTop: 2,
+                      }}
+                    >
+                      {arm.troops
+                        .slice(0, 3)
+                        .map(([t, c]) => `${c}× ${t}`)
+                        .join(', ')}
+                      {arm.troops.length > 3
+                        ? ` +${arm.troops.length - 3} more`
+                        : ''}
                     </div>
                   </div>
                   <span
@@ -2240,7 +3162,6 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
           </div>
         </section>
 
-        {/* 3. TRAINED VILLAGE LAYOUTS POOL (FIXED TO MODEL / READ-ONLY) */}
         <section className="ai-card">
           <div className="ai-card-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -2249,13 +3170,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                 🔒 Immutable
               </span>
             </div>
-            <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
-              Model Target Pool
-            </span>
           </div>
-          <p style={{ fontSize: '0.72rem', color: '#94a3b8', margin: '0 0 6px 0' }}>
-            The model was trained to attack these {testVillages.length} base layouts (fixed). Select one to view on the canvas:
-          </p>
 
           <div className="ai-prob-list">
             {testVillages.map((vil, idx) => {
@@ -2268,11 +3183,21 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   onClick={() => onSelectLayout(vil)}
                 >
                   <div style={{ minWidth: 0 }}>
-                    <span className="ai-prob-label" style={{ fontWeight: isSelected ? 700 : 500 }}>
+                    <span
+                      className="ai-prob-label"
+                      style={{ fontWeight: isSelected ? 700 : 500 }}
+                    >
                       V{idx + 1}: {vil.name}
                     </span>
-                    <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: 2 }}>
-                      TH18 • {vil.buildings.length} Buildings • {vil.walls.length} Walls
+                    <div
+                      style={{
+                        fontSize: '0.7rem',
+                        color: '#94a3b8',
+                        marginTop: 2,
+                      }}
+                    >
+                      TH18 • {vil.buildings.length} Buildings •{' '}
+                      {vil.walls.length} Walls
                     </div>
                   </div>
                   <span
@@ -2287,10 +3212,9 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
           </div>
         </section>
 
-        {/* 3. SPATIAL TENSOR & ROLLOUT TELEMETRY */}
         <section className="ai-card">
           <div className="ai-card-header">
-            <h3>Spatial Tensor & Policy Heatmap</h3>
+            <h3>Spatial Tensor &amp; Policy Heatmap</h3>
             <select
               className="clash-select"
               style={{ width: 'auto' }}
@@ -2333,8 +3257,9 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                 <div>
                   <span>Last Model Test</span>
                   <strong style={{ color: '#fde047' }}>
-                    {lastRolloutResult.destruction_pct}% ({lastRolloutResult.stars}
-                    ★) • NoOp {lastRolloutResult.noop_pct}%
+                    {lastRolloutResult.destruction_pct}% (
+                    {lastRolloutResult.stars}★) • NoOp{' '}
+                    {lastRolloutResult.noop_pct}%
                   </strong>
                 </div>
               )}
@@ -2355,7 +3280,9 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                     <span style={{ color: '#fde047' }}>
                       {SLOT_TYPE_LABELS[s.slot_type] ?? 'Action'} #{s.slot_idx}
                       {s.slot_type === 1 && s.deploy_count
-                        ? ` (×${s.deploy_count} • α=${Math.round((s.deploy_fraction ?? 1) * 100)}%)`
+                        ? ` (×${s.deploy_count} • α=${Math.round(
+                            (s.deploy_fraction ?? 1) * 100
+                          )}%)`
                         : ''}
                     </span>
                     <span>

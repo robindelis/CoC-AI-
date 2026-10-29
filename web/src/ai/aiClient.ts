@@ -3,6 +3,7 @@ import {
   AIArchitectureSpec,
   AIFeedbackProviderId,
   AIInspectResponse,
+  AIModelHistoryResponse,
   AIRolloutResponse,
   AIServerStatus,
   AITrainingFeedbackResponse,
@@ -47,6 +48,21 @@ export async function fetchAIServerStatus(): Promise<AIServerStatus | null> {
     const res = await fetch(`${AI_API_BASE}/status?t=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) return null;
     return (await res.json()) as AIServerStatus;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchModelTrainingHistory(
+  modelFile: string
+): Promise<AIModelHistoryResponse | null> {
+  try {
+    const res = await fetch(
+      `${AI_API_BASE}/models/history?model_file=${encodeURIComponent(modelFile)}&t=${Date.now()}`,
+      { cache: 'no-store' }
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as AIModelHistoryResponse;
   } catch {
     return null;
   }

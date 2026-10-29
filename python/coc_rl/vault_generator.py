@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from .history_compression import compress_training_history, decompress_training_history
 from .networks import CoCActorCritic
 from .visualize import render_model_architecture
 
@@ -305,7 +306,8 @@ def generate_training_curves_chart(
     os.makedirs(os.path.dirname(out_png_path), exist_ok=True)
     total_episodes = model_info.get("total_episodes", 1000)
     sessions = model_info.get("sessions", [])
-    history_points = model_info.get("history_points", [])
+    raw_hp = model_info.get("history_compressed") or model_info.get("history_points", [])
+    history_points = decompress_training_history(raw_hp)
 
     # If fine-grained history exists, use it; otherwise generate anchored curve matching session milestones
     if history_points and len(history_points) > 10:
@@ -1370,19 +1372,13 @@ def update_or_register_training_run(
     }
     m.setdefault("sessions", []).append(session_record)
 
-    # Append fine-grained history points if provided
+    # Append fine-grained history points in compressed columnar format if provided
     if history:
-        pts = m.setdefault("history_points", [])
-        for rec in history:
-            pts.append({
-                "episode": rec.get("cumulative_episode", rec.get("episode", 0)),
-                "destruction_pct": rec.get("destruction_pct", 0),
-                "stars": rec.get("stars", 0),
-                "reward": rec.get("reward", 0.0),
-                "policy_loss": rec.get("policy_loss", 0.0),
-                "value_loss": rec.get("value_loss", 0.0),
-                "entropy": rec.get("entropy", 0.0),
-            })
+        existing_pts = decompress_training_history(
+            m.get("history_compressed") or m.get("history_points", [])
+        )
+        m["history_compressed"] = compress_training_history(existing_pts + list(history))
+        m.pop("history_points", None)
 
     save_registry(registry)
 

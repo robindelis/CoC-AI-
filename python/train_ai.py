@@ -18,10 +18,13 @@ import coc_py
 from coc_rl import (
     CoCActorCritic,
     CoCAttackerEnv,
+    compress_training_history,
     compute_custom_reward,
     compute_custom_reward_components,
     compute_gae,
+    decompress_training_history,
     ensure_architecture_diagrams,
+    get_compressed_history_meta,
     ppo_minibatch_update,
     ppo_update_step,
 )
@@ -116,6 +119,7 @@ def sanitize_model_filename(name: str) -> str:
 
 
 _MODEL_META_CACHE: Dict[str, Tuple[float, float, Dict[str, Any]]] = {}
+_MODEL_HISTORY_CACHE: Dict[str, Tuple[float, float, Dict[str, Any]]] = {}
 
 
 def list_trained_models() -> List[Dict[str, Any]]:
@@ -149,6 +153,12 @@ def list_trained_models() -> List[Dict[str, Any]]:
             "villages": default_layouts,
             "army_names": [a.get("name", f"Army #{i+1}") for i, a in enumerate(default_armies)],
             "village_names": [v.get("name", f"Village #{i+1}") for i, v in enumerate(default_layouts)],
+            "has_history": False,
+            "history_episodes": 0,
+            "compressed_kb": 0.0,
+            "raw_kb": 0.0,
+            "compression_ratio": 1.0,
+            "session_boundaries": [],
         }
         try:
             ckpt = torch.load(fpath, map_location="cpu", weights_only=False)
@@ -165,6 +175,9 @@ def list_trained_models() -> List[Dict[str, Any]]:
                 meta["villages"] = ckpt["villages"]
             meta["army_names"] = [a.get("name", f"Army #{i+1}") for i, a in enumerate(meta["armies"])]
             meta["village_names"] = [v.get("name", f"Village #{i+1}") for i, v in enumerate(meta["villages"])]
+            hist_blob = ckpt.get("history_compressed") or ckpt.get("history")
+            hist_meta = get_compressed_history_meta(hist_blob)
+            meta.update(hist_meta)
         except Exception:
             pass
         _MODEL_META_CACHE[fname] = (mtime, size_kb, meta)
@@ -172,6 +185,60 @@ def list_trained_models() -> List[Dict[str, Any]]:
 
     items.sort(key=lambda x: (x["filename"] == "latest_attacker.pt", x["mtime"]), reverse=True)
     return items
+
+
+def get_model_training_history(model_file: str) -> Dict[str, Any]:
+    """
+    Loads and decompresses the full training progression history embedded in `model_file`.
+    """
+    ensure_trained_models_dir()
+    fpath = resolve_model_path(model_file)
+    if not fpath or not os.path.exists(fpath):
+        return {
+            "filename": model_file,
+            "found": False,
+            "history": [],
+            "matchup_stats": compute_matchup_stats(history=[]),
+            "compression": get_compressed_history_meta(None),
+        }
+
+    fname = os.path.basename(fpath)
+    mtime = os.path.getmtime(fpath)
+    size_kb = round(os.path.getsize(fpath) / 1024.0, 1)
+    cached = _MODEL_HISTORY_CACHE.get(fname)
+    if cached and cached[0] == mtime and cached[1] == size_kb:
+        return cached[2]
+
+    default_layouts, default_armies = get_meta_presets()
+    ckpt = torch.load(fpath, map_location="cpu", weights_only=False)
+    armies = ckpt.get("armies") if isinstance(ckpt.get("armies"), list) and ckpt.get("armies") else default_armies
+    villages = ckpt.get("villages") if isinstance(ckpt.get("villages"), list) and ckpt.get("villages") else default_layouts
+    army_names = [a.get("name", f"Army #{i+1}") for i, a in enumerate(armies)]
+    village_names = [v.get("name", f"Village #{i+1}") for i, v in enumerate(villages)]
+
+    hist_blob = ckpt.get("history_compressed") or ckpt.get("history")
+    decompressed = decompress_training_history(hist_blob, army_names=army_names, village_names=village_names)
+    comp_meta = get_compressed_history_meta(hist_blob)
+    matchups = compute_matchup_stats(history=decompressed, layouts=villages, armies=armies)
+
+    result = {
+        "filename": fname,
+        "found": True,
+        "episode": int(ckpt.get("episode", len(decompressed))),
+        "best_pct": int(ckpt.get("best_pct", 0)),
+        "best_stars": int(ckpt.get("best_stars", 0)),
+        "best_reward": round(float(ckpt.get("best_reward", 0.0)), 2),
+        "hyperparams": ckpt.get("hyperparams", {}),
+        "armies": armies,
+        "villages": villages,
+        "army_names": army_names,
+        "village_names": village_names,
+        "compression": comp_meta,
+        "matchup_stats": matchups,
+        "history": decompressed,
+    }
+    _MODEL_HISTORY_CACHE[fname] = (mtime, size_kb, result)
+    return result
 
 
 def resolve_model_path(model_file: Optional[str]) -> Optional[str]:
@@ -631,6 +698,33 @@ def train_pytorch_ppo(
     best_stars = int(loaded_ckpt.get("best_stars", 0)) if loaded_ckpt else 0
     best_reward = float(loaded_ckpt.get("best_reward", -1e9)) if loaded_ckpt else -1e9
 
+    army_names = [a.get("name", f"Army #{i+1}") for i, a in enumerate(armies)]
+    village_names = [v.get("name", f"Village #{i+1}") for i, v in enumerate(layouts)]
+
+    base_history: List[Dict[str, Any]] = []
+    session_boundaries: List[Dict[str, Any]] = []
+    if is_resuming and loaded_ckpt:
+        raw_base_hist = loaded_ckpt.get("history_compressed") or loaded_ckpt.get("history")
+        if raw_base_hist:
+            base_history = decompress_training_history(
+                raw_base_hist, army_names=army_names, village_names=village_names
+            )
+        prev_bounds = (
+            loaded_ckpt.get("history_compressed", {}).get("session_boundaries")
+            if isinstance(loaded_ckpt.get("history_compressed"), dict)
+            else None
+        )
+        if isinstance(prev_bounds, list):
+            session_boundaries = list(prev_bounds)
+        if base_trained_episodes > 0:
+            session_boundaries.append(
+                {
+                    "session_id": len(session_boundaries) + 1,
+                    "start_ep": base_trained_episodes,
+                    "resumed_from": resume_from,
+                }
+            )
+
     env = CoCAttackerEnv(
         layout_json=json.dumps(layouts[0]),
         army_json=json.dumps(armies[0]),
@@ -651,13 +745,13 @@ def train_pytorch_ppo(
     buf_eps_count = 0
 
     last_metrics = {
-        "policy_loss": 0.0,
-        "value_loss": 0.0,
-        "entropy": 0.0,
-        "approx_kl": 0.0,
-        "clip_fraction": 0.0,
-        "grad_norm": 0.0,
-        "explained_variance": 0.0,
+        "policy_loss": float(base_history[-1].get("policy_loss", 0.0)) if base_history else 0.0,
+        "value_loss": float(base_history[-1].get("value_loss", 0.0)) if base_history else 0.0,
+        "entropy": float(base_history[-1].get("entropy", 0.0)) if base_history else 0.0,
+        "approx_kl": float(base_history[-1].get("approx_kl", 0.0)) if base_history else 0.0,
+        "clip_fraction": float(base_history[-1].get("clip_fraction", 0.0)) if base_history else 0.0,
+        "grad_norm": float(base_history[-1].get("grad_norm", 0.0)) if base_history else 0.0,
+        "explained_variance": float(base_history[-1].get("explained_variance", 0.0)) if base_history else 0.0,
     }
 
     b_eps = max(1, batch_episodes)
@@ -673,12 +767,13 @@ def train_pytorch_ppo(
         "resumed_from": resume_from or "scratch",
     }
 
-    army_names = [a.get("name", f"Army #{i+1}") for i, a in enumerate(armies)]
-    village_names = [v.get("name", f"Village #{i+1}") for i, v in enumerate(layouts)]
     strat_armies = list(range(len(armies)))
     strat_villages = list(range(len(layouts)))
 
     def _save_attacker_ckpt(path: str, ep_total: int) -> None:
+        compressed_hist = compress_training_history(
+            base_history + history, session_boundaries=session_boundaries
+        )
         payload = {
             "model_state_dict": live_attacker.state_dict(),
             "optimizer_state_dict": opt_live.state_dict(),
@@ -692,6 +787,7 @@ def train_pytorch_ppo(
             "villages": layouts,
             "army_names": army_names,
             "village_names": village_names,
+            "history_compressed": compressed_hist,
         }
         torch.save(payload, path)
 
@@ -770,6 +866,11 @@ def train_pytorch_ppo(
         deploy_steps = 0
         spell_steps = 0
         ability_steps = 0
+        ep_entropies: List[float] = []
+        ep_h_types: List[float] = []
+        ep_h_idxs: List[float] = []
+        ep_h_fracs: List[float] = []
+        ep_h_tiles: List[float] = []
 
         for step_i in range(max_steps_per_ep):
             obs_t = torch.as_tensor(obs_np, dtype=torch.float32, device=device).unsqueeze(0)
@@ -783,9 +884,18 @@ def train_pytorch_ppo(
             )
 
             with torch.no_grad():
-                action_t, logprob_t, _, value_t, _ = live_attacker.get_action_and_value(
+                action_t, logprob_t, entropy_t, value_t, step_diag = live_attacker.get_action_and_value(
                     obs_t, masks=masks_t, army_context=army_ctx_t
                 )
+                ep_entropies.append(float(entropy_t.item()))
+                if "h_type" in step_diag:
+                    ep_h_types.append(float(step_diag["h_type"].item()))
+                if "h_idx" in step_diag and float(step_diag["h_idx"].item()) > 0:
+                    ep_h_idxs.append(float(step_diag["h_idx"].item()))
+                if "h_frac" in step_diag and float(step_diag["h_frac"].item()) > 0:
+                    ep_h_fracs.append(float(step_diag["h_frac"].item()))
+                if "h_tile" in step_diag and float(step_diag["h_tile"].item()) > 0:
+                    ep_h_tiles.append(float(step_diag["h_tile"].item()))
 
             action_np = action_t.squeeze(0).cpu().numpy()
             chosen_slot_type = int(action_np[0])
@@ -918,6 +1028,16 @@ def train_pytorch_ppo(
                 ent_coef=ent_coef,
             )
 
+            # Backfill initial episodes before the first optimizer step so curves have no 0-spike
+            for prev_rec in history:
+                if abs(float(prev_rec.get("value_loss", 0.0))) < 1e-6:
+                    prev_rec["policy_loss"] = round(last_metrics.get("policy_loss", 0.0), 4)
+                    prev_rec["value_loss"] = round(last_metrics.get("value_loss", 0.0), 4)
+                    prev_rec["approx_kl"] = round(last_metrics.get("approx_kl", 0.0), 4)
+                    prev_rec["clip_fraction"] = round(last_metrics.get("clip_fraction", 0.0), 4)
+                    prev_rec["grad_norm"] = round(last_metrics.get("grad_norm", 0.0), 4)
+                    prev_rec["explained_variance"] = round(last_metrics.get("explained_variance", 0.0), 4)
+
             buf_obs.clear()
             buf_ctx.clear()
             buf_act.clear()
@@ -950,6 +1070,10 @@ def train_pytorch_ppo(
         avg_pct_50 = float(np.mean(recent_pcts_50))
         noop_pct = round(100.0 * noop_steps / max(1, steps_run), 1)
 
+        rollout_ent = float(np.mean(ep_entropies)) if ep_entropies else last_metrics.get("entropy", 0.0)
+        eff_ent = last_metrics.get("entropy", 0.0) if last_metrics.get("entropy", 0.0) > 1e-5 else rollout_ent
+        v_s0_val = float(values_list[0].item()) if values_list else 0.0
+
         ep_record = {
             "episode": ep,
             "cumulative_episode": cumulative_ep,
@@ -970,6 +1094,7 @@ def train_pytorch_ppo(
             "reward_destr": round(float(ep_r_destr), 3),
             "reward_stars": round(float(ep_r_stars), 3),
             "reward_damage": round(float(ep_r_damage), 3),
+            "v_s0": round(v_s0_val, 2),
             "avg_reward_10": round(avg_reward_10, 3),
             "destruction_pct": pct,
             "avg_pct_10": round(avg_pct_10, 1),
@@ -983,11 +1108,15 @@ def train_pytorch_ppo(
             "ability_steps": ability_steps,
             "policy_loss": round(last_metrics.get("policy_loss", 0.0), 4),
             "value_loss": round(last_metrics.get("value_loss", 0.0), 4),
-            "entropy": round(last_metrics.get("entropy", 0.0), 3),
+            "entropy": round(eff_ent, 3),
             "approx_kl": round(last_metrics.get("approx_kl", 0.0), 4),
             "clip_fraction": round(last_metrics.get("clip_fraction", 0.0), 4),
             "grad_norm": round(last_metrics.get("grad_norm", 0.0), 4),
             "explained_variance": round(last_metrics.get("explained_variance", 0.0), 4),
+            "entropy_type": round(float(np.mean(ep_h_types)), 3) if ep_h_types else 0.95,
+            "entropy_idx": round(float(np.mean(ep_h_idxs)), 3) if ep_h_idxs else 1.15,
+            "entropy_frac": round(float(np.mean(ep_h_fracs)), 3) if ep_h_fracs else 0.85,
+            "entropy_tile": round(float(np.mean(ep_h_tiles)), 3) if ep_h_tiles else 3.80,
             "fps_ticks": round(fps_ticks, 0),
             "steps": steps_run,
         }

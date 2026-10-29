@@ -73,11 +73,14 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
         return int(sum(p.numel() for p in m.parameters()))
 
     stem = model.encoder.spatial_stem
-    s1_Mods = [stem[0], stem[1], stem[2]] if len(stem) >= 3 else [stem]
-    s2_Mods = [stem[3], stem[4], stem[5]] if len(stem) >= 6 else []
-    s1_params = sum(_mod_params(m) for m in s1_Mods)
-    s2_params = sum(_mod_params(m) for m in s2_Mods)
+    s1_mods = [stem[0], stem[1], stem[2]] if len(stem) >= 3 else [stem]
+    s2_mods = [stem[3], stem[4], stem[5]] if len(stem) >= 6 else []
+    s3_mods = [stem[6], stem[7], stem[8]] if len(stem) >= 9 else []
+    s1_params = sum(_mod_params(m) for m in s1_mods)
+    s2_params = sum(_mod_params(m) for m in s2_mods)
+    s3_params = sum(_mod_params(m) for m in s3_mods)
     s1_out_ch = int(getattr(stem[0], "out_channels", 32))
+    s2_out_ch = int(getattr(stem[3], "out_channels", 32)) if len(stem) >= 4 else s1_out_ch
 
     res_params = _mod_params(model.encoder.context_res)
 
@@ -95,58 +98,73 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
         {
             "id": "s1",
             "stage": "spatial",
-            "type": "Conv2d + GroupNorm + SiLU",
-            "short": "Conv2d",
-            "desc": f"{s1_out_ch} filters, 3×3, s=1, p=1, GroupNorm, SiLU ({in_ch}-ch input)",
+            "type": "Dilated Conv2d + GroupNorm + SiLU",
+            "short": "Conv d=2",
+            "desc": f"{s1_out_ch} filters, 3×3, d=2, p=2, GroupNorm(4), SiLU ({in_ch}-ch Village Grid)",
             "inputShape": [in_ch, 50, 50],
             "outputShape": [s1_out_ch, 50, 50],
-            "receptiveField": 3,
+            "receptiveField": 5,
             "params": s1_params,
             "macs": in_ch * s1_out_ch * 9 * 50 * 50,
             "color": "#2563eb",
             "border": "#60a5fa",
-            "coneLabel": "3×3",
+            "coneLabel": "3×3 d=2",
         },
         {
             "id": "s2",
             "stage": "spatial",
-            "type": "Conv2d + GroupNorm + SiLU",
-            "short": "Conv2d",
-            "desc": f"{spatial_dim} filters, 3×3, s=1, p=1, GroupNorm, SiLU",
+            "type": "Dilated Conv2d + GroupNorm + SiLU",
+            "short": "Conv d=2",
+            "desc": f"{s2_out_ch} filters, 3×3, d=2, p=2, GroupNorm(4), SiLU",
             "inputShape": [s1_out_ch, 50, 50],
-            "outputShape": [spatial_dim, 50, 50],
-            "receptiveField": 5,
+            "outputShape": [s2_out_ch, 50, 50],
+            "receptiveField": 9,
             "params": s2_params,
-            "macs": s1_out_ch * spatial_dim * 9 * 50 * 50,
+            "macs": s1_out_ch * s2_out_ch * 9 * 50 * 50,
             "color": "#2563eb",
             "border": "#60a5fa",
-            "coneLabel": "3×3",
+            "coneLabel": "3×3 d=2",
         },
         {
             "id": "s3",
             "stage": "spatial",
-            "type": "Dilated Residual Block",
-            "short": "ResBlock",
-            "desc": f"2×Conv {spatial_dim} ch, 3×3, d=2 (p=2) → d=1 (p=1), skip+, GroupNorm, SiLU",
-            "inputShape": [spatial_dim, 50, 50],
+            "type": "Conv2d + GroupNorm + SiLU",
+            "short": "Conv 3×3",
+            "desc": f"{spatial_dim} filters, 3×3, d=1, p=1, GroupNorm(8), SiLU",
+            "inputShape": [s2_out_ch, 50, 50],
             "outputShape": [spatial_dim, 50, 50],
             "receptiveField": 11,
+            "params": s3_params,
+            "macs": s2_out_ch * spatial_dim * 9 * 50 * 50,
+            "color": "#1d4ed8",
+            "border": "#60a5fa",
+            "coneLabel": "3×3 d=1",
+        },
+        {
+            "id": "s4",
+            "stage": "spatial",
+            "type": "Residual Context Block",
+            "short": "ResBlock",
+            "desc": f"2×Conv {spatial_dim} ch, 3×3, p=1, GroupNorm(8), Residual Skip (+), SiLU",
+            "inputShape": [spatial_dim, 50, 50],
+            "outputShape": [spatial_dim, 50, 50],
+            "receptiveField": 15,
             "params": res_params,
             "macs": 2 * (spatial_dim * spatial_dim * 9 * 50 * 50),
             "color": "#7c3aed",
             "border": "#a78bfa",
-            "coneLabel": "3×3 d=2",
+            "coneLabel": "2×3×3 + Skip",
             "hasSkipArc": True,
         },
         {
             "id": "g1",
             "stage": "global",
             "type": "Strided Conv2d + SiLU",
-            "short": "Conv2d",
+            "short": "Conv s=2",
             "desc": f"{g1_ch} filters, 3×3, stride=2, pad=1, SiLU",
             "inputShape": [spatial_dim, 50, 50],
             "outputShape": [g1_ch, 25, 25],
-            "receptiveField": 15,
+            "receptiveField": 19,
             "params": g1_params,
             "macs": spatial_dim * g1_ch * 9 * 25 * 25,
             "color": "#2563eb",
@@ -157,11 +175,11 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
             "id": "g2",
             "stage": "global",
             "type": "Strided Conv2d + SiLU",
-            "short": "Conv2d",
+            "short": "Conv s=2",
             "desc": f"{g2_ch} filters, 3×3, stride=2, pad=1, SiLU",
             "inputShape": [g1_ch, 25, 25],
             "outputShape": [g2_ch, 13, 13],
-            "receptiveField": 23,
+            "receptiveField": 27,
             "params": g2_params,
             "macs": g1_ch * g2_ch * 9 * 13 * 13,
             "color": "#2563eb",
@@ -202,7 +220,7 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
             "id": "g5",
             "stage": "global",
             "type": "Linear + LayerNorm + SiLU",
-            "short": "Linear",
+            "short": "GlobalTower",
             "desc": f"Linear({g2_ch * 16} → {embed_dim}) + LayerNorm({embed_dim}) + SiLU",
             "inputShape": [g2_ch * 16],
             "outputShape": [embed_dim],
@@ -215,24 +233,25 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
         },
         {
             "id": "head_army_ctx",
-            "stage": "heads",
-            "type": "army_context_proj",
+            "stage": "global",
+            "type": "army_context_proj (Fusion)",
             "short": "ArmyCtx",
-            "desc": f"Linear({army_ctx_dim} → {embed_dim}) + LayerNorm({embed_dim}) + SiLU",
+            "desc": f"army_context({army_ctx_dim}) → Linear({army_ctx_dim} → {embed_dim}) + LayerNorm({embed_dim}) + SiLU ⊕ global_emb",
             "inputShape": [army_ctx_dim],
             "outputShape": [embed_dim],
             "receptiveField": 50,
             "params": _mod_params(model.army_context_proj),
             "macs": army_ctx_dim * embed_dim,
-            "color": "#059669",
-            "border": "#34d399",
+            "color": "#0891b2",
+            "border": "#38bdf8",
+            "coneLabel": "64→256 ⊕",
         },
         {
             "id": "head_slot_type",
             "stage": "heads",
-            "type": "slot_type_head",
+            "type": "slot_type_head (Head 1)",
             "short": "TypeHead",
-            "desc": f"Linear({embed_dim} → 7 Action Types)",
+            "desc": f"Linear({embed_dim} → 7) + 1.4·tanh(z/3) + slot_type mask",
             "inputShape": [embed_dim],
             "outputShape": [7],
             "receptiveField": 50,
@@ -244,9 +263,9 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
         {
             "id": "head_slot_idx",
             "stage": "heads",
-            "type": "slot_idx_head",
+            "type": "slot_idx_head (Head 2)",
             "short": "IdxHead",
-            "desc": f"MLP({embed_dim + 7} → 128 → 10 Loadout Slots, SiLU)",
+            "desc": f"cat[global_emb({embed_dim}), one_hot(type)(7)] → MLP({embed_dim + 7} → 128 → 10) + 1.6·tanh(z/3) + slot_idx mask",
             "inputShape": [embed_dim + 7],
             "outputShape": [10],
             "receptiveField": 50,
@@ -258,9 +277,9 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
         {
             "id": "head_deploy_fraction",
             "stage": "heads",
-            "type": "deploy_fraction_head",
+            "type": "deploy_fraction_head (Head 3)",
             "short": "FracHead",
-            "desc": f"MLP({embed_dim + 17} → 128 → {num_frac_bins} Troop Fraction Bins α ∈ [0,1], SiLU)",
+            "desc": f"cat[global_emb({embed_dim}), one_hot(type)(7), one_hot(idx)(10)] → MLP({embed_dim + 17} → 128 → {num_frac_bins})",
             "inputShape": [embed_dim + 17],
             "outputShape": [num_frac_bins],
             "receptiveField": 50,
@@ -272,9 +291,9 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
         {
             "id": "head_tile_conv",
             "stage": "heads",
-            "type": "tile_conv_head",
+            "type": "tile_cond_proj + tile_conv_head (Head 4)",
             "short": "TileHead",
-            "desc": f"Cond({embed_dim + 7} → {spatial_dim}) + Conv 3×3({spatial_dim} → 32) + Conv 1×1(32 → 1)",
+            "desc": f"FiLM(spatial_feat {spatial_dim}×50×50, Linear({embed_dim + 7}→{spatial_dim})) + Conv 3×3({spatial_dim}→32) + Conv 1×1(32→1) + spatial_prior",
             "inputShape": [spatial_dim, 50, 50],
             "outputShape": [1, 50, 50],
             "receptiveField": 50,
@@ -286,9 +305,9 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
         {
             "id": "head_critic",
             "stage": "heads",
-            "type": "critic_head",
+            "type": "critic_head (Head 5)",
             "short": "Critic",
-            "desc": f"MLP({embed_dim} → 128 → 1 Value V(s), SiLU)",
+            "desc": f"MLP({embed_dim} → 128 → 1 Value V(s), SiLU, 2.5× Actor LR)",
             "inputShape": [embed_dim],
             "outputShape": [1],
             "receptiveField": 50,
@@ -351,9 +370,17 @@ class _TracedModelWrapper(nn.Module):
         for name, child in model.named_children():
             setattr(self, name, child)
 
-    def forward(self, obs: torch.Tensor) -> Any:
+    def forward(
+        self, obs: torch.Tensor, army_context: Optional[torch.Tensor] = None
+    ) -> Any:
         self.captured_outputs.clear()
-        out = self.model.forward(obs)
+        if army_context is not None and (
+            isinstance(self.model, CoCActorCritic)
+            or type(self.model).__name__ == "CoCActorCritic"
+        ):
+            out = self.model.forward(obs, army_context)
+        else:
+            out = self.model.forward(obs)
         if isinstance(out, dict):
             for k, v in out.items():
                 if hasattr(v, "tensor_nodes") and v.tensor_nodes:
@@ -370,17 +397,32 @@ def _render_torchview_variant(
     out_dir: Optional[str] = None,
 ) -> Dict[str, str]:
     wrapper = _TracedModelWrapper(model)
+    is_actor_critic = (
+        isinstance(model, CoCActorCritic)
+        or type(model).__name__ == "CoCActorCritic"
+    )
+    army_ctx_dim = int(getattr(model, "army_context_dim", 64))
+    effective_input_size: Any = (
+        [input_size, (input_size[0], army_ctx_dim)]
+        if is_actor_critic
+        else input_size
+    )
     with _named_module_classes(model):
         graph = draw_graph(
             wrapper,
-            input_size=input_size,
+            input_size=effective_input_size,
             expand_nested=True,
             depth=depth,
             graph_name=graph_name,
             device="cpu",
         )
-        for root_node in graph.root_container:
-            root_node.name = "obs (input)"
+        root_names = (
+            ["obs (1×10×50×50)", f"army_context (1×{army_ctx_dim})"]
+            if is_actor_critic
+            else ["obs (input)"]
+        )
+        for idx, root_node in enumerate(graph.root_container):
+            root_node.name = root_names[idx] if idx < len(root_names) else f"input_{idx}"
         for out_key, tensor_nodes in wrapper.captured_outputs.items():
             if tensor_nodes:
                 tensor_nodes[-1].name = f"{out_key} (output)"
@@ -451,7 +493,11 @@ def ensure_architecture_diagrams(
         input_size = (1, in_ch, 50, 50)
 
     current_hash = compute_networks_hash(model)
-    live_spec = extract_live_layer_specs(model) if isinstance(model, CoCActorCritic) else {}
+    live_spec = (
+        extract_live_layer_specs(model)
+        if (isinstance(model, CoCActorCritic) or hasattr(model, "encoder"))
+        else {}
+    )
 
     if not force and os.path.exists(MANIFEST_PATH):
         try:

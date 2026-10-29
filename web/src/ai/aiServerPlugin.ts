@@ -351,7 +351,8 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
       const g2Ch = g2ChMatch ? Number(g2ChMatch[1]) : 128;
 
       const s1Params = inCh * s1Ch * 9 + s1Ch * 2;
-      const s2Params = s1Ch * spatialDim * 9 + spatialDim * 2;
+      const s2Params = s1Ch * s1Ch * 9 + s1Ch * 2;
+      const s3Params = s1Ch * spatialDim * 9 + spatialDim * 2;
       const resParams = 2 * (spatialDim * spatialDim * 9 + spatialDim * 2);
       const g1Params = spatialDim * g1Ch * 9 + g1Ch;
       const g2Params = g1Ch * g2Ch * 9 + g2Ch;
@@ -368,58 +369,73 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
         {
           id: 's1',
           stage: 'spatial' as const,
-          type: 'Conv2d + GroupNorm + SiLU',
-          short: 'Conv2d',
-          desc: `${s1Ch} filters, 3×3, s=1, p=1, GroupNorm, SiLU (${inCh}-ch input)`,
+          type: 'Dilated Conv2d + GroupNorm + SiLU',
+          short: 'Conv d=2',
+          desc: `${s1Ch} filters, 3×3, d=2, p=2, GroupNorm(4), SiLU (${inCh}-ch Village Grid)`,
           inputShape: [inCh, 50, 50],
           outputShape: [s1Ch, 50, 50],
-          receptiveField: 3,
+          receptiveField: 5,
           params: s1Params,
           macs: inCh * s1Ch * 9 * 50 * 50,
           color: '#2563eb',
           border: '#60a5fa',
-          coneLabel: '3×3',
+          coneLabel: '3×3 d=2',
         },
         {
           id: 's2',
           stage: 'spatial' as const,
-          type: 'Conv2d + GroupNorm + SiLU',
-          short: 'Conv2d',
-          desc: `${spatialDim} filters, 3×3, s=1, p=1, GroupNorm, SiLU`,
+          type: 'Dilated Conv2d + GroupNorm + SiLU',
+          short: 'Conv d=2',
+          desc: `${s1Ch} filters, 3×3, d=2, p=2, GroupNorm(4), SiLU`,
           inputShape: [s1Ch, 50, 50],
-          outputShape: [spatialDim, 50, 50],
-          receptiveField: 5,
+          outputShape: [s1Ch, 50, 50],
+          receptiveField: 9,
           params: s2Params,
-          macs: s1Ch * spatialDim * 9 * 50 * 50,
+          macs: s1Ch * s1Ch * 9 * 50 * 50,
           color: '#2563eb',
           border: '#60a5fa',
-          coneLabel: '3×3',
+          coneLabel: '3×3 d=2',
         },
         {
           id: 's3',
           stage: 'spatial' as const,
-          type: 'Dilated Residual Block',
-          short: 'ResBlock',
-          desc: `2×Conv ${spatialDim} ch, 3×3, d=2 (p=2) → d=1 (p=1), skip+, GroupNorm, SiLU`,
-          inputShape: [spatialDim, 50, 50],
+          type: 'Conv2d + GroupNorm + SiLU',
+          short: 'Conv 3×3',
+          desc: `${spatialDim} filters, 3×3, d=1, p=1, GroupNorm(8), SiLU`,
+          inputShape: [s1Ch, 50, 50],
           outputShape: [spatialDim, 50, 50],
           receptiveField: 11,
+          params: s3Params,
+          macs: s1Ch * spatialDim * 9 * 50 * 50,
+          color: '#1d4ed8',
+          border: '#60a5fa',
+          coneLabel: '3×3 d=1',
+        },
+        {
+          id: 's4',
+          stage: 'spatial' as const,
+          type: 'Residual Context Block',
+          short: 'ResBlock',
+          desc: `2×Conv ${spatialDim} ch, 3×3, p=1, GroupNorm(8), Residual Skip (+), SiLU`,
+          inputShape: [spatialDim, 50, 50],
+          outputShape: [spatialDim, 50, 50],
+          receptiveField: 15,
           params: resParams,
           macs: 2 * (spatialDim * spatialDim * 9 * 50 * 50),
           color: '#7c3aed',
           border: '#a78bfa',
-          coneLabel: '3×3 d=2',
+          coneLabel: '2×3×3 + Skip',
           hasSkipArc: true,
         },
         {
           id: 'g1',
           stage: 'global' as const,
           type: 'Strided Conv2d + SiLU',
-          short: 'Conv2d',
+          short: 'Conv s=2',
           desc: `${g1Ch} filters, 3×3, stride=2, pad=1, SiLU`,
           inputShape: [spatialDim, 50, 50],
           outputShape: [g1Ch, 25, 25],
-          receptiveField: 15,
+          receptiveField: 19,
           params: g1Params,
           macs: spatialDim * g1Ch * 9 * 25 * 25,
           color: '#2563eb',
@@ -430,11 +446,11 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           id: 'g2',
           stage: 'global' as const,
           type: 'Strided Conv2d + SiLU',
-          short: 'Conv2d',
+          short: 'Conv s=2',
           desc: `${g2Ch} filters, 3×3, stride=2, pad=1, SiLU`,
           inputShape: [g1Ch, 25, 25],
           outputShape: [g2Ch, 13, 13],
-          receptiveField: 23,
+          receptiveField: 27,
           params: g2Params,
           macs: g1Ch * g2Ch * 9 * 13 * 13,
           color: '#2563eb',
@@ -475,7 +491,7 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           id: 'g5',
           stage: 'global' as const,
           type: 'Linear + LayerNorm + SiLU',
-          short: 'Linear',
+          short: 'GlobalTower',
           desc: `Linear(${g2Ch * 16} → ${embedDim}) + LayerNorm(${embedDim}) + SiLU`,
           inputShape: [g2Ch * 16],
           outputShape: [embedDim],
@@ -488,17 +504,18 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
         },
         {
           id: 'head_army_ctx',
-          stage: 'heads' as const,
-          type: 'army_context_proj',
+          stage: 'global' as const,
+          type: 'army_context_proj (Fusion)',
           short: 'ArmyCtx',
-          desc: `Linear(${armyCtxDim} → ${embedDim}) + LayerNorm(${embedDim}) + SiLU`,
+          desc: `army_context(${armyCtxDim}) → Linear(${armyCtxDim} → ${embedDim}) + LayerNorm(${embedDim}) + SiLU ⊕ global_emb`,
           inputShape: [armyCtxDim],
           outputShape: [embedDim],
           receptiveField: 50,
           params: armyCtxParams,
           macs: armyCtxDim * embedDim,
-          color: '#059669',
-          border: '#34d399',
+          color: '#0891b2',
+          border: '#38bdf8',
+          coneLabel: '64→256 ⊕',
         },
         {
           id: 'head_slot_type',
@@ -654,6 +671,35 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
 
     if (req.method === 'GET' && pathname === '/api/ai/models') {
       sendJson(res, 200, { models: savedModels });
+      return true;
+    }
+
+    if (req.method === 'GET' && pathname === '/api/ai/models/history') {
+      const mf = urlObj.searchParams.get('model_file') ?? 'latest_attacker.pt';
+      const found = savedModels.find((m) => m.filename === mf) ?? savedModels[0];
+      sendJson(res, 200, {
+        filename: found.filename,
+        found: true,
+        episode: found.episode,
+        best_pct: found.best_pct,
+        best_stars: found.best_stars,
+        best_reward: found.best_reward,
+        hyperparams: found.hyperparams,
+        armies: found.armies,
+        villages: found.villages,
+        army_names: found.army_names,
+        village_names: found.village_names,
+        compression: {
+          has_history: true,
+          history_episodes: trainingState.history.length,
+          compressed_kb: 1.4,
+          raw_kb: 28.0,
+          compression_ratio: 20.0,
+          session_boundaries: [],
+        },
+        matchup_stats: computeMatchupStats(trainingState.history),
+        history: trainingState.history,
+      });
       return true;
     }
 
