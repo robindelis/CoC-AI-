@@ -17,7 +17,7 @@ export type HeadFilterId =
   | 'head_tile_conv'
   | 'head_critic';
 
-interface HeadPipelineSpec {
+interface HeadMetaSpec {
   id: Exclude<HeadFilterId, 'all' | 'split_all'>;
   index: number;
   title: string;
@@ -26,295 +26,76 @@ interface HeadPipelineSpec {
   color: string;
   border: string;
   outputDim: string;
-  distribution: string;
   params: number;
-  activeWhen: string;
-  inputsUsed: Array<{ label: string; shape: string; color: string }>;
-  stages: Array<{
-    name: string;
-    op: string;
-    inShape: string;
-    outShape: string;
-    detail: string;
-    color: string;
-  }>;
+  backboneParams: number;
   formula: string;
-  maskRule: string;
-  entropyWeight: string;
 }
 
-const HEAD_PIPELINES: HeadPipelineSpec[] = [
+const HEAD_META: HeadMetaSpec[] = [
   {
     id: 'head_slot_type',
     index: 1,
-    title: 'Head 1 • Action Type (slot_type_head)',
+    title: 'Head 1 Sub-Network • Action Type Policy (slot_type_head)',
     shortTitle: 'H1: Action Type (7)',
-    moduleName: 'self.slot_type_head',
+    moduleName: 'encoder + army_context_proj + slot_type_head',
     color: '#ca8a04',
     border: '#facc15',
-    outputDim: '7 logits',
-    distribution: 'Categorical(7)',
+    outputDim: '7 Action Types',
     params: 1799,
-    activeWhen: 'Every decision step t',
-    inputsUsed: [
-      { label: 'global_tower(obs)', shape: '256-D', color: '#34d399' },
-      { label: 'army_context_proj(ctx)', shape: '256-D', color: '#38bdf8' },
-    ],
-    stages: [
-      {
-        name: 'State Fusion ⊕',
-        op: 'global_emb = spatial_emb + army_emb',
-        inShape: '256 + 256',
-        outShape: '256-D',
-        detail: 'Fuses 10×50×50 CNN global tower with 64-D army inventory projection',
-        color: '#059669',
-      },
-      {
-        name: 'Linear Projection',
-        op: 'nn.Linear(256, 7)',
-        inShape: '256-D',
-        outShape: '7-D',
-        detail: '0=NoOp, 1=Troop, 2=Hero, 3=HeroAbility, 4=Siege, 5=PopSiege, 6=Spell',
-        color: '#ca8a04',
-      },
-      {
-        name: 'Logit Bounding',
-        op: '1.4 · tanh(z / 3.0)',
-        inShape: '7-D',
-        outShape: '7-D',
-        detail: 'Smoothly bounds raw logits to [-1.4, +1.4] to prevent entropy collapse',
-        color: '#d97706',
-      },
-      {
-        name: 'Action Mask',
-        op: 'masked_fill(~slot_type_mask, -1e8)',
-        inShape: '7-D + bool[7]',
-        outShape: 'Categorical(7)',
-        detail: 'Masks depleted categories; prevents step-0 NoOp while troops remain',
-        color: '#eab308',
-      },
-    ],
-    formula: 'z_type = 1.4 · tanh(W_type · (g_spatial + g_army) / 3.0) + M_type',
-    maskRule: 'masks["slot_type"] (B, 7) • Blocks NoOp on step 0 & unavailable categories',
-    entropyWeight: '2.2 × (H(π_type) / ln 7)',
+    backboneParams: 813088,
+    formula: 'π(type | s) = Categorical(1.4 · tanh(Linear_256→7(g_spatial ⊕ g_army) / 3) + M_type)',
   },
   {
     id: 'head_slot_idx',
     index: 2,
-    title: 'Head 2 • Loadout Slot Index (slot_idx_head)',
+    title: 'Head 2 Sub-Network • Autoregressive Loadout Slot Index (slot_idx_head)',
     shortTitle: 'H2: Slot Index (10)',
-    moduleName: 'self.slot_idx_head',
+    moduleName: 'encoder + army_context_proj + slot_type_head + slot_idx_head',
     color: '#0284c7',
     border: '#38bdf8',
-    outputDim: '10 logits',
-    distribution: 'Categorical(10)',
+    outputDim: '10 Loadout Slots',
     params: 35082,
-    activeWhen: 'chosen_type ∈ {1=Troop, 2=Hero, 3=Ability, 6=Spell}',
-    inputsUsed: [
-      { label: 'global_emb (obs ⊕ army)', shape: '256-D', color: '#34d399' },
-      { label: 'one_hot(chosen_type)', shape: '7-D', color: '#facc15' },
-    ],
-    stages: [
-      {
-        name: 'Autoregressive Cat',
-        op: 'cond_emb = cat([global_emb, type_1hot])',
-        inShape: '256 + 7',
-        outShape: '263-D',
-        detail: 'Conditions slot selection on the sampled Action Type from Head 1',
-        color: '#0891b2',
-      },
-      {
-        name: 'Hidden MLP Layer',
-        op: 'Linear(263 → 128) + SiLU',
-        inShape: '263-D',
-        outShape: '128-D',
-        detail: 'Cross-references remaining army inventory with chosen action category',
-        color: '#0284c7',
-      },
-      {
-        name: 'Slot Logits + Tanh',
-        op: '1.6 · tanh(Linear(128 → 10) / 3.0)',
-        inShape: '128-D',
-        outShape: '10-D',
-        detail: 'Produces bounded logits across up to 10 army loadout slots',
-        color: '#2563eb',
-      },
-      {
-        name: 'Per-Type Slot Mask',
-        op: 'masks["slot_idx"][B, chosen_type]',
-        inShape: '10-D + bool[7,10]',
-        outShape: 'Categorical(10)',
-        detail: 'Slices the (7, 10) mask row for chosen_type so only non-empty slots can be picked',
-        color: '#38bdf8',
-      },
-    ],
-    formula: 'z_idx = 1.6 · tanh(MLP_idx([global_emb, one_hot(a_type)]) / 3.0) + M_idx[a_type]',
-    maskRule: 'masks["slot_idx"][batch, chosen_type] (B, 10) • Masks exhausted unit/spell slots',
-    entropyWeight: '2.2 × (uses_idx · H(π_idx) / ln 10)',
+    backboneParams: 814887,
+    formula: 'π(idx | s, type) = Categorical(1.6 · tanh(MLP_263→128→10([g_emb ‖ 1hot(type)]) / 3) + M_idx[type])',
   },
   {
     id: 'head_deploy_fraction',
     index: 3,
-    title: 'Head 3 • Troop Wave Fraction (deploy_fraction_head)',
+    title: 'Head 3 Sub-Network • Autoregressive Troop Wave Fraction (deploy_fraction_head)',
     shortTitle: 'H3: Deploy Frac (5)',
-    moduleName: 'self.deploy_fraction_head',
+    moduleName: 'encoder + army_context_proj + H1 + H2 + deploy_fraction_head',
     color: '#9333ea',
     border: '#c084fc',
-    outputDim: '5 bins α ∈ [0,1]',
-    distribution: 'Categorical(5)',
+    outputDim: '5 Wave Bins α∈[0,1]',
     params: 35717,
-    activeWhen: 'chosen_type == 1 (Deploy Troop)',
-    inputsUsed: [
-      { label: 'global_emb (obs ⊕ army)', shape: '256-D', color: '#34d399' },
-      { label: 'one_hot(chosen_type)', shape: '7-D', color: '#facc15' },
-      { label: 'one_hot(chosen_idx)', shape: '10-D', color: '#38bdf8' },
-    ],
-    stages: [
-      {
-        name: '2-Step Autoreg Cat',
-        op: 'cat([global_emb, type_1hot, idx_1hot])',
-        inShape: '256 + 7 + 10',
-        outShape: '273-D',
-        detail: 'Conditions wave size on both Action Type (Head 1) and Troop Slot (Head 2)',
-        color: '#7c3aed',
-      },
-      {
-        name: 'Fraction MLP',
-        op: 'Linear(273 → 128) + SiLU',
-        inShape: '273-D',
-        outShape: '128-D',
-        detail: 'Distinguishes single-unit funnel test drops from full-squad smash waves',
-        color: '#9333ea',
-      },
-      {
-        name: 'Bin Logits + Tanh',
-        op: '1.4 · tanh(Linear(128 → 5) / 3.0)',
-        inShape: '128-D',
-        outShape: '5-D',
-        detail: 'Bins: α ∈ {0.0 (1 unit), 0.25 (25%), 0.50 (50%), 0.75 (75%), 1.00 (All)}',
-        color: '#a855f7',
-      },
-      {
-        name: 'Batch Count Calc',
-        op: 'max(1, round(avail_count × α))',
-        inShape: 'Categorical(5)',
-        outShape: 'DeployTroopBatch',
-        detail: 'Converts sampled fraction bin into exact integer troop count for the engine',
-        color: '#c084fc',
-      },
-    ],
-    formula: 'z_frac = 1.4 · tanh(MLP_frac([global_emb, 1hot(a_type), 1hot(a_idx)]) / 3.0)',
-    maskRule: 'Active when chosen_type == 1 (uses_frac = 1.0); all 5 bins valid',
-    entropyWeight: '2.2 × (uses_frac · H(π_frac) / ln 5)',
+    backboneParams: 849969,
+    formula: 'π(α | s, type, idx) = Categorical(1.4 · tanh(MLP_273→128→5([g_emb ‖ 1hot(type) ‖ 1hot(idx)]) / 3))',
   },
   {
     id: 'head_tile_conv',
     index: 4,
-    title: 'Head 4 • 50×50 Spatial Tile Pointer (tile_cond_proj + tile_conv_head)',
+    title: 'Head 4 Sub-Network • Dual-Pathway 50×50 Spatial Tile Pointer (tile_conv_head)',
     shortTitle: 'H4: Tile Pointer (2500)',
-    moduleName: 'self.tile_cond_proj + self.tile_conv_head',
+    moduleName: 'spatial_stem + global_tower + army_ctx + tile_cond_proj + tile_conv_head',
     color: '#d97706',
     border: '#facc15',
-    outputDim: '50×50 = 2,500 tiles',
-    distribution: 'Categorical(2500)',
+    outputDim: '1×50×50 (2,500 Tiles)',
     params: 35393,
-    activeWhen: 'chosen_type ∈ {1=Troop, 2=Hero, 4=Siege, 6=Spell}',
-    inputsUsed: [
-      { label: 'spatial_feat (CNN Stem)', shape: '64×50×50', color: '#60a5fa' },
-      { label: 'cond_emb (global ⊕ type)', shape: '263-D', color: '#facc15' },
-      { label: 'obs Priors (Ch 0,1,2,5,6)', shape: '10×50×50', color: '#fb923c' },
-    ],
-    stages: [
-      {
-        name: 'FiLM Conditioning',
-        op: 'c = Linear(263 → 64).view(B,64,1,1)',
-        inShape: '64×50×50 + 263-D',
-        outShape: '64×50×50',
-        detail: 'fused = SiLU(spatial_feat * (1 + 0.5·tanh(c)) + c) modulates every tile by action type + army',
-        color: '#b45309',
-      },
-      {
-        name: 'Pointer Conv Tower',
-        op: 'Conv3×3(64→32) + SiLU → Conv1×1(32→1)',
-        inShape: '64×50×50',
-        outShape: '1×50×50 (2500)',
-        detail: 'Preserves 1-to-1 tile alignment across all 2,500 battlefield coordinates',
-        color: '#d97706',
-      },
-      {
-        name: 'Multi-Scale Prior',
-        op: '2.2·z_raw + (1-s)·8·Breach + s·7.5·Combat',
-        inShape: '2500 + obs pools',
-        outShape: '2500-D',
-        detail: '15×15×2 AvgPool threat/TH breach field for units; 7×7 active combat focus for spells',
-        color: '#ea580c',
-      },
-      {
-        name: 'Green / Spell Mask',
-        op: 'where(needs_green, valid_green, spell_mask)',
-        inShape: '2500-D + bool[2500]',
-        outShape: 'Categorical(2500)',
-        detail: 'Enforces legal perimeter grass for deployments & active combat (non-TH halo) for spells',
-        color: '#f59e0b',
-      },
-    ],
-    formula: 'z_tile = 2.2 · Conv1×1(SiLU(Conv3×3(FiLM(F_50×50, c_263)))) + Prior_spatial + M_tile',
-    maskRule: 'Units: masks["tile"] (green perimeter) • Spells: near_allies & near_buildings & ~TH_halo',
-    entropyWeight: '0.12 × (uses_tile · H(π_tile) / 6.743)',
+    backboneParams: 814887,
+    formula: 'π(x,y | s, type) = Categorical(2.2 · Conv1×1(SiLU(Conv3×3(FiLM(F_64×50×50, c_263→64)))) + Prior_50×50 + M_tile)',
   },
   {
     id: 'head_critic',
     index: 5,
-    title: 'Head 5 • State-Value Critic V(s) (critic_head)',
+    title: 'Head 5 Sub-Network • State-Value Critic V(s) (critic_head)',
     shortTitle: 'H5: Value Critic (1)',
-    moduleName: 'self.critic_head',
+    moduleName: 'encoder + army_context_proj + critic_head',
     color: '#16a34a',
     border: '#4ade80',
     outputDim: 'Scalar V(s) ∈ ℝ',
-    distribution: 'MSE vs GAE Return R_t',
     params: 33025,
-    activeWhen: 'Every step t + bootstrap V(s_T)',
-    inputsUsed: [
-      { label: 'global_tower(obs)', shape: '256-D', color: '#34d399' },
-      { label: 'army_context_proj(ctx)', shape: '256-D', color: '#38bdf8' },
-    ],
-    stages: [
-      {
-        name: 'State Fusion ⊕',
-        op: 'global_emb = spatial_emb + army_emb',
-        inShape: '256 + 256',
-        outShape: '256-D',
-        detail: 'Evaluates remaining base HP/DPS alongside remaining army inventory & clock',
-        color: '#059669',
-      },
-      {
-        name: 'Critic Hidden Layer',
-        op: 'nn.Linear(256, 128) + nn.SiLU()',
-        inShape: '256-D',
-        outShape: '128-D',
-        detail: 'Nonlinear state-value representation trained at 2.5× Actor learning rate',
-        color: '#15803d',
-      },
-      {
-        name: 'Scalar Value Out',
-        op: 'nn.Linear(128, 1).squeeze(-1)',
-        inShape: '128-D',
-        outShape: 'Scalar V(s)',
-        detail: 'Predicts expected discounted return R_t (0..100 pt scale) for GAE-λ advantage estimation',
-        color: '#16a34a',
-      },
-      {
-        name: 'GAE & Value Loss',
-        op: 'L_VF = 0.5 · MSE(V(s_t), R_t)',
-        inShape: 'V(s_t), R_t',
-        outShape: 'δ_t = r_t + γV(s_{t+1}) - V(s_t)',
-        detail: 'Provides low-variance baseline for Actor policy gradient updates',
-        color: '#22c55e',
-      },
-    ],
-    formula: 'V(s) = W_v2 · SiLU(W_v1 · (g_spatial(obs) + g_army(army_context)))',
-    maskRule: 'Unmasked scalar state-value estimation • Optimizer group lr = 2.5 × actor_lr',
-    entropyWeight: 'Critic Loss Term: 0.5 × MSE(V(s), R_GAE)',
+    backboneParams: 813088,
+    formula: 'V(s) = Linear_128→1(SiLU(Linear_256→128(g_spatial(obs) ⊕ g_army(army_context))))',
   },
 ];
 
@@ -616,6 +397,329 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
     DEFAULT_LAYERS.find((l) => l.id === 'head_army_ctx')!;
   const hoveredSummary = activeLayers.find((l) => l.id === hoveredBlockId) ?? null;
 
+  // =========================================================================
+  // SHARED 3D ISOMETRIC VOLUMETRIC PRIMITIVES (CUBOIDS, BARS, STACKED BARS, CONES)
+  // =========================================================================
+  const drawCuboid = (opts: {
+    key: string;
+    cx: number;
+    cy: number;
+    c: number;
+    h: number;
+    w: number;
+    color: string;
+    borderColor: string;
+    topLabel: string;
+    subLabel: string;
+    shapeLabel: string;
+    scale?: number;
+    isSelected?: boolean;
+    isHovered?: boolean;
+    hasSkipArc?: boolean;
+    onClick?: () => void;
+    onHover?: (id: string | null) => void;
+  }) => {
+    const sc = opts.scale ?? 1.0;
+    const sideH = Math.round(Math.max(22, Math.min(82, 18 + (opts.h / 50) * 64)) * sc);
+    const depth = Math.round(
+      Math.max(10, Math.min(40, Math.round(Math.log2(Math.max(2, opts.c)) * 5.2))) * sc
+    );
+    const dx = Math.round(depth * 0.68);
+    const dy = Math.round(depth * 0.38);
+
+    const x0 = opts.cx - depth / 2;
+    const y0 = opts.cy - sideH / 2;
+
+    const frontPts = `${x0},${y0} ${x0 + depth},${y0} ${x0 + depth},${y0 + sideH} ${x0},${y0 + sideH}`;
+    const topPts = `${x0},${y0} ${x0 + dx},${y0 - dy} ${x0 + depth + dx},${y0 - dy} ${x0 + depth},${y0}`;
+    const rightPts = `${x0 + depth},${y0} ${x0 + depth + dx},${y0 - dy} ${x0 + depth + dx},${y0 + sideH - dy} ${x0 + depth},${y0 + sideH}`;
+
+    const sliceCount = Math.min(5, Math.max(2, Math.floor(opts.c / 24)));
+    const slices = Array.from({ length: sliceCount - 1 }, (_, i) => {
+      const frac = (i + 1) / sliceCount;
+      const sx = x0 + frac * depth;
+      return (
+        <g key={i} opacity={0.32}>
+          <line x1={sx} y1={y0} x2={sx} y2={y0 + sideH} stroke="#0f172a" strokeWidth={1} />
+          <line x1={sx} y1={y0} x2={sx + dx} y2={y0 - dy} stroke="#0f172a" strokeWidth={1} />
+        </g>
+      );
+    });
+
+    const strokeW = opts.isSelected ? 2.4 : opts.isHovered ? 2.0 : 1.25;
+    const strokeCol = opts.isSelected
+      ? '#facc15'
+      : opts.isHovered
+      ? '#ffffff'
+      : opts.borderColor;
+
+    return (
+      <g
+        key={opts.key}
+        style={{ cursor: opts.onClick ? 'pointer' : 'default' }}
+        onClick={opts.onClick}
+        onMouseEnter={() => opts.onHover?.(opts.key)}
+        onMouseLeave={() => opts.onHover?.(null)}
+      >
+        {opts.hasSkipArc && (
+          <g>
+            <path
+              d={`M ${x0 - 20} ${y0 - 4} Q ${opts.cx + dx / 2} ${y0 - dy - 24} ${
+                x0 + depth + dx + 6
+              } ${y0 - 4}`}
+              fill="none"
+              stroke="#facc15"
+              strokeWidth={1.8}
+              strokeDasharray="4 2"
+            />
+            <circle
+              cx={x0 + depth + dx + 6}
+              cy={y0 - 4}
+              r={6}
+              fill="#0f172a"
+              stroke="#facc15"
+              strokeWidth={1.4}
+            />
+            <text
+              x={x0 + depth + dx + 6}
+              y={y0 - 1}
+              textAnchor="middle"
+              fill="#facc15"
+              fontSize={9}
+              fontWeight={800}
+            >
+              +
+            </text>
+          </g>
+        )}
+
+        <polygon points={topPts} fill={opts.color} fillOpacity={0.88} stroke={strokeCol} strokeWidth={strokeW} />
+        <polygon points={rightPts} fill={opts.color} fillOpacity={0.55} stroke={strokeCol} strokeWidth={strokeW} />
+        <polygon points={frontPts} fill={opts.color} fillOpacity={0.76} stroke={strokeCol} strokeWidth={strokeW} />
+        {slices}
+
+        <text
+          x={opts.cx + dx / 2}
+          y={y0 - dy - 7}
+          textAnchor="middle"
+          fill={opts.isSelected ? '#fde047' : '#f8fafc'}
+          fontSize={9.3}
+          fontWeight={700}
+        >
+          {opts.topLabel}
+        </text>
+        <text
+          x={opts.cx + dx / 2}
+          y={y0 + sideH + 12}
+          textAnchor="middle"
+          fill="#fde047"
+          fontSize={9.0}
+          fontWeight={700}
+        >
+          {opts.shapeLabel}
+        </text>
+        <text
+          x={opts.cx + dx / 2}
+          y={y0 + sideH + 22}
+          textAnchor="middle"
+          fill="#94a3b8"
+          fontSize={8.1}
+        >
+          {opts.subLabel}
+        </text>
+      </g>
+    );
+  };
+
+  const drawDenseBar = (opts: {
+    key: string;
+    cx: number;
+    cy: number;
+    dim: number;
+    color: string;
+    borderColor: string;
+    topLabel: string;
+    subLabel: string;
+    dimLabel?: string;
+    dimColor?: string;
+    scale?: number;
+    segments?: Array<{ color: string; frac: number; label?: string }>;
+    isSelected?: boolean;
+    isHovered?: boolean;
+    onClick?: () => void;
+    onHover?: (id: string | null) => void;
+  }) => {
+    const sc = opts.scale ?? 1.0;
+    const barH = Math.round(
+      Math.max(26, Math.min(76, Math.round(Math.log2(Math.max(2, opts.dim)) * 7.4))) * sc
+    );
+    const barW = Math.round(17 * sc);
+    const dx = Math.round(7 * sc);
+    const dy = Math.round(5 * sc);
+    const x0 = opts.cx - barW / 2;
+    const y0 = opts.cy - barH / 2;
+    const strokeCol = opts.isSelected
+      ? '#facc15'
+      : opts.isHovered
+      ? '#ffffff'
+      : opts.borderColor;
+
+    return (
+      <g
+        key={opts.key}
+        style={{ cursor: opts.onClick ? 'pointer' : 'default' }}
+        onClick={opts.onClick}
+        onMouseEnter={() => opts.onHover?.(opts.key)}
+        onMouseLeave={() => opts.onHover?.(null)}
+      >
+        <polygon
+          points={`${x0},${y0} ${x0 + dx},${y0 - dy} ${x0 + barW + dx},${y0 - dy} ${x0 + barW},${y0}`}
+          fill={opts.segments?.[0]?.color ?? opts.color}
+          fillOpacity={0.92}
+          stroke={strokeCol}
+          strokeWidth={opts.isSelected ? 2.2 : 1.2}
+        />
+        <polygon
+          points={`${x0 + barW},${y0} ${x0 + barW + dx},${y0 - dy} ${x0 + barW + dx},${y0 + barH - dy} ${x0 + barW},${y0 + barH}`}
+          fill={opts.color}
+          fillOpacity={0.55}
+          stroke={strokeCol}
+          strokeWidth={opts.isSelected ? 2.2 : 1.2}
+        />
+        {opts.segments && opts.segments.length > 1 ? (
+          (() => {
+            let curY = y0;
+            return opts.segments.map((seg, sIdx) => {
+              const segH = Math.max(4, Math.round(barH * seg.frac));
+              const rectEl = (
+                <rect
+                  key={sIdx}
+                  x={x0}
+                  y={curY}
+                  width={barW}
+                  height={
+                    sIdx === opts.segments!.length - 1
+                      ? Math.max(4, y0 + barH - curY)
+                      : segH
+                  }
+                  fill={seg.color}
+                  fillOpacity={0.85}
+                  stroke={strokeCol}
+                  strokeWidth={0.9}
+                />
+              );
+              curY += segH;
+              return rectEl;
+            });
+          })()
+        ) : (
+          <rect
+            x={x0}
+            y={y0}
+            width={barW}
+            height={barH}
+            fill={opts.color}
+            fillOpacity={0.8}
+            stroke={strokeCol}
+            strokeWidth={opts.isSelected ? 2.2 : 1.2}
+          />
+        )}
+        {[0.25, 0.5, 0.75].map((f, i) => (
+          <circle
+            key={i}
+            cx={x0 + barW / 2}
+            cy={y0 + barH * f}
+            r={1.9}
+            fill="#f8fafc"
+            opacity={0.82}
+          />
+        ))}
+        <text
+          x={opts.cx + dx / 2}
+          y={y0 - dy - 7}
+          textAnchor="middle"
+          fill={opts.isSelected ? '#fde047' : '#f8fafc'}
+          fontSize={9.3}
+          fontWeight={700}
+        >
+          {opts.topLabel}
+        </text>
+        <text
+          x={opts.cx + dx / 2}
+          y={y0 + barH + 12}
+          textAnchor="middle"
+          fill={opts.dimColor ?? '#34d399'}
+          fontSize={9.1}
+          fontWeight={700}
+        >
+          {opts.dimLabel ?? `${opts.dim}D`}
+        </text>
+        <text
+          x={opts.cx + dx / 2}
+          y={y0 + barH + 22}
+          textAnchor="middle"
+          fill="#94a3b8"
+          fontSize={8.0}
+        >
+          {opts.subLabel}
+        </text>
+      </g>
+    );
+  };
+
+  const drawFilterCone = (
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    label?: string,
+    color = 'rgba(56, 189, 248, 0.22)',
+    stroke = '#38bdf8'
+  ) => {
+    const patchH = 15;
+    return (
+      <g key={`cone-${x1}-${y1}-${x2}-${y2}-${label ?? ''}`}>
+        <polygon
+          points={`${x1 + 11},${y1 - patchH / 2} ${x1 + 11},${y1 + patchH / 2} ${x2 - 11},${y2 + 3} ${x2 - 11},${y2 - 3}`}
+          fill={color}
+          stroke={stroke}
+          strokeWidth={0.95}
+          strokeOpacity={0.7}
+        />
+        {label && (
+          <text
+            x={(x1 + x2) / 2 + 2}
+            y={(y1 + y2) / 2 - 9}
+            textAnchor="middle"
+            fill="#93c5fd"
+            fontSize={8.1}
+            fontWeight={600}
+          >
+            {label}
+          </text>
+        )}
+      </g>
+    );
+  };
+
+  const drawFusionCircle = (cx: number, cy: number, symbol: string, topText: string, subText: string, border = '#facc15') => (
+    <g key={`fusion-${cx}-${cy}-${topText}`} transform={`translate(${cx}, ${cy})`}>
+      <circle r={14} fill="#0f172a" stroke={border} strokeWidth={2.0} />
+      <text y={4} textAnchor="middle" fill={border} fontSize={12.5} fontWeight={900}>
+        {symbol}
+      </text>
+      <text y={-19} textAnchor="middle" fill="#fde047" fontSize={8.8} fontWeight={800}>
+        {topText}
+      </text>
+      <text y={26} textAnchor="middle" fill="#34d399" fontSize={8.0} fontWeight={700}>
+        {subText}
+      </text>
+    </g>
+  );
+
+  // =========================================================================
+  // 1. FULL UNIFIED NETWORK DIAGRAM (obs + army_context + 5 Heads)
+  // =========================================================================
   const renderUnifiedNetworkSvg = () => {
     const stepX = 96;
     const startX = 62;
@@ -630,250 +734,6 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
     const headsX = fusionX + 118;
     const svgWidth = Math.max(1220, headsX + 185);
     const svgHeight = 420;
-
-    const drawCuboid = (opts: {
-      key: string;
-      cx: number;
-      cy: number;
-      c: number;
-      h: number;
-      w: number;
-      color: string;
-      borderColor: string;
-      topLabel: string;
-      subLabel: string;
-      shapeLabel: string;
-      isSelected?: boolean;
-      isHovered?: boolean;
-      hasSkipArc?: boolean;
-      onClick?: () => void;
-      onHover?: (id: string | null) => void;
-    }) => {
-      const sideH = Math.max(22, Math.min(82, 18 + (opts.h / 50) * 64));
-      const depth = Math.max(10, Math.min(40, Math.round(Math.log2(Math.max(2, opts.c)) * 5.2)));
-      const dx = Math.round(depth * 0.68);
-      const dy = Math.round(depth * 0.38);
-
-      const x0 = opts.cx - depth / 2;
-      const y0 = opts.cy - sideH / 2;
-
-      const frontPts = `${x0},${y0} ${x0 + depth},${y0} ${x0 + depth},${y0 + sideH} ${x0},${y0 + sideH}`;
-      const topPts = `${x0},${y0} ${x0 + dx},${y0 - dy} ${x0 + depth + dx},${y0 - dy} ${x0 + depth},${y0}`;
-      const rightPts = `${x0 + depth},${y0} ${x0 + depth + dx},${y0 - dy} ${x0 + depth + dx},${y0 + sideH - dy} ${x0 + depth},${y0 + sideH}`;
-
-      const strokeW = opts.isSelected ? 2.4 : opts.isHovered ? 2.0 : 1.2;
-      const strokeCol = opts.isSelected
-        ? '#facc15'
-        : opts.isHovered
-        ? '#ffffff'
-        : opts.borderColor;
-
-      return (
-        <g
-          key={opts.key}
-          style={{ cursor: opts.onClick ? 'pointer' : 'default' }}
-          onClick={opts.onClick}
-          onMouseEnter={() => opts.onHover?.(opts.key)}
-          onMouseLeave={() => opts.onHover?.(null)}
-        >
-          {opts.hasSkipArc && (
-            <g>
-              <path
-                d={`M ${x0 - 22} ${y0 - 4} Q ${opts.cx + dx / 2} ${y0 - dy - 26} ${
-                  x0 + depth + dx + 6
-                } ${y0 - 4}`}
-                fill="none"
-                stroke="#facc15"
-                strokeWidth={1.8}
-                strokeDasharray="4 2"
-              />
-              <circle
-                cx={x0 + depth + dx + 6}
-                cy={y0 - 4}
-                r={6}
-                fill="#0f172a"
-                stroke="#facc15"
-                strokeWidth={1.4}
-              />
-              <text
-                x={x0 + depth + dx + 6}
-                y={y0 - 1}
-                textAnchor="middle"
-                fill="#facc15"
-                fontSize={9}
-                fontWeight={800}
-              >
-                +
-              </text>
-            </g>
-          )}
-
-          <polygon points={topPts} fill={opts.color} fillOpacity={0.88} stroke={strokeCol} strokeWidth={strokeW} />
-          <polygon points={rightPts} fill={opts.color} fillOpacity={0.55} stroke={strokeCol} strokeWidth={strokeW} />
-          <polygon points={frontPts} fill={opts.color} fillOpacity={0.76} stroke={strokeCol} strokeWidth={strokeW} />
-
-          <text
-            x={opts.cx + dx / 2}
-            y={y0 - dy - 8}
-            textAnchor="middle"
-            fill={opts.isSelected ? '#fde047' : '#f8fafc'}
-            fontSize={9.5}
-            fontWeight={700}
-          >
-            {opts.topLabel}
-          </text>
-          <text
-            x={opts.cx + dx / 2}
-            y={y0 + sideH + 13}
-            textAnchor="middle"
-            fill="#fde047"
-            fontSize={9.2}
-            fontWeight={700}
-          >
-            {opts.shapeLabel}
-          </text>
-          <text
-            x={opts.cx + dx / 2}
-            y={y0 + sideH + 24}
-            textAnchor="middle"
-            fill="#94a3b8"
-            fontSize={8.4}
-          >
-            {opts.subLabel}
-          </text>
-        </g>
-      );
-    };
-
-    const drawDenseBar = (opts: {
-      key: string;
-      cx: number;
-      cy: number;
-      dim: number;
-      color: string;
-      borderColor: string;
-      topLabel: string;
-      subLabel: string;
-      dimColor?: string;
-      isSelected?: boolean;
-      isHovered?: boolean;
-      onClick?: () => void;
-      onHover?: (id: string | null) => void;
-    }) => {
-      const barH = Math.max(28, Math.min(74, Math.round(Math.log2(Math.max(2, opts.dim)) * 7.2)));
-      const barW = 16;
-      const dx = 6;
-      const dy = 4;
-      const x0 = opts.cx - barW / 2;
-      const y0 = opts.cy - barH / 2;
-      const strokeCol = opts.isSelected
-        ? '#facc15'
-        : opts.isHovered
-        ? '#ffffff'
-        : opts.borderColor;
-
-      return (
-        <g
-          key={opts.key}
-          style={{ cursor: opts.onClick ? 'pointer' : 'default' }}
-          onClick={opts.onClick}
-          onMouseEnter={() => opts.onHover?.(opts.key)}
-          onMouseLeave={() => opts.onHover?.(null)}
-        >
-          <polygon
-            points={`${x0},${y0} ${x0 + dx},${y0 - dy} ${x0 + barW + dx},${y0 - dy} ${x0 + barW},${y0}`}
-            fill={opts.color}
-            fillOpacity={0.9}
-            stroke={strokeCol}
-            strokeWidth={opts.isSelected ? 2.2 : 1.2}
-          />
-          <polygon
-            points={`${x0 + barW},${y0} ${x0 + barW + dx},${y0 - dy} ${x0 + barW + dx},${y0 + barH - dy} ${x0 + barW},${y0 + barH}`}
-            fill={opts.color}
-            fillOpacity={0.55}
-            stroke={strokeCol}
-            strokeWidth={opts.isSelected ? 2.2 : 1.2}
-          />
-          <rect
-            x={x0}
-            y={y0}
-            width={barW}
-            height={barH}
-            fill={opts.color}
-            fillOpacity={0.8}
-            stroke={strokeCol}
-            strokeWidth={opts.isSelected ? 2.2 : 1.2}
-          />
-          {[0.25, 0.5, 0.75].map((f, i) => (
-            <circle key={i} cx={x0 + barW / 2} cy={y0 + barH * f} r={2} fill="#f8fafc" opacity={0.8} />
-          ))}
-          <text
-            x={opts.cx + dx / 2}
-            y={y0 - dy - 8}
-            textAnchor="middle"
-            fill={opts.isSelected ? '#fde047' : '#f8fafc'}
-            fontSize={9.5}
-            fontWeight={700}
-          >
-            {opts.topLabel}
-          </text>
-          <text
-            x={opts.cx + dx / 2}
-            y={y0 + barH + 13}
-            textAnchor="middle"
-            fill={opts.dimColor ?? '#34d399'}
-            fontSize={9.5}
-            fontWeight={700}
-          >
-            {opts.dim}D
-          </text>
-          <text
-            x={opts.cx + dx / 2}
-            y={y0 + barH + 23}
-            textAnchor="middle"
-            fill="#94a3b8"
-            fontSize={8.3}
-          >
-            {opts.subLabel}
-          </text>
-        </g>
-      );
-    };
-
-    const drawFilterCone = (
-      x1: number,
-      y1: number,
-      x2: number,
-      y2: number,
-      label?: string,
-      color = 'rgba(56, 189, 248, 0.22)',
-      stroke = '#38bdf8'
-    ) => {
-      const patchH = 16;
-      return (
-        <g key={`cone-${x1}-${y1}-${x2}-${y2}`}>
-          <polygon
-            points={`${x1 + 12},${y1 - patchH / 2} ${x1 + 12},${y1 + patchH / 2} ${x2 - 12},${y2 + 3} ${x2 - 12},${y2 - 3}`}
-            fill={color}
-            stroke={stroke}
-            strokeWidth={0.9}
-            strokeOpacity={0.65}
-          />
-          {label && (
-            <text
-              x={(x1 + x2) / 2 + 2}
-              y={(y1 + y2) / 2 - 9}
-              textAnchor="middle"
-              fill="#93c5fd"
-              fontSize={8.2}
-              fontWeight={600}
-            >
-              {label}
-            </text>
-          )}
-        </g>
-      );
-    };
 
     const stemLastX = splitX - stepX;
     const armyProjX = splitX + 2 * stepX;
@@ -1072,18 +932,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
             stroke="#38bdf8"
             strokeWidth={2.2}
           />
-          <g transform={`translate(${fusionX}, ${topBranchY + 34})`}>
-            <circle r={16} fill="#0f172a" stroke="#facc15" strokeWidth={2.2} />
-            <text y={4} textAnchor="middle" fill="#facc15" fontSize={14} fontWeight={900}>
-              ⊕
-            </text>
-            <text y={-22} textAnchor="middle" fill="#fde047" fontSize={9.2} fontWeight={800}>
-              global_emb
-            </text>
-            <text y={30} textAnchor="middle" fill="#34d399" fontSize={8.5} fontWeight={700}>
-              256D Fused State
-            </text>
-          </g>
+          {drawFusionCircle(fusionX, topBranchY + 34, '⊕', 'global_emb', '256D Fused State')}
 
           {/* Lower Branch: Spatial Tile Pointer (Head 4) with FiLM Conditioning + Spatial Prior */}
           {drawFilterCone(
@@ -1282,7 +1131,6 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
             </g>
           ))}
 
-          {/* Autoregressive Conditioning Cascade Arrows between H1 -> H2 -> H3 */}
           <path
             d={`M ${headsX + 168} ${74} Q ${headsX + 182} ${93} ${headsX + 168} ${112}`}
             fill="none"
@@ -1316,13 +1164,31 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
     );
   };
 
-  const renderSingleHeadCard = (head: HeadPipelineSpec, isCompact: boolean) => {
-    const svgW = 860;
-    const svgH = 148;
-    const boxW = 166;
-    const boxH = 82;
-    const startX = 148;
-    const stepX = 174;
+  // =========================================================================
+  // 2. VISUAL 3D VOLUMETRIC SUB-NETWORK RENDERER FOR EACH INDIVIDUAL HEAD
+  // =========================================================================
+  const renderVisualSubModel3D = (head: HeadMetaSpec, isCompact: boolean) => {
+    const startX = 52;
+    const stepX = 82;
+    const topY = 92;
+    const botY = 205;
+    const midY = 135;
+
+    // Shared Backbone Coordinates:
+    // Col 0: obs (10x50x50) [topY] & army_context (64D) [botY]
+    // Col 1..4: S1, S2, S3, S4 (Spatial CNN Stem at topY)
+    // Col 5..9: G1, G2, G3, G4, G5 (Global Tower at topY)
+    // Col 7: army_context_proj (256D at botY)
+    // Col 10: Fusion ⊕ -> global_emb (256D at midY)
+    const splitX = startX + 5 * stepX; // Col 5
+    const g5X = splitX + 4 * stepX; // Col 9
+    const armyProjX = splitX + 2 * stepX; // Col 7
+    const fusionX = g5X + 68;
+    const globalBarX = fusionX + 58;
+
+    const isTileHead = head.id === 'head_tile_conv';
+    const svgHeight = isTileHead ? 315 : 265;
+    const svgWidth = isTileHead ? 1310 : head.id === 'head_deploy_fraction' ? 1360 : 1280;
 
     return (
       <div
@@ -1343,10 +1209,11 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span className="arch-head-stat-pill">
-              <b>{head.params.toLocaleString()}</b> params
+              Head: <b style={{ color: head.border }}>{head.params.toLocaleString()} p</b> • Sub-Model Total:{' '}
+              <b>{(head.backboneParams + head.params).toLocaleString()} p</b>
             </span>
             <span className="arch-head-stat-pill" style={{ color: head.border }}>
-              Out: <b>{head.outputDim}</b> ({head.distribution})
+              Out: <b>{head.outputDim}</b>
             </span>
             {isCompact ? (
               <button
@@ -1354,7 +1221,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                 className="speed-pill-btn"
                 onClick={() => setHeadFilter(head.id)}
               >
-                ⤢ Focus Head
+                ⤢ Focus Head {head.index}
               </button>
             ) : (
               <button
@@ -1368,148 +1235,753 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
           </div>
         </div>
 
-        <svg viewBox={`0 0 ${svgW} ${svgH}`} className="arch-head-flow-svg">
-          {/* Upstream Input Pills on the Left */}
-          {head.inputsUsed.map((inp, idx) => {
-            const totalIn = head.inputsUsed.length;
-            const spacing = 36;
-            const y0 =
-              svgH / 2 - ((totalIn - 1) * spacing) / 2 + idx * spacing - 14;
-            return (
-              <g key={inp.label}>
-                <rect
-                  x={10}
-                  y={y0}
-                  width={118}
-                  height={28}
-                  rx={5}
-                  fill="#0f172a"
-                  stroke={inp.color}
-                  strokeWidth={1.4}
-                />
-                <text
-                  x={69}
-                  y={y0 + 12}
-                  textAnchor="middle"
-                  fill={inp.color}
-                  fontSize={8.3}
-                  fontWeight={800}
-                >
-                  {inp.label}
-                </text>
-                <text
-                  x={69}
-                  y={y0 + 22}
-                  textAnchor="middle"
-                  fill="#cbd5e1"
-                  fontSize={7.8}
-                >
-                  {inp.shape}
-                </text>
-                <path
-                  d={`M 128 ${y0 + 14} C 138 ${y0 + 14}, 138 ${svgH / 2}, ${startX} ${svgH / 2}`}
-                  fill="none"
-                  stroke={inp.color}
-                  strokeWidth={1.5}
-                />
-              </g>
-            );
-          })}
+        <div className="arch-cnn3d-stage" style={{ border: '1px solid #1e2f4d' }}>
+          <svg
+            viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+            style={{
+              width: isCompact ? '100%' : `${Math.round(svgWidth * zoom)}px`,
+              height: 'auto',
+              minWidth: '100%',
+              display: 'block',
+            }}
+          >
+            <rect width={svgWidth} height={svgHeight} fill="#070d19" rx={8} />
 
-          {/* 4 Pipeline Stages */}
-          {head.stages.map((st, sIdx) => {
-            const x = startX + sIdx * stepX;
-            const y = (svgH - boxH) / 2;
-            return (
-              <g key={st.name}>
-                {sIdx > 0 && (
-                  <g>
-                    <line
-                      x1={x - (stepX - boxW)}
-                      y1={svgH / 2}
-                      x2={x}
-                      y2={svgH / 2}
-                      stroke={head.border}
-                      strokeWidth={1.8}
-                    />
-                    <polygon
-                      points={`${x},${svgH / 2} ${x - 5},${svgH / 2 - 3.5} ${x - 5},${svgH / 2 + 3.5}`}
-                      fill={head.border}
-                    />
-                  </g>
-                )}
-                <rect
-                  x={x}
-                  y={y}
-                  width={boxW}
-                  height={boxH}
-                  rx={7}
-                  fill="#101b30"
-                  stroke={sIdx === head.stages.length - 1 ? head.border : '#334b73'}
-                  strokeWidth={sIdx === head.stages.length - 1 ? 2.0 : 1.3}
-                />
-                <rect
-                  x={x}
-                  y={y}
-                  width={boxW}
-                  height={18}
-                  rx={6}
-                  fill={st.color}
-                  fillOpacity={0.85}
-                />
-                <text
-                  x={x + boxW / 2}
-                  y={y + 12.5}
-                  textAnchor="middle"
-                  fill="#ffffff"
-                  fontSize={8.6}
-                  fontWeight={800}
-                >
-                  {sIdx + 1}. {st.name}
-                </text>
-                <text
-                  x={x + boxW / 2}
-                  y={y + 33}
-                  textAnchor="middle"
-                  fill="#fde047"
-                  fontSize={8.2}
-                  fontWeight={700}
-                >
-                  {st.op}
-                </text>
-                <text
-                  x={x + boxW / 2}
-                  y={y + 48}
-                  textAnchor="middle"
-                  fill="#38bdf8"
-                  fontSize={8.0}
-                  fontWeight={700}
-                >
-                  {st.inShape} → {st.outShape}
-                </text>
-                <text
-                  x={x + boxW / 2}
-                  y={y + 66}
-                  textAnchor="middle"
-                  fill="#94a3b8"
-                  fontSize={7.3}
-                >
-                  {st.detail.length > 42 ? `${st.detail.slice(0, 42)}…` : st.detail}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
+            <text x={18} y={18} fill="#60a5fa" fontSize={9.2} fontWeight={800}>
+              SHARED ENCODER PATHWAY • Input 1: obs ({inChannels}×50×50) + Input 2: army_context ({armyContextDim}D)
+            </text>
+            <text x={fusionX - 10} y={18} fill={head.border} fontSize={9.2} fontWeight={800}>
+              HEAD {head.index} VOLUMETRIC PIPELINE • {head.shortTitle.toUpperCase()} ({head.params.toLocaleString()} PARAMS)
+            </text>
+
+            {/* 1. Input 1: obs (10×50×50) */}
+            {drawCuboid({
+              key: `${head.id}_obs`,
+              cx: startX,
+              cy: topY,
+              c: inChannels,
+              h: 50,
+              w: 50,
+              scale: 0.84,
+              color: '#0284c7',
+              borderColor: '#38bdf8',
+              topLabel: 'obs',
+              shapeLabel: `${inChannels}×50×50`,
+              subLabel: 'Village Grid',
+            })}
+
+            {/* 2. Input 2: army_context (64D) */}
+            {drawDenseBar({
+              key: `${head.id}_army_in`,
+              cx: startX,
+              cy: botY,
+              dim: armyContextDim,
+              scale: 0.88,
+              color: '#0891b2',
+              borderColor: '#38bdf8',
+              dimColor: '#38bdf8',
+              topLabel: 'army_context',
+              subLabel: 'Inventory 64D',
+            })}
+
+            {/* 3. Spatial CNN Stem S1..S4 */}
+            {spatialLayers.map((sLayer, idx) => {
+              const prevX = startX + idx * stepX;
+              const curX = startX + (idx + 1) * stepX;
+              const [c, h, w] = sLayer.outputShape;
+              return (
+                <React.Fragment key={`${head.id}_${sLayer.id}`}>
+                  {drawFilterCone(prevX, topY, curX, topY, sLayer.coneLabel)}
+                  {drawCuboid({
+                    key: `${head.id}_${sLayer.id}`,
+                    cx: curX,
+                    cy: topY,
+                    c,
+                    h,
+                    w,
+                    scale: 0.84,
+                    color: sLayer.color,
+                    borderColor: sLayer.border,
+                    topLabel: `S${idx + 1}:${sLayer.short}`,
+                    shapeLabel: `${c}×${h}×${w}`,
+                    subLabel: `RF ${sLayer.receptiveField}`,
+                    hasSkipArc: sLayer.hasSkipArc,
+                  })}
+                </React.Fragment>
+              );
+            })}
+
+            {/* 4. Global Tower G1..G5 */}
+            {globalTowerLayers.map((gLayer, idx) => {
+              const prevX = idx === 0 ? startX + 4 * stepX : splitX + (idx - 1) * stepX;
+              const curX = splitX + idx * stepX;
+              const is1D = gLayer.outputShape.length === 1;
+              return (
+                <React.Fragment key={`${head.id}_${gLayer.id}`}>
+                  {drawFilterCone(
+                    prevX,
+                    topY,
+                    curX,
+                    topY,
+                    gLayer.coneLabel,
+                    'rgba(16, 185, 129, 0.2)',
+                    '#34d399'
+                  )}
+                  {is1D
+                    ? drawDenseBar({
+                        key: `${head.id}_${gLayer.id}`,
+                        cx: curX,
+                        cy: topY,
+                        dim: gLayer.outputShape[0],
+                        scale: 0.86,
+                        color: gLayer.color,
+                        borderColor: gLayer.border,
+                        topLabel: `G${idx + 1}:${gLayer.short}`,
+                        subLabel:
+                          gLayer.params > 0
+                            ? `${Math.round(gLayer.params / 1000)}K p`
+                            : 'reshape',
+                      })
+                    : drawCuboid({
+                        key: `${head.id}_${gLayer.id}`,
+                        cx: curX,
+                        cy: topY,
+                        c: gLayer.outputShape[0],
+                        h: gLayer.outputShape[1],
+                        w: gLayer.outputShape[2],
+                        scale: 0.84,
+                        color: gLayer.color,
+                        borderColor: gLayer.border,
+                        topLabel: `G${idx + 1}:${gLayer.short}`,
+                        shapeLabel: gLayer.outputShape.join('×'),
+                        subLabel: `RF ${gLayer.receptiveField}`,
+                      })}
+                </React.Fragment>
+              );
+            })}
+
+            {/* 5. Army Context Projection & Residual Addition ⊕ */}
+            <path
+              d={`M ${startX + 14} ${botY} L ${armyProjX - 16} ${botY}`}
+              fill="none"
+              stroke="#38bdf8"
+              strokeWidth={1.8}
+              strokeDasharray="5 3"
+            />
+            <text
+              x={(startX + armyProjX) / 2}
+              y={botY - 8}
+              textAnchor="middle"
+              fill="#38bdf8"
+              fontSize={8.2}
+              fontWeight={700}
+            >
+              Linear(64→256) + LayerNorm + SiLU
+            </text>
+            {drawDenseBar({
+              key: `${head.id}_army_proj`,
+              cx: armyProjX,
+              cy: botY,
+              dim: embedDim,
+              scale: 0.88,
+              color: '#0891b2',
+              borderColor: '#38bdf8',
+              dimColor: '#38bdf8',
+              topLabel: 'army_context_proj',
+              subLabel: '17.2K p',
+            })}
+
+            <path
+              d={`M ${g5X + 12} ${topY} L ${fusionX - 14} ${midY}`}
+              fill="none"
+              stroke="#34d399"
+              strokeWidth={2}
+            />
+            <path
+              d={`M ${armyProjX + 12} ${botY} C ${armyProjX + 80} ${botY}, ${fusionX - 50} ${midY}, ${fusionX - 14} ${midY}`}
+              fill="none"
+              stroke="#38bdf8"
+              strokeWidth={2}
+            />
+            {drawFusionCircle(fusionX, midY, '⊕', 'State Fusion', 'spatial + army')}
+
+            <line
+              x1={fusionX + 14}
+              y1={midY}
+              x2={globalBarX - 12}
+              y2={midY}
+              stroke="#34d399"
+              strokeWidth={2}
+            />
+            {drawDenseBar({
+              key: `${head.id}_global_emb`,
+              cx: globalBarX,
+              cy: midY,
+              dim: embedDim,
+              scale: 0.92,
+              color: '#059669',
+              borderColor: '#34d399',
+              topLabel: 'global_emb',
+              subLabel: 'Fused State',
+            })}
+
+            {/* ============================================================= */}
+            {/* HEAD-SPECIFIC 3D VOLUMETRIC LAYERS (RIGHT SIDE OF DIAGRAM)     */}
+            {/* ============================================================= */}
+
+            {/* HEAD 1: ACTION TYPE (256D -> Linear(256->7) -> 1.4*tanh -> Masked Categorical(7)) */}
+            {head.id === 'head_slot_type' && (() => {
+              const rawX = globalBarX + 108;
+              const maskX = rawX + 108;
+              const outX = maskX + 108;
+              return (
+                <>
+                  {drawFilterCone(
+                    globalBarX,
+                    midY,
+                    rawX,
+                    midY,
+                    'Linear(256→7)',
+                    'rgba(250, 204, 21, 0.24)',
+                    '#facc15'
+                  )}
+                  {drawDenseBar({
+                    key: 'h1_raw',
+                    cx: rawX,
+                    cy: midY,
+                    dim: 7,
+                    scale: 1.05,
+                    color: '#a16207',
+                    borderColor: '#facc15',
+                    dimColor: '#fde047',
+                    topLabel: 'slot_type_head',
+                    subLabel: '1.4·tanh(z/3)',
+                  })}
+                  {drawFilterCone(
+                    rawX,
+                    midY,
+                    maskX,
+                    midY,
+                    'slot_type_mask',
+                    'rgba(250, 204, 21, 0.24)',
+                    '#facc15'
+                  )}
+                  {drawDenseBar({
+                    key: 'h1_masked',
+                    cx: maskX,
+                    cy: midY,
+                    dim: 7,
+                    scale: 1.05,
+                    color: '#ca8a04',
+                    borderColor: '#fde047',
+                    dimColor: '#fde047',
+                    topLabel: 'Masked Logits',
+                    subLabel: 'bool[7] mask',
+                  })}
+                  {drawFilterCone(
+                    maskX,
+                    midY,
+                    outX,
+                    midY,
+                    'Softmax',
+                    'rgba(250, 204, 21, 0.3)',
+                    '#fde047'
+                  )}
+                  {drawDenseBar({
+                    key: 'h1_out',
+                    cx: outX,
+                    cy: midY,
+                    dim: 7,
+                    scale: 1.12,
+                    color: '#eab308',
+                    borderColor: '#ffffff',
+                    dimColor: '#fde047',
+                    dimLabel: '7 Classes',
+                    topLabel: 'π(slot_type)',
+                    subLabel: 'NoOp/Troop/Spell',
+                    isSelected: true,
+                  })}
+                </>
+              );
+            })()}
+
+            {/* HEAD 2: SLOT INDEX (global_emb 256D + 1hot(type:7D) = 263D -> 128D -> 10D) */}
+            {head.id === 'head_slot_idx' && (() => {
+              const typeOneHotX = globalBarX;
+              const typeOneHotY = topY - 26;
+              const catX = globalBarX + 94;
+              const hidX = catX + 98;
+              const outX = hidX + 98;
+              return (
+                <>
+                  {drawDenseBar({
+                    key: 'h2_type_1hot',
+                    cx: typeOneHotX,
+                    cy: typeOneHotY,
+                    dim: 7,
+                    scale: 0.78,
+                    color: '#ca8a04',
+                    borderColor: '#facc15',
+                    dimColor: '#fde047',
+                    dimLabel: '7D 1-Hot',
+                    topLabel: 'H1: chosen_type',
+                    subLabel: 'Autoregressive',
+                  })}
+                  <path
+                    d={`M ${typeOneHotX + 12} ${typeOneHotY} C ${catX - 30} ${typeOneHotY}, ${catX - 35} ${midY - 18}, ${catX - 12} ${midY - 12}`}
+                    fill="none"
+                    stroke="#facc15"
+                    strokeWidth={1.8}
+                    strokeDasharray="3 2"
+                  />
+                  <line
+                    x1={globalBarX + 12}
+                    y1={midY}
+                    x2={catX - 12}
+                    y2={midY}
+                    stroke="#34d399"
+                    strokeWidth={2}
+                  />
+                  {drawDenseBar({
+                    key: 'h2_cond_emb',
+                    cx: catX,
+                    cy: midY,
+                    dim: 263,
+                    scale: 0.96,
+                    color: '#0284c7',
+                    borderColor: '#38bdf8',
+                    dimColor: '#38bdf8',
+                    dimLabel: '263D (256+7)',
+                    topLabel: 'cond_emb',
+                    subLabel: 'cat[global, type]',
+                    segments: [
+                      { color: '#eab308', frac: 0.22 },
+                      { color: '#059669', frac: 0.78 },
+                    ],
+                  })}
+                  {drawFilterCone(
+                    catX,
+                    midY,
+                    hidX,
+                    midY,
+                    'Linear(263→128)+SiLU',
+                    'rgba(56, 189, 248, 0.24)',
+                    '#38bdf8'
+                  )}
+                  {drawDenseBar({
+                    key: 'h2_hid',
+                    cx: hidX,
+                    cy: midY,
+                    dim: 128,
+                    scale: 0.95,
+                    color: '#0369a1',
+                    borderColor: '#38bdf8',
+                    dimColor: '#7dd3fc',
+                    topLabel: 'slot_idx MLP',
+                    subLabel: '128D Hidden',
+                  })}
+                  {drawFilterCone(
+                    hidX,
+                    midY,
+                    outX,
+                    midY,
+                    '128→10 + Mask',
+                    'rgba(56, 189, 248, 0.3)',
+                    '#38bdf8'
+                  )}
+                  {drawDenseBar({
+                    key: 'h2_out',
+                    cx: outX,
+                    cy: midY,
+                    dim: 10,
+                    scale: 1.08,
+                    color: '#0284c7',
+                    borderColor: '#ffffff',
+                    dimColor: '#38bdf8',
+                    dimLabel: '10 Slots',
+                    topLabel: 'π(slot_idx | type)',
+                    subLabel: 'Masked Loadout',
+                    isSelected: true,
+                  })}
+                </>
+              );
+            })()}
+
+            {/* HEAD 3: DEPLOY FRACTION (global 256D + type 7D + idx 10D = 273D -> 128D -> 5D) */}
+            {head.id === 'head_deploy_fraction' && (() => {
+              const cat1X = globalBarX + 88;
+              const cat2X = cat1X + 94;
+              const hidX = cat2X + 96;
+              const outX = hidX + 96;
+              return (
+                <>
+                  {drawDenseBar({
+                    key: 'h3_type_1hot',
+                    cx: globalBarX,
+                    cy: topY - 26,
+                    dim: 7,
+                    scale: 0.74,
+                    color: '#ca8a04',
+                    borderColor: '#facc15',
+                    dimColor: '#fde047',
+                    dimLabel: '7D Type',
+                    topLabel: 'H1: 1hot(type)',
+                    subLabel: '',
+                  })}
+                  <path
+                    d={`M ${globalBarX + 12} ${topY - 26} C ${cat1X - 28} ${topY - 26}, ${cat1X - 28} ${midY - 14}, ${cat1X - 12} ${midY - 10}`}
+                    fill="none"
+                    stroke="#facc15"
+                    strokeWidth={1.6}
+                    strokeDasharray="3 2"
+                  />
+                  <line
+                    x1={globalBarX + 12}
+                    y1={midY}
+                    x2={cat1X - 12}
+                    y2={midY}
+                    stroke="#34d399"
+                    strokeWidth={2}
+                  />
+                  {drawDenseBar({
+                    key: 'h3_cond1',
+                    cx: cat1X,
+                    cy: midY,
+                    dim: 263,
+                    scale: 0.92,
+                    color: '#0284c7',
+                    borderColor: '#38bdf8',
+                    dimColor: '#38bdf8',
+                    dimLabel: '263D',
+                    topLabel: 'cond_emb',
+                    subLabel: '256 + 7',
+                    segments: [
+                      { color: '#eab308', frac: 0.22 },
+                      { color: '#059669', frac: 0.78 },
+                    ],
+                  })}
+                  {drawDenseBar({
+                    key: 'h3_idx_1hot',
+                    cx: cat1X,
+                    cy: topY - 26,
+                    dim: 10,
+                    scale: 0.74,
+                    color: '#0284c7',
+                    borderColor: '#38bdf8',
+                    dimColor: '#38bdf8',
+                    dimLabel: '10D Idx',
+                    topLabel: 'H2: 1hot(idx)',
+                    subLabel: '',
+                  })}
+                  <path
+                    d={`M ${cat1X + 12} ${topY - 26} C ${cat2X - 28} ${topY - 26}, ${cat2X - 28} ${midY - 14}, ${cat2X - 12} ${midY - 10}`}
+                    fill="none"
+                    stroke="#38bdf8"
+                    strokeWidth={1.6}
+                    strokeDasharray="3 2"
+                  />
+                  <line
+                    x1={cat1X + 12}
+                    y1={midY}
+                    x2={cat2X - 12}
+                    y2={midY}
+                    stroke="#c084fc"
+                    strokeWidth={2}
+                  />
+                  {drawDenseBar({
+                    key: 'h3_frac_cond',
+                    cx: cat2X,
+                    cy: midY,
+                    dim: 273,
+                    scale: 0.96,
+                    color: '#7c3aed',
+                    borderColor: '#c084fc',
+                    dimColor: '#e9d5ff',
+                    dimLabel: '273D (256+7+10)',
+                    topLabel: 'frac_cond_emb',
+                    subLabel: '3-Way Autoreg',
+                    segments: [
+                      { color: '#38bdf8', frac: 0.2 },
+                      { color: '#eab308', frac: 0.18 },
+                      { color: '#059669', frac: 0.62 },
+                    ],
+                  })}
+                  {drawFilterCone(
+                    cat2X,
+                    midY,
+                    hidX,
+                    midY,
+                    'Linear(273→128)+SiLU',
+                    'rgba(192, 132, 252, 0.24)',
+                    '#c084fc'
+                  )}
+                  {drawDenseBar({
+                    key: 'h3_hid',
+                    cx: hidX,
+                    cy: midY,
+                    dim: 128,
+                    scale: 0.95,
+                    color: '#7e22ce',
+                    borderColor: '#c084fc',
+                    dimColor: '#e9d5ff',
+                    topLabel: 'Fraction MLP',
+                    subLabel: '128D Hidden',
+                  })}
+                  {drawFilterCone(
+                    hidX,
+                    midY,
+                    outX,
+                    midY,
+                    'Linear(128→5)',
+                    'rgba(192, 132, 252, 0.3)',
+                    '#c084fc'
+                  )}
+                  {drawDenseBar({
+                    key: 'h3_out',
+                    cx: outX,
+                    cy: midY,
+                    dim: numFracBins,
+                    scale: 1.08,
+                    color: '#9333ea',
+                    borderColor: '#ffffff',
+                    dimColor: '#e9d5ff',
+                    dimLabel: '5 Bins α∈[0,1]',
+                    topLabel: 'π(α | type, idx)',
+                    subLabel: '1u/25/50/75/100%',
+                    isSelected: true,
+                  })}
+                </>
+              );
+            })()}
+
+            {/* HEAD 4: 50×50 SPATIAL TILE POINTER (3D Cuboid Pathway + FiLM Conditioning + Spatial Prior) */}
+            {head.id === 'head_tile_conv' && (() => {
+              const condX = globalBarX + 86;
+              const projX = condX + 88;
+              const filmX = splitX + 3.2 * stepX;
+              const conv32X = filmX + 115;
+              const raw1X = conv32X + 115;
+              const outTileX = raw1X + 115;
+              const tileTrackY = 248;
+              const s4X = startX + 4 * stepX;
+
+              return (
+                <>
+                  {/* Top Conditioning Bar: cond_emb (263D) -> tile_cond_proj (64×1×1) */}
+                  <line
+                    x1={globalBarX + 12}
+                    y1={midY}
+                    x2={condX - 12}
+                    y2={midY}
+                    stroke="#facc15"
+                    strokeWidth={1.8}
+                  />
+                  {drawDenseBar({
+                    key: 'h4_cond_emb',
+                    cx: condX,
+                    cy: midY,
+                    dim: 263,
+                    scale: 0.88,
+                    color: '#ca8a04',
+                    borderColor: '#facc15',
+                    dimColor: '#fde047',
+                    dimLabel: '263D (256+7)',
+                    topLabel: 'cond_emb',
+                    subLabel: 'global + 1hot(type)',
+                    segments: [
+                      { color: '#eab308', frac: 0.22 },
+                      { color: '#059669', frac: 0.78 },
+                    ],
+                  })}
+                  {drawFilterCone(
+                    condX,
+                    midY,
+                    projX,
+                    midY,
+                    'Linear(263→64)',
+                    'rgba(250, 204, 21, 0.25)',
+                    '#facc15'
+                  )}
+                  {drawCuboid({
+                    key: 'h4_cond_spatial',
+                    cx: projX,
+                    cy: midY,
+                    c: 64,
+                    h: 8,
+                    w: 8,
+                    scale: 0.85,
+                    color: '#d97706',
+                    borderColor: '#fde047',
+                    topLabel: 'tile_cond_proj',
+                    shapeLabel: '64×1×1',
+                    subLabel: 'FiLM Vector',
+                  })}
+
+                  {/* Full-Res 64×50×50 Skip Pathway from S4 into FiLM Cuboid */}
+                  {drawFilterCone(
+                    s4X,
+                    topY,
+                    filmX,
+                    tileTrackY,
+                    'spatial_feat (64×50×50)',
+                    'rgba(96, 165, 250, 0.22)',
+                    '#60a5fa'
+                  )}
+                  <path
+                    d={`M ${projX} ${midY + 26} C ${projX} ${tileTrackY - 55}, ${filmX} ${midY + 40}, ${filmX} ${tileTrackY - 38}`}
+                    fill="none"
+                    stroke="#facc15"
+                    strokeWidth={1.8}
+                    strokeDasharray="4 2"
+                  />
+                  {drawCuboid({
+                    key: 'h4_film_cuboid',
+                    cx: filmX,
+                    cy: tileTrackY,
+                    c: 64,
+                    h: 50,
+                    w: 50,
+                    scale: 0.86,
+                    color: '#b45309',
+                    borderColor: '#facc15',
+                    topLabel: 'FiLM Fused Map',
+                    shapeLabel: '64×50×50',
+                    subLabel: 'F·(1+0.5tanh(c))+c',
+                  })}
+                  {drawFilterCone(
+                    filmX,
+                    tileTrackY,
+                    conv32X,
+                    tileTrackY,
+                    'Conv 3×3 + SiLU',
+                    'rgba(250, 204, 21, 0.25)',
+                    '#facc15'
+                  )}
+                  {drawCuboid({
+                    key: 'h4_conv32',
+                    cx: conv32X,
+                    cy: tileTrackY,
+                    c: 32,
+                    h: 50,
+                    w: 50,
+                    scale: 0.86,
+                    color: '#d97706',
+                    borderColor: '#facc15',
+                    topLabel: 'tile_conv_head[0]',
+                    shapeLabel: '32×50×50',
+                    subLabel: '18.5K params',
+                  })}
+                  {drawFilterCone(
+                    conv32X,
+                    tileTrackY,
+                    raw1X,
+                    tileTrackY,
+                    'Conv 1×1',
+                    'rgba(249, 115, 22, 0.28)',
+                    '#f97316'
+                  )}
+                  {drawCuboid({
+                    key: 'h4_raw1',
+                    cx: raw1X,
+                    cy: tileTrackY,
+                    c: 1,
+                    h: 50,
+                    w: 50,
+                    scale: 0.86,
+                    color: '#ea580c',
+                    borderColor: '#fb923c',
+                    topLabel: 'raw_tile_logits',
+                    shapeLabel: '1×50×50',
+                    subLabel: '+ Spatial Prior',
+                  })}
+                  {drawFilterCone(
+                    raw1X,
+                    tileTrackY,
+                    outTileX,
+                    tileTrackY,
+                    'Mask + Softmax',
+                    'rgba(250, 204, 21, 0.32)',
+                    '#fde047'
+                  )}
+                  {drawCuboid({
+                    key: 'h4_out',
+                    cx: outTileX,
+                    cy: tileTrackY,
+                    c: 1,
+                    h: 50,
+                    w: 50,
+                    scale: 0.92,
+                    color: '#f59e0b',
+                    borderColor: '#ffffff',
+                    topLabel: 'π(tile_x, tile_y)',
+                    shapeLabel: '1×50×50',
+                    subLabel: '2,500 Tiles',
+                    isSelected: true,
+                  })}
+                </>
+              );
+            })()}
+
+            {/* HEAD 5: STATE-VALUE CRITIC V(s) (global_emb 256D -> Linear(256->128)+SiLU -> Linear(128->1) -> Scalar V(s)) */}
+            {head.id === 'head_critic' && (() => {
+              const hidX = globalBarX + 112;
+              const outX = hidX + 112;
+              return (
+                <>
+                  {drawFilterCone(
+                    globalBarX,
+                    midY,
+                    hidX,
+                    midY,
+                    'Linear(256→128)+SiLU',
+                    'rgba(74, 222, 128, 0.24)',
+                    '#4ade80'
+                  )}
+                  {drawDenseBar({
+                    key: 'h5_hid',
+                    cx: hidX,
+                    cy: midY,
+                    dim: 128,
+                    scale: 1.0,
+                    color: '#15803d',
+                    borderColor: '#4ade80',
+                    dimColor: '#86efac',
+                    topLabel: 'critic_head[0]',
+                    subLabel: '32.9K p (SiLU)',
+                  })}
+                  {drawFilterCone(
+                    hidX,
+                    midY,
+                    outX,
+                    midY,
+                    'Linear(128→1)',
+                    'rgba(74, 222, 128, 0.32)',
+                    '#4ade80'
+                  )}
+                  {drawCuboid({
+                    key: 'h5_out',
+                    cx: outX,
+                    cy: midY,
+                    c: 4,
+                    h: 12,
+                    w: 12,
+                    scale: 1.05,
+                    color: '#16a34a',
+                    borderColor: '#ffffff',
+                    topLabel: 'Critic V(s)',
+                    shapeLabel: '1D Scalar',
+                    subLabel: '2.5× Actor LR',
+                    isSelected: true,
+                  })}
+                </>
+              );
+            })()}
+          </svg>
+        </div>
 
         <div className="arch-head-meta-footer">
           <span>
-            <strong>Equation:</strong> <code>{head.formula}</code>
-          </span>
-          <span>
-            <strong>Masking:</strong> {head.maskRule}
-          </span>
-          <span>
-            <strong>PPO Objective Weight:</strong> <code>{head.entropyWeight}</code>
+            <strong>Sub-Model Forward:</strong> <code>{head.formula}</code>
           </span>
         </div>
       </div>
@@ -1599,9 +2071,9 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                   setHeadFilter('split_all');
                 }}
               >
-                ⊞ Split All 5 Heads
+                ⊞ Split All 5 Heads (3D)
               </button>
-              {HEAD_PIPELINES.map((hp) => (
+              {HEAD_META.map((hp) => (
                 <button
                   key={hp.id}
                   type="button"
@@ -1630,66 +2102,64 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
               </button>
             </div>
 
-            {(headFilter === 'all' || vizMode === 'torchview') && (
-              <div className="arch-viz-controls">
-                {vizMode === 'torchview' && (
-                  <select
-                    className="clash-select mini"
-                    value={torchviewDetail}
-                    onChange={(e) =>
-                      setTorchviewDetail(e.target.value as 'overview' | 'detailed')
-                    }
-                  >
-                    <option value="overview">Depth 2 (Overview)</option>
-                    <option value="detailed">Depth 3 (Detailed)</option>
-                  </select>
-                )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <button
-                    type="button"
-                    className="speed-pill-btn"
-                    onClick={() =>
-                      setZoom((z) => Math.max(0.6, Math.round((z - 0.15) * 100) / 100))
-                    }
-                  >
-                    −
-                  </button>
-                  <span
-                    style={{
-                      fontSize: '0.72rem',
-                      color: '#cbd5e1',
-                      minWidth: 38,
-                      textAlign: 'center',
-                    }}
-                  >
-                    {Math.round(zoom * 100)}%
-                  </span>
-                  <button
-                    type="button"
-                    className="speed-pill-btn"
-                    onClick={() =>
-                      setZoom((z) => Math.min(1.8, Math.round((z + 0.15) * 100) / 100))
-                    }
-                  >
-                    +
-                  </button>
-                  <button
-                    type="button"
-                    className="speed-pill-btn"
-                    onClick={() => setZoom(1.0)}
-                  >
-                    100%
-                  </button>
-                </div>
+            <div className="arch-viz-controls">
+              {vizMode === 'torchview' && (
+                <select
+                  className="clash-select mini"
+                  value={torchviewDetail}
+                  onChange={(e) =>
+                    setTorchviewDetail(e.target.value as 'overview' | 'detailed')
+                  }
+                >
+                  <option value="overview">Depth 2 (Overview)</option>
+                  <option value="detailed">Depth 3 (Detailed)</option>
+                </select>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <button
+                  type="button"
+                  className="speed-pill-btn"
+                  onClick={() =>
+                    setZoom((z) => Math.max(0.6, Math.round((z - 0.15) * 100) / 100))
+                  }
+                >
+                  −
+                </button>
+                <span
+                  style={{
+                    fontSize: '0.72rem',
+                    color: '#cbd5e1',
+                    minWidth: 38,
+                    textAlign: 'center',
+                  }}
+                >
+                  {Math.round(zoom * 100)}%
+                </span>
+                <button
+                  type="button"
+                  className="speed-pill-btn"
+                  onClick={() =>
+                    setZoom((z) => Math.min(1.8, Math.round((z + 0.15) * 100) / 100))
+                  }
+                >
+                  +
+                </button>
+                <button
+                  type="button"
+                  className="speed-pill-btn"
+                  onClick={() => setZoom(1.0)}
+                >
+                  100%
+                </button>
               </div>
-            )}
+            </div>
           </div>
 
           {vizMode === 'schematic' && headFilter === 'all' && renderUnifiedNetworkSvg()}
 
           {vizMode === 'schematic' && headFilter === 'split_all' && (
             <div className="arch-heads-split-grid">
-              {HEAD_PIPELINES.map((hp) => renderSingleHeadCard(hp, true))}
+              {HEAD_META.map((hp) => renderVisualSubModel3D(hp, true))}
             </div>
           )}
 
@@ -1697,8 +2167,8 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
             headFilter !== 'all' &&
             headFilter !== 'split_all' && (
               <div className="arch-heads-single-focus">
-                {HEAD_PIPELINES.filter((hp) => hp.id === headFilter).map((hp) =>
-                  renderSingleHeadCard(hp, false)
+                {HEAD_META.filter((hp) => hp.id === headFilter).map((hp) =>
+                  renderVisualSubModel3D(hp, false)
                 )}
               </div>
             )}
