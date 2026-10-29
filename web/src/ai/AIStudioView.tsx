@@ -31,7 +31,7 @@ import {
   SPATIAL_CHANNELS,
 } from './aiTypes';
 import { NetworkBuilderPanel } from './NetworkBuilderPanel';
-import { useContainerWidth } from './useContainerWidth';
+import { useContainerWidth, useContainerSize } from './useContainerWidth';
 
 interface AIStudioViewProps {
   studioMode: 'trainer' | 'tester';
@@ -414,10 +414,10 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   const [lr, setLr] = useState<number>(0.0003);
   const [trainerTab, setTrainerTab] = useState<'configs' | 'stats'>('stats');
   const [fitYAxis, setFitYAxis] = useState<boolean>(false);
-  const [mainChartRef, mainChartWidth] = useContainerWidth(960);
-  const [pacingChartRef, pacingChartWidth] = useContainerWidth(380);
-  const [armyChartRef, armyChartWidth] = useContainerWidth(380);
-  const [villageChartRef, villageChartWidth] = useContainerWidth(380);
+  const [mainChartRef, mainChartWidth, mainChartHeight] = useContainerSize(800, 600);
+  const [pacingChartRef, pacingChartWidth] = useContainerWidth<HTMLElement>(480);
+  const [armyChartRef, armyChartWidth] = useContainerWidth<HTMLElement>(480);
+  const [villageChartRef, villageChartWidth] = useContainerWidth<HTMLElement>(480);
 
   // Army and Village Presets selection for Training
   const [allArmies, setAllArmies] = useState<ArmyLoadout[]>(() => catalog.preset_armies);
@@ -833,7 +833,11 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
         ? Math.min(100, Math.ceil((dataMaxPct + 2) / 5) * 5)
         : 100;
     const ySpan = Math.max(10, effectiveYMax - effectiveYMin);
-    const yTicks = [0, 0.25, 0.5, 0.75, 1.0].map((frac) =>
+    const tickFractions =
+      mainChartHeight > 550
+        ? [0, 0.2, 0.4, 0.6, 0.8, 1.0]
+        : [0, 0.25, 0.5, 0.75, 1.0];
+    const yTicks = tickFractions.map((frac) =>
       Math.round(effectiveYMin + frac * ySpan)
     );
 
@@ -1438,156 +1442,161 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
           </div>
         </div>
 
-        {/* FULL-WIDTH BINNED TRAINING PROGRESS CHART */}
-        <section className="ai-main-chart-card" ref={mainChartRef}>
-          <div className="ai-card-header">
-            <h3>
-              📈 Attacker Improvement Curve ({history.length} Episodes in Current Run
-              {binned.length < history.length
-                ? ` • Binned into ${binned.length} Windows`
-                : ''}
-              )
-            </h3>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div className="ai-chart-legend">
-                <span>
-                  <i className="ai-dot" style={{ background: '#f97316' }} />
-                  50-Ep Rolling Avg Destruction %
-                </span>
-                <span>
-                  <i className="ai-dot" style={{ background: '#facc15' }} />
-                  Window Mean Destruction % (with Min–Max Band)
-                </span>
+        {/* 2-COLUMN SPLIT DASHBOARD LAYOUT: 50% LEFT / 50% RIGHT */}
+        <div className="ai-trainer-split-layout">
+          {/* LEFT SECTION (50%): ATTACKER IMPROVEMENT CURVE GRAPH */}
+          <section className="ai-main-chart-card">
+            <div className="ai-card-header">
+              <h3>
+                📈 Attacker Improvement Curve ({history.length} Episodes in Current Run
+                {binned.length < history.length
+                  ? ` • Binned into ${binned.length} Windows`
+                  : ''}
+                )
+              </h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div className="ai-chart-legend">
+                  <span>
+                    <i className="ai-dot" style={{ background: '#f97316' }} />
+                    50-Ep Rolling Avg Destruction %
+                  </span>
+                  <span>
+                    <i className="ai-dot" style={{ background: '#facc15' }} />
+                    Window Mean Destruction % (with Min–Max Band)
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className={`speed-pill-btn ${fitYAxis ? 'active' : ''}`}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setFitYAxis((prev) => !prev)}
+                  title="Fit Y-axis scale to data range or reset to 0-100%"
+                >
+                  ↕️ {fitYAxis ? `Fitted (${effectiveYMin}%–${effectiveYMax}%)` : 'Fit to Data (Y-Axis)'}
+                </button>
               </div>
-              <button
-                type="button"
-                className={`speed-pill-btn ${fitYAxis ? 'active' : ''}`}
-                style={{ cursor: 'pointer' }}
-                onClick={() => setFitYAxis((prev) => !prev)}
-                title="Fit Y-axis scale to data range or reset to 0-100%"
-              >
-                ↕️ {fitYAxis ? `Fitted (${effectiveYMin}%–${effectiveYMax}%)` : 'Fit to Data (Y-Axis)'}
-              </button>
             </div>
-          </div>
 
-          <svg
-            viewBox={`0 0 ${mainChartWidth} 340`}
-            className="ai-wide-svg-chart"
-            style={{ height: 340 }}
-          >
-            {yTicks.map((pct) => {
-              const y = 340 - 22 - ((pct - effectiveYMin) / ySpan) * (340 - 44);
-              return (
-                <g key={pct}>
-                  <line
-                    x1={40}
-                    y1={y}
-                    x2={mainChartWidth - 14}
-                    y2={y}
-                    stroke="#1e293b"
-                    strokeDasharray={pct === effectiveYMin || pct === effectiveYMax ? undefined : '4 4'}
-                  />
-                  <text x={6} y={y + 3} fill="#64748b" fontSize="10.5" fontFamily="monospace">
-                    {pct}%
-                  </text>
-                </g>
-              );
-            })}
-
-            {binned.length > 0 ? (
-              <>
-                {/* Shaded Min-Max Destruction Band */}
-                {binned.length > 1 && (
-                  <polygon
-                    fill="rgba(250, 204, 21, 0.14)"
-                    points={buildBandPolygon(
-                      binned.map((b) => b.minPct),
-                      binned.map((b) => b.maxPct),
-                      mainChartWidth,
-                      340,
-                      effectiveYMin,
-                      effectiveYMax,
-                      40,
-                      22
-                    )}
-                  />
-                )}
-
-                {/* Window Mean Destruction % */}
-                <polyline
-                  fill="none"
-                  stroke="#facc15"
-                  strokeWidth="1.8"
-                  points={buildLinePoints(
-                    binned.map((b) => b.meanPct),
-                    mainChartWidth,
-                    340,
-                    effectiveYMin,
-                    effectiveYMax,
-                    40,
-                    22
-                  )}
-                />
-
-                {/* 50-Episode Rolling Average Destruction % (Main Trend Line) */}
-                <polyline
-                  fill="none"
-                  stroke="#f97316"
-                  strokeWidth="3.0"
-                  points={buildLinePoints(
-                    binned.map((b) => b.avg50Pct),
-                    mainChartWidth,
-                    340,
-                    effectiveYMin,
-                    effectiveYMax,
-                    40,
-                    22
-                  )}
-                />
-
-                {/* X-axis Episode labels */}
-                {[0, 0.25, 0.5, 0.75, 1].map((frac, idx) => {
-                  const bIdx = Math.min(
-                    binned.length - 1,
-                    Math.floor(frac * (binned.length - 1))
-                  );
-                  const b = binned[bIdx];
-                  const x = 40 + frac * (mainChartWidth - 54);
+            <div ref={mainChartRef} className="ai-main-chart-wrapper">
+              <svg
+                viewBox={`0 0 ${mainChartWidth} ${mainChartHeight}`}
+                className="ai-wide-svg-chart"
+              >
+                {yTicks.map((pct) => {
+                  const padY = 22;
+                  const plotH = mainChartHeight - padY * 2;
+                  const y = mainChartHeight - padY - ((pct - effectiveYMin) / ySpan) * plotH;
                   return (
-                    <text
-                      key={idx}
-                      x={x}
-                      y={334}
-                      textAnchor="middle"
-                      fill="#94a3b8"
-                      fontSize="10"
-                      fontFamily="monospace"
-                    >
-                      Ep {b.epEnd}
-                    </text>
+                    <g key={pct}>
+                      <line
+                        x1={40}
+                        y1={y}
+                        x2={mainChartWidth - 14}
+                        y2={y}
+                        stroke="#1e293b"
+                        strokeDasharray={pct === effectiveYMin || pct === effectiveYMax ? undefined : '4 4'}
+                      />
+                      <text x={6} y={y + 3} fill="#64748b" fontSize="10.5" fontFamily="monospace">
+                        {pct}%
+                      </text>
+                    </g>
                   );
                 })}
-              </>
-            ) : (
-              <text
-                x={mainChartWidth / 2}
-                y={170}
-                textAnchor="middle"
-                fill="#64748b"
-                fontSize="13"
-                fontFamily="monospace"
-              >
-                Click "Resume & Train" above to stream live GPU training curves
-              </text>
-            )}
-          </svg>
-        </section>
 
-        {/* BOTTOM 3-COLUMN LIVE ANALYTICS GRID */}
-        <div className="ai-analytics-grid">
-          {/* COL 1: ARMY USAGE & PERFORMANCE STATS */}
-          <section className="ai-card" ref={armyChartRef}>
+                {binned.length > 0 ? (
+                  <>
+                    {/* Shaded Min-Max Destruction Band */}
+                    {binned.length > 1 && (
+                      <polygon
+                        fill="rgba(250, 204, 21, 0.14)"
+                        points={buildBandPolygon(
+                          binned.map((b) => b.minPct),
+                          binned.map((b) => b.maxPct),
+                          mainChartWidth,
+                          mainChartHeight,
+                          effectiveYMin,
+                          effectiveYMax,
+                          40,
+                          22
+                        )}
+                      />
+                    )}
+
+                    {/* Window Mean Destruction % */}
+                    <polyline
+                      fill="none"
+                      stroke="#facc15"
+                      strokeWidth="1.8"
+                      points={buildLinePoints(
+                        binned.map((b) => b.meanPct),
+                        mainChartWidth,
+                        mainChartHeight,
+                        effectiveYMin,
+                        effectiveYMax,
+                        40,
+                        22
+                      )}
+                    />
+
+                    {/* 50-Episode Rolling Average Destruction % (Main Trend Line) */}
+                    <polyline
+                      fill="none"
+                      stroke="#f97316"
+                      strokeWidth="3.0"
+                      points={buildLinePoints(
+                        binned.map((b) => b.avg50Pct),
+                        mainChartWidth,
+                        mainChartHeight,
+                        effectiveYMin,
+                        effectiveYMax,
+                        40,
+                        22
+                      )}
+                    />
+
+                    {/* X-axis Episode labels */}
+                    {[0, 0.25, 0.5, 0.75, 1].map((frac, idx) => {
+                      const bIdx = Math.min(
+                        binned.length - 1,
+                        Math.floor(frac * (binned.length - 1))
+                      );
+                      const b = binned[bIdx];
+                      const x = 40 + frac * (mainChartWidth - 54);
+                      return (
+                        <text
+                          key={idx}
+                          x={x}
+                          y={mainChartHeight - 6}
+                          textAnchor="middle"
+                          fill="#94a3b8"
+                          fontSize="10"
+                          fontFamily="monospace"
+                        >
+                          Ep {b.epEnd}
+                        </text>
+                      );
+                    })}
+                  </>
+                ) : (
+                  <text
+                    x={mainChartWidth / 2}
+                    y={mainChartHeight / 2}
+                    textAnchor="middle"
+                    fill="#64748b"
+                    fontSize="13"
+                    fontFamily="monospace"
+                  >
+                    Click "Resume & Train" above to stream live GPU training curves
+                  </text>
+                )}
+              </svg>
+            </div>
+          </section>
+
+          {/* RIGHT SECTION (50%): 3 OTHER GRAPHS STACKED VERTICALLY */}
+          <div className="ai-trainer-split-right">
+            {/* COL 1: ARMY USAGE & PERFORMANCE STATS */}
+            <section className="ai-card" ref={armyChartRef}>
             <div className="ai-card-header">
               <h3>⚔️ Army Performance (3 Meta Armies)</h3>
               <div className="ai-chart-legend" style={{ fontSize: '0.72rem' }}>
@@ -1852,10 +1861,20 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
             </table>
           </section>
 
-          {/* COL 3: LOSSES, ACTION PACING & RECENT EPISODES */}
+          {/* 3: LOSSES, ACTION PACING & RECENT EPISODES */}
           <section className="ai-card" ref={pacingChartRef}>
             <div className="ai-card-header">
               <h3>🧠 Return, Entropy & Action Pacing</h3>
+              <div className="ai-chart-legend" style={{ fontSize: '0.72rem' }}>
+                <span title="Mean Episode Return R">
+                  <i className="ai-dot" style={{ background: '#fde047' }} />
+                  Return R
+                </span>
+                <span title="Policy Shannon Entropy H(π)">
+                  <i className="ai-dot" style={{ background: '#c084fc' }} />
+                  Entropy H(π)
+                </span>
+              </div>
             </div>
             <svg
               viewBox={`0 0 ${pacingChartWidth} 115`}
@@ -1967,8 +1986,9 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
             </div>
           </section>
         </div>
-      </>
-    )}
+      </div>
+    </>
+  )}
       </div>
     );
   }

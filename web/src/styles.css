@@ -1831,6 +1831,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .ai-card-header h3 {
@@ -2102,11 +2103,22 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.ai-main-chart-wrapper {
+  flex: 1;
+  min-height: 440px;
+  position: relative;
+  width: 100%;
 }
 
 .ai-wide-svg-chart {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  height: 340px;
+  height: 100%;
   background: #0b1324;
   border: 1px solid #334155;
   border-radius: 8px;
@@ -2189,6 +2201,26 @@ body {
   background: rgba(30, 41, 59, 0.7);
   border: 1px solid rgba(71, 85, 105, 0.35);
   font-weight: 600;
+}
+
+/* SPLIT 2-COLUMN AI TRAINER LAYOUT (50% LEFT / 50% RIGHT) */
+.ai-trainer-split-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+@media (max-width: 1100px) {
+  .ai-trainer-split-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ai-trainer-split-right {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .ai-analytics-grid {
