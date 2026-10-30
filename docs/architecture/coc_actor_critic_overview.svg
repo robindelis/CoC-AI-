@@ -44,10 +44,10 @@
 <title>0</title>
 <polygon fill="lightyellow" stroke="none" points="339.5,-2492.5 171,-2492.5 171,-2454 339.5,-2454 339.5,-2492.5"/>
 <polygon fill="none" stroke="black" points="171,-2454 171,-2492.5 265.75,-2492.5 265.75,-2454 171,-2454"/>
-<text xml:space="preserve" text-anchor="start" x="176" y="-2476.25" font-family="Linux libertine" font-size="10.00">obs (1×50×50×50)</text>
+<text xml:space="preserve" text-anchor="start" x="176" y="-2476.25" font-family="Linux libertine" font-size="10.00">obs (1×59×50×50)</text>
 <text xml:space="preserve" text-anchor="start" x="200" y="-2462" font-family="Linux libertine" font-size="10.00">depth:0</text>
 <polygon fill="none" stroke="black" points="265.75,-2454 265.75,-2492.5 339.5,-2492.5 339.5,-2454 265.75,-2454"/>
-<text xml:space="preserve" text-anchor="start" x="270.75" y="-2469.12" font-family="Linux libertine" font-size="10.00">(1, 50, 50, 50)</text>
+<text xml:space="preserve" text-anchor="start" x="270.75" y="-2469.12" font-family="Linux libertine" font-size="10.00">(1, 59, 50, 50)</text>
 </g>
 <!-- 2 -->
 <g id="node3" class="node">
@@ -59,7 +59,7 @@
 <polygon fill="none" stroke="black" points="252.88,-2391.5 252.88,-2415.75 299.62,-2415.75 299.62,-2391.5 252.88,-2391.5"/>
 <text xml:space="preserve" text-anchor="start" x="262.75" y="-2399.5" font-family="Linux libertine" font-size="10.00">input:</text>
 <polygon fill="none" stroke="black" points="299.62,-2391.5 299.62,-2415.75 381.62,-2415.75 381.62,-2391.5 299.62,-2391.5"/>
-<text xml:space="preserve" text-anchor="start" x="307.62" y="-2399.5" font-family="Linux libertine" font-size="10.00">(1, 50, 50, 50) </text>
+<text xml:space="preserve" text-anchor="start" x="307.62" y="-2399.5" font-family="Linux libertine" font-size="10.00">(1, 59, 50, 50) </text>
 <polygon fill="none" stroke="black" points="252.88,-2367.25 252.88,-2391.5 299.62,-2391.5 299.62,-2367.25 252.88,-2367.25"/>
 <text xml:space="preserve" text-anchor="start" x="257.88" y="-2375.25" font-family="Linux libertine" font-size="10.00">output: </text>
 <polygon fill="none" stroke="black" points="299.62,-2367.25 299.62,-2391.5 381.62,-2391.5 381.62,-2367.25 299.62,-2367.25"/>

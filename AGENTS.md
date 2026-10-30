@@ -244,12 +244,16 @@ The project registers a persisting agent specialized in keeping the Obsidian vau
 - **Agent Definitions**:
   - Global CLI runtime: `~/.gemini/config/agents/vault-updater/agent.md`
   - Version-controlled repo source: [`.agents/agents/vault-updater/agent.md`](file:///home/robin/Projects/CoC/.agents/agents/vault-updater/agent.md)
-- **Role**: Detects changes in Rust simulation code, Python RL environments, neural networks, or presets; updates the corresponding markdown files and ADRs in `obsidian_vault/`; regenerates diagrams and the interactive canvas via `generate_vault.py`.
+- **Role**: Uses incremental Git commit diffs (`scripts/vault_diff.py`) to detect code drift since the last synced commit in `obsidian_vault/.sync_state.json`; reads only the modified code lines without full-codebase scanning; records Architectural Decision Records (ADRs) in `obsidian_vault/decisions/Architecture_Decisions_And_System_Memory.md`; regenerates diagrams and the interactive canvas via `generate_vault.py`; marks the new commit as synced and commits to Git.
 
 ### ⚠️ MANDATORY RULE: Synchronize the Vault on Codebase Changes
 Whenever ANY change is made to the codebase (simulation engine, observation space, action heads, neural architectures, or training pipeline), the `vault-updater` agent **MUST BE RUN** to reconcile and update the Obsidian vault.
 
 ```bash
+# Check incremental code drift since last vault sync (or view targeted diff):
+python3 scripts/vault_diff.py
+python3 scripts/vault_diff.py --summary
+
 # Run vault-updater non-interactively using agy with Gemini 3.8 Flash Medium:
 agy --agent vault-updater --model gemini-3.8-flash-medium -p "Update the vault with the latest codebase changes"
 

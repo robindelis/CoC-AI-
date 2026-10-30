@@ -1096,6 +1096,27 @@ def update_index_moc(registry: Dict[str, Any]) -> None:
         )
     model_table = "\n".join(rows)
 
+    sync_state_file = os.path.join(VAULT_DIR, ".sync_state.json")
+    sync_frontmatter = ""
+    sync_callout = ""
+    if os.path.exists(sync_state_file):
+        try:
+            with open(sync_state_file, "r", encoding="utf-8") as sf:
+                sdata = json.load(sf)
+                short_sha = sdata.get("last_synced_commit_short", "")
+                full_sha = sdata.get("last_synced_commit", "")
+                synced_at = sdata.get("last_synced_at", "")[:19].replace("T", " ")
+                subject = sdata.get("last_synced_subject", "")
+                if short_sha:
+                    sync_frontmatter = f'last_synced_commit: "{short_sha}"\nlast_synced_at: "{synced_at}"\n'
+                    sync_callout = (
+                        f"> [!NOTE] 🔄 Codebase Synchronization Status\n"
+                        f"> **Synchronized Commit**: [`{short_sha}`](file://{REPO_ROOT}) &mdash; *{subject}*\n"
+                        f"> **Synced At**: `{synced_at} UTC` • **Full SHA**: `{full_sha}`\n\n"
+                    )
+        except Exception:
+            pass
+
     content = f"""---
 title: "CoC TH18 Deep RL — Architecture & Experiment Vault (MOC)"
 tags:
@@ -1104,18 +1125,18 @@ tags:
   - ppo
   - architecture
 updated: {time.strftime('%Y-%m-%d')}
----
+{sync_frontmatter}---
 
 # 🏰 CoC TH18 Deep RL — Architecture & Training Vault
 
-Welcome to the central research vault tracking our **v3.0 50-Channel Dedicated Spatial CNN & Single-Army Specialist Actor-Critic** architecture, input/output tensor specifications, per-troop, per-hero, per-spell, and per-defense spatial encodings, and empirical training benchmarks for Clash of Clans Town Hall 18.
+{sync_callout}Welcome to the central research vault tracking our **v3.0 59-Channel Dedicated Spatial CNN & Single-Army Specialist Actor-Critic** architecture, input/output tensor specifications, per-troop, per-hero, per-spell, and per-defense spatial encodings, and empirical training benchmarks for Clash of Clans Town Hall 18.
 
 ---
 
 ## 🧭 Primary Navigation
 
 ### 🎨 [[01_Model_Architecture_and_Training_Tracker.canvas|Interactive Model Architecture & Training Canvas]]
-Open the interactive 2D whiteboard visualizer presenting the 50-channel stacked CNN computation graph, live available inventory (`army_context`) fusion, single-army vs. 5-village benchmark matrices, training curves, and resumed training session timelines.
+Open the interactive 2D whiteboard visualizer presenting the 59-channel stacked CNN computation graph, live available inventory (`army_context`) fusion, single-army vs. 5-village benchmark matrices, training curves, and resumed training session timelines.
 
 ---
 
@@ -1165,20 +1186,34 @@ def generate_obsidian_canvas(
     edges = []
 
     # Master Header Node
+    sync_state_file = os.path.join(VAULT_DIR, ".sync_state.json")
+    sync_line = ""
+    if os.path.exists(sync_state_file):
+        try:
+            with open(sync_state_file, "r", encoding="utf-8") as sf:
+                sdata = json.load(sf)
+                short_sha = sdata.get("last_synced_commit_short", "")
+                subject = sdata.get("last_synced_subject", "")
+                synced_at = sdata.get("last_synced_at", "")[:19].replace("T", " ")
+                if short_sha:
+                    sync_line = f"\n- **Codebase Sync Status**: [`{short_sha}`](file://{REPO_ROOT}) ({synced_at} UTC) — *{subject}*"
+        except Exception:
+            pass
+
     nodes.append({
         "id": "canvas-header",
         "type": "text",
         "x": 0,
         "y": -360,
         "width": 3100,
-        "height": 320,
+        "height": 330,
         "color": "5",
-        "text": """# 🏰 Clash of Clans TH18 Deep RL — v3.0 Single-Army Specialist & 50-Channel Dedicated Tracker
+        "text": f"""# 🏰 Clash of Clans TH18 Deep RL — v3.0 Single-Army Specialist & 59-Channel Dedicated Tracker
 
-This canvas dynamically tracks our **v3.0 (`1,375,288` params)** neural network architecture, `50 × 50 × 50` dedicated composition, heroes, spells & defenses spatial observation tensor, `64-D` live available inventory input (`army_context`), factorized 5-head action space, and single-army specialist performance across all 5 TH18 reference villages.
+This canvas dynamically tracks our **v3.0** neural network architecture, `59 × 50 × 50` dedicated composition, heroes, spells & defenses spatial observation tensor, `64-D` live available inventory input (`army_context`), factorized 5-head action space, and single-army specialist performance across all 5 TH18 reference villages.{sync_line}
 
-- **Single-Army Specialist Paradigm**: Each model is trained exclusively for **1 dedicated Army Composition**, reflected in its default filename (`{army_slug}_ep{N}_{pct}pct_{stars}star.pt`) and exported inside the `.pt` checkpoint for automatic loading in the AI Model Tester.
-- **50-Channel Dedicated Spatial Grid + 64-D Live Available Inventory**: Channels `0..4` encode base state & Red Zone; Channels `5..16` dedicate **1 channel per loadout troop/siege/CC**; Channels `17..20` encode friendly heroes; Channels `21..24` encode active spells (Totem HP & continuous fading AoE circles); Channels `25..28` encode defending CC, heroes, ground and air skeletons; Channels `29..49` dedicate **1 channel per TH18 defense type** (encoding mode & facing angle, with Hidden Tesla masked until revealed); `army_context (64-D)` encodes what troops, spells, heroes, abilities, and siege are still available and in what remaining quantity.
+- **Single-Army Specialist Paradigm**: Each model is trained exclusively for **1 dedicated Army Composition**, reflected in its default filename (`{{army_slug}}_ep{{N}}_{{pct}}pct_{{stars}}star.pt`) and exported inside the `.pt` checkpoint for automatic loading in the AI Model Tester.
+- **59-Channel Dedicated Spatial Grid + 64-D Live Available Inventory**: Channels `0..4` encode base state & Red Zone; Channels `5..16` dedicate **1 channel per loadout troop/siege/CC**; Channels `17..20` encode friendly heroes; Channels `21..24` encode active spells; Channels `25..33` encode defending CC, heroes, ground and air skeletons; Channels `34..55` dedicate **1 channel per defense type & Clan Castle**; Channels `56..58` encode non-offensive building groups; `army_context (64-D)` encodes live inventory.
 - **Vault Documentation**: [[00_Index_MOC|Vault Map of Content]] • [[architectures/v3.0_31Ch_PerDefense_SingleArmy_ActorCritic|v3.0 Architecture Spec]] • [[encodings/Defense_And_Unit_Spatial_Encoding|50-Channel Defense & Unit Encoding Spec]] • [[decisions/Architecture_Decisions_And_System_Memory|System Memory & ADRs]]""",
     })
 

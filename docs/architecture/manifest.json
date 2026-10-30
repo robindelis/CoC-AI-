@@ -1,19 +1,19 @@
 {
   "model_class": "CoCActorCritic",
-  "architecture_hash": "125552472245094be1b8199548e162fc209c1f33a6dee216db595b8e27dc540d",
+  "architecture_hash": "5205f4ae7e61bdade667808dbdf90d600e8f0ef8b212165dd11b272bca44de47",
   "input_shape": [
     1,
-    50,
+    59,
     50,
     50
   ],
-  "total_params": 1475896,
-  "trainable_params": 1475896,
+  "total_params": 1481080,
+  "trainable_params": 1481080,
   "submodules": [
     {
       "name": "encoder.spatial_stem",
       "type": "Sequential",
-      "params": 139904
+      "params": 145088
     },
     {
       "name": "encoder.context_res",
@@ -151,22 +151,22 @@
     }
   },
   "live_spec": {
-    "in_channels": 50,
+    "in_channels": 59,
     "spatial_dim": 128,
     "embed_dim": 256,
     "army_context_dim": 64,
     "num_fraction_bins": 5,
-    "total_params": 1475896,
-    "total_macs": 1266455936,
+    "total_params": 1481080,
+    "total_macs": 1279415936,
     "layers": [
       {
         "id": "s1",
         "stage": "spatial",
         "type": "Dilated Conv2d + GroupNorm + SiLU",
         "short": "Conv d=2",
-        "desc": "64 filters, 3\u00d73, d=2, p=2, GroupNorm(4), SiLU (50-ch Village Grid)",
+        "desc": "64 filters, 3\u00d73, d=2, p=2, GroupNorm(4), SiLU (59-ch Village Grid)",
         "inputShape": [
-          50,
+          59,
           50,
           50
         ],
@@ -176,8 +176,8 @@
           50
         ],
         "receptiveField": 5,
-        "params": 28928,
-        "macs": 72000000,
+        "params": 34112,
+        "macs": 84960000,
         "color": "#2563eb",
         "border": "#60a5fa",
         "coneLabel": "3\u00d73 d=2"
