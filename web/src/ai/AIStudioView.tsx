@@ -467,16 +467,29 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   }, [inspectedModelFile, loadCheckpointHistory]);
 
   const isLockedToResume = resumeFrom !== 'scratch';
+  const lastSyncedResumeFromRef = useRef<string | null>('scratch');
 
   useEffect(() => {
     const models = serverStatus?.saved_models ?? [];
     if (resumeFrom !== 'scratch' && models.length > 0 && !models.some((m) => m.filename === resumeFrom)) {
       setResumeFrom('scratch');
+      lastSyncedResumeFromRef.current = 'scratch';
       return;
     }
-    if (resumeFrom === 'scratch') return;
+    if (resumeFrom === 'scratch') {
+      lastSyncedResumeFromRef.current = 'scratch';
+      return;
+    }
+    // Only synchronize checkpoint hyperparameters once per selected checkpoint,
+    // preventing the 1-second server polling loop from overwriting user edits.
+    if (lastSyncedResumeFromRef.current === resumeFrom) {
+      return;
+    }
+
     const found = models.find((m) => m.filename === resumeFrom);
     if (!found) return;
+
+    lastSyncedResumeFromRef.current = resumeFrom;
 
     if (found.hyperparams) {
       if (found.hyperparams.lr != null) setLr(found.hyperparams.lr);
@@ -1418,6 +1431,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                     min={1}
                     max={5000}
                     value={episodes}
+                    disabled={isTraining}
                     onChange={(e) => setEpisodes(Number(e.target.value))}
                     className="clash-select"
                   />
@@ -1428,6 +1442,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                     type="number"
                     step={0.0001}
                     value={lr}
+                    disabled={isTraining}
                     onChange={(e) => setLr(Number(e.target.value))}
                     className="clash-select"
                   />
@@ -1445,6 +1460,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                     min={1}
                     max={32}
                     value={batchEpisodes}
+                    disabled={isTraining}
                     onChange={(e) => setBatchEpisodes(Number(e.target.value))}
                     className="clash-select"
                   />
@@ -1457,6 +1473,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                     max={512}
                     step={16}
                     value={minibatchSize}
+                    disabled={isTraining}
                     onChange={(e) => setMinibatchSize(Number(e.target.value))}
                     className="clash-select"
                   />
@@ -1468,6 +1485,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                     min={1}
                     max={16}
                     value={ppoEpochs}
+                    disabled={isTraining}
                     onChange={(e) => setPpoEpochs(Number(e.target.value))}
                     className="clash-select"
                   />

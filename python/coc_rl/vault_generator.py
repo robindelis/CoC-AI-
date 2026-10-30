@@ -29,6 +29,7 @@ ASSETS_DIR = os.path.join(VAULT_DIR, "assets")
 ARCH_ASSETS_DIR = os.path.join(ASSETS_DIR, "architectures")
 CHARTS_ASSETS_DIR = os.path.join(ASSETS_DIR, "charts")
 RUNS_DIR = os.path.join(VAULT_DIR, "runs")
+DECISIONS_DIR = os.path.join(VAULT_DIR, "decisions")
 CANVAS_FILE = os.path.join(VAULT_DIR, "01_Model_Architecture_and_Training_Tracker.canvas")
 REGISTRY_FILE = os.path.join(REPO_ROOT, "trained_models", "run_registry.json")
 EVAL_CACHE_FILE = os.path.join(REPO_ROOT, "trained_models", "model_evals.json")
@@ -89,7 +90,7 @@ $$R_t = 0.35 \\cdot \\Delta \\%_{\\text{destr}} + 15.0 \\cdot \\Delta \\text{HP}
 # ---------------------------------------------------------------------------
 
 def ensure_dirs() -> None:
-    for d in (VAULT_DIR, ASSETS_DIR, ARCH_ASSETS_DIR, CHARTS_ASSETS_DIR, RUNS_DIR, TRAINED_MODELS_DIR):
+    for d in (VAULT_DIR, ASSETS_DIR, ARCH_ASSETS_DIR, CHARTS_ASSETS_DIR, RUNS_DIR, DECISIONS_DIR, TRAINED_MODELS_DIR):
         os.makedirs(d, exist_ok=True)
 
 
@@ -1042,7 +1043,10 @@ Open the interactive 2D whiteboard visualizer presenting the 31-channel stacked 
 - [[encodings/Defense_And_Unit_Spatial_Encoding|31-Channel Per-Defense Spatial Grid (Ch 10..30), Unit Archetypes (Ch 8..9) & Live Available Inventory (64-D)]]
 - [[encodings/Unit_Type_Spatial_Encoding|Hierarchical Tactical-Archetype Unit Encoding (Ch 8 & Ch 9 Deep Dive)]]
 
-### 3. Empirical Benchmark Logs & AI Training Diagnostics (`experiments/`)
+### 3. Long-Term Memory & Architectural Decisions (`decisions/`)
+- [[decisions/Architecture_Decisions_And_System_Memory|Project Memory, Architectural Decision Records (ADRs) & Source of Truth]]
+
+### 4. Empirical Benchmark Logs & AI Training Diagnostics (`experiments/`)
 - [[experiments/Experiment_Log_And_Benchmarks|Master Experiment Log & Single-Army Specialist Benchmarks]]
 - [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Telemetry Architecture & PPO Pathology Fixes]]
 """
@@ -1082,7 +1086,7 @@ This canvas dynamically tracks our **v3.0 (`1,364,344` params)** neural network 
 
 - **Single-Army Specialist Paradigm**: Each model is trained exclusively for **1 dedicated Army Composition**, reflected in its default filename (`{army_slug}_ep{N}_{pct}pct_{stars}star.pt`) and exported inside the `.pt` checkpoint for automatic loading in the AI Model Tester.
 - **31-Channel Per-Defense Spatial Grid + 64-D Live Available Inventory**: Channels `0..9` encode base state & unit archetypes; Channels `10..30` dedicate **1 channel per TH18 defense type** (encoding mode & facing angle, with Hidden Tesla masked until revealed); `army_context (64-D)` encodes what troops, spells, heroes, abilities, and siege are still available and in what remaining quantity.
-- **Vault Documentation**: [[00_Index_MOC|Vault Map of Content]] • [[architectures/v3.0_31Ch_PerDefense_SingleArmy_ActorCritic|v3.0 Architecture Spec]] • [[encodings/Defense_And_Unit_Spatial_Encoding|31-Channel Defense & Unit Encoding Spec]]""",
+- **Vault Documentation**: [[00_Index_MOC|Vault Map of Content]] • [[architectures/v3.0_31Ch_PerDefense_SingleArmy_ActorCritic|v3.0 Architecture Spec]] • [[encodings/Defense_And_Unit_Spatial_Encoding|31-Channel Defense & Unit Encoding Spec]] • [[decisions/Architecture_Decisions_And_System_Memory|System Memory & ADRs]]""",
     })
 
     group_width = 1500

@@ -25,7 +25,7 @@ Open the interactive 2D whiteboard visualizer presenting the 31-channel stacked 
 
 | Model Run | Arch | Inputs (`obs` + `army_context`) | Dedicated Army Composition | Total Episodes | Peak Combat Record | Status |
 | :--- | :---: | :---: | :--- | :---: | :---: | :---: |
-| [[runs/v3_per_defense_31ch\|v3.0 — 31-Channel Per-Defense CNN & Single-Army Specialist Actor-Critic]] | `v3.0` | `(31, 50, 50)` + `64D` | **TH18 Thrower + Healer + Totem Smash (Meta)** | **`0`** (0 sessions) | **`0%` (0★)** | **ACTIVE** |
+| [[runs/v3_per_defense_31ch\|v3.0 — 31-Channel Per-Defense CNN & Single-Army Specialist Actor-Critic]] | `v3.0` | `(31, 50, 50)` + `64D` | **TH18 Thrower + Healer + Totem Smash (Meta)** | **`1,918`** (2 sessions) | **`100%` (3★)** | **ACTIVE** |
 
 ---
 
@@ -38,6 +38,9 @@ Open the interactive 2D whiteboard visualizer presenting the 31-channel stacked 
 - [[encodings/Defense_And_Unit_Spatial_Encoding|31-Channel Per-Defense Spatial Grid (Ch 10..30), Unit Archetypes (Ch 8..9) & Live Available Inventory (64-D)]]
 - [[encodings/Unit_Type_Spatial_Encoding|Hierarchical Tactical-Archetype Unit Encoding (Ch 8 & Ch 9 Deep Dive)]]
 
-### 3. Empirical Benchmark Logs & AI Training Diagnostics (`experiments/`)
+### 3. Long-Term Memory & Architectural Decisions (`decisions/`)
+- [[decisions/Architecture_Decisions_And_System_Memory|Project Memory, Architectural Decision Records (ADRs) & Source of Truth]]
+
+### 4. Empirical Benchmark Logs & AI Training Diagnostics (`experiments/`)
 - [[experiments/Experiment_Log_And_Benchmarks|Master Experiment Log & Single-Army Specialist Benchmarks]]
 - [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Telemetry Architecture & PPO Pathology Fixes]]

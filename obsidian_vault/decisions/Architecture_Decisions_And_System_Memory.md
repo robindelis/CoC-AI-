@@ -1,0 +1,247 @@
+---
+title: "Project Long-Term Memory & Architectural Decision Records (ADRs)"
+tags:
+  - memory
+  - source-of-truth
+  - adr
+  - architecture
+  - coc-rl
+  - tensor-spec
+updated: 2026-10-30
+---
+
+# 🧠 CoC TH18 Deep RL — Project Long-Term Memory & Source of Truth
+
+Back to [[00_Index_MOC|Vault Index (MOC)]] • Architecture: [[architectures/v3.0_31Ch_PerDefense_SingleArmy_ActorCritic|v3.0 Architecture Spec]] • Encodings: [[encodings/Defense_And_Unit_Spatial_Encoding|31-Channel Defense & Unit Encoding Spec]]
+
+---
+
+## 🏛️ Invariant: The Obsidian Vault as the Project's Long-Term Memory
+
+The `obsidian_vault/` directory is the **authoritative single source of truth** for all architectural invariants, design decisions, mathematical tensor formulations, training configurations, and empirical benchmarks of this project.
+
+1. **Evolution & Mutability**: As the simulation engine (`crates/coc-engine`), neural network architectures (`python/coc_rl/networks.py`), or training pipelines evolve, this vault must be continuously updated.
+2. **Synchronized Agent**: A persisting specialist agent (`vault-updater`, running on `agy` with `gemini-3.8-flash-medium`) is registered to reconcile codebase modifications directly into this memory ledger.
+3. **No Unrecorded Architectural Drift**: Any shift in tensor channels, normalization factors, action spaces, or environment logic must be explicitly captured in an Architectural Decision Record (ADR) below.
+
+---
+
+## 📥 Current Input Implementation
+
+The deep reinforcement learning attacker policy receives two fused inputs at every decision step `t`:
+1. A **31-Channel Spatial Observation Tensor** `obs` with shape `(B, 31, 50, 50)`
+2. A **64-Dimensional Live Available Inventory Vector** `army_context` with shape `(B, 64)`
+
+```text
+[Input 1: obs (31, 50, 50)]  ───> [CoCSpatialEncoder] ───> spatial_features (B, 128, 50, 50)
+                                        │
+                                        └───> global_emb (B, 256)
+                                                  │
+[Input 2: army_context (64)] ───> [Linear+LN+SiLU] ───(+) (Residual Fusion)
+                                                  │
+                                       ┌──────────┴──────────┐
+                                  [Factorized Actor Heads] [Critic Head]
+```
+
+### 1. 31-Channel Spatial Observation Grid (`(B, 31, 50, 50)`)
+
+Extracted directly by the Rust simulation engine via `BattleEngine::extract_spatial_observation()` (`crates/coc-engine/src/sim.rs`):
+
+| Channel # | Channel Name | Value / Formula on Footprint | Tactical Significance |
+| :---: | :--- | :--- | :--- |
+| **`0`** | **Building HP Ratio** | `hp / 11000.0` clamped to `[0, 1]` | Structural integrity across surviving building footprints. Hidden Teslas write `0.0` until revealed. |
+| **`1`** | **Defense DPS Threat** | `min(spec.dps / 750.0, 1.0)` | Lethal danger field across active defensive turrets. Hidden Teslas write `0.0` until revealed. |
+| **`2`** | **Town Hall 18 Mask** | `1.0` on 4×4 TH18 tiles, `0.0` elsewhere | Locates the 2nd Victory Star objective and high-HP core defense zone. |
+| **`3`** | **Wall Durability** | `hp / max_hp` clamped to `[0, 1]` | Wall segment durability (1×1 tile per piece). Breached or destroyed walls drop to `0.0`. |
+| **`4`** | **No-Deploy Red Zone** | `1.0` = forbidden, `0.0` = legal deployment | Dynamic exclusion mask around living structures restricting troop, hero, and siege placement. |
+| **`5`** | **Friendly Ground HP Density** | `min(sum(ground_hp) / 5000.0, 1.0)` | Spatial clustering and mass density of allied ground units. |
+| **`6`** | **Friendly Air HP Density** | `min(sum(air_hp) / 5000.0, 1.0)` | Spatial clustering and mass density of allied air units. |
+| **`7`** | **Active Spell Fields** | `1.0` at center of active spell rings | Active Rage, Heal, Freeze, Invisibility, Poison, Overgrowth, or Totem fields. |
+| **`8`** | **Allied Unit Archetype Signature** | `max_{u in Ally(x,y)} phi(u) in [0, 1]` | Distinguishes allied archetypes: Swarm `0.10`, Tank `0.35`, Ranged `0.60`, Healer `0.81`, Hero `0.99`. |
+| **`9`** | **Enemy Unit Archetype Signature** | `max_{u in Enemy(x,y)} phi(u) in [0, 1]` | Distinguishes defending CC troops, Heroes, Guardians, Ground Skeletons `0.10`, Air Skeletons `0.28`. |
+| **`10`** | **Archer Tower** | `1.0` while alive (3×3) | Point defense targeting ground + air (10.0t range, 145 DPS). |
+| **`11`** | **Multi-Archer Tower** | `1.0` while alive (3×3) | Merged 3-target point defense (10.0t range, 363 DPS). |
+| **`12`** | **Ricochet Cannon** | `1.0` while alive (3×3) | Merged 2-target ground bounce defense (9.0t range, 396 DPS). |
+| **`13`** | **Cannon** | `1.0` while alive (3×3) | Standard ground point defense (9.0t range, 235 DPS). |
+| **`14`** | **Mortar** | `1.0` while alive (3×3) | Long-range ground splash with 4–11t blind deadzone (56 DPS). |
+| **`15`** | **Air Defense** | `1.0` while alive (3×3) | Lethal anti-air rocket battery (10.0t range, 650 DPS). |
+| **`16`** | **Wizard Tower** | `1.0` while alive (3×3) | Ground + air area splash defense (7.0t range, 110 DPS). |
+| **`17`** | **Super Wizard Tower** | `1.0` while alive (3×3) | Merged chain-lightning defense hitting up to 15 targets (8.0t range, 265 DPS). |
+| **`18`** | **Air Sweeper** | `0.25 + 0.75 * (theta_deg / 360.0)` | Encodes 2×2 footprint and continuous 105° pushback cone facing angle in `[0.25, 1.0]`. |
+| **`19`** | **Hidden Tesla** | `1.0` when revealed (2×2), `0.0` hidden | Hidden information invariant: strictly `0.0` until revealed by proximity or >=51% destruction. |
+| **`20`** | **Bomb Tower** | `1.0` while alive (3×3) | Ground splash defense + triggers high-damage death bomb upon destruction. |
+| **`21`** | **X-Bow** | `1.0` = Air+Ground, `0.5` = Ground-only | Distinguishes 11.5t Air+Ground mode from 14.0t Ground-only mode. |
+| **`22`** | **Inferno Tower** | `1.0` = Single-Target, `0.5` = Multi-Target | Distinguishes ramping single-target beam from 6-target multi mode. |
+| **`23`** | **Scattershot** | `1.0` while alive (3×3) | Heavy splash defense with 90° blast cone behind target (3–10t range). |
+| **`24`** | **Builder's Hut** | `1.0` while alive (2×2) | Weaponized turret that spawns an active repair builder healing damaged buildings. |
+| **`25`** | **Spell Tower** | `0.25` Rage, `0.50` Poison, `0.75` Invis, `1.00` EQ | Encodes the active defensive spell canister triggered on compartment breach. |
+| **`26`** | **Monolith** | `1.0` while alive (3×3) | High-threat tank destroyer dealing flat damage plus percentage of max HP. |
+| **`27`** | **Multi-Gear Tower** | `1.0` = Long Range, `0.5` = Fast Attack | Distinguishes sniper mode from rapid-fire mode. |
+| **`28`** | **Firespitter** | `0.25 + 0.75 * (theta_deg / 360.0)` | Encodes 3×3 footprint and continuous 150° piercing fireball cone angle in `[0.25, 1.0]`. |
+| **`29`** | **Revenge Tower** | `1.0` while alive (3×3) | Escalating defense activating stage buffs at 5 / 25 / 50 destroyed structures. |
+| **`30`** | **Hot Candle (Crafted)** | `1.0` while alive (3×3) | Season 4 Crafted Defense (`CraftingStation`) melting down through 6 -> 4 -> 3 flames. |
+
+### 2. Live Army Context Vector (`(B, 64)`)
+
+Extracted by `BattleEngine::extract_army_context()` (`crates/coc-engine/src/sim.rs`):
+
+```text
+Indices:  [0..4]        [4..24]           [24..44]          [44..56]         [56..64]
+Content:  Progress      10 Troop Slots    10 Spell Slots    4 Hero Slots     Siege & CC
+Size:     4 floats      20 floats         20 floats         12 floats        8 floats
+```
+
+- **`[0..4]` Global Battle Progress (4 floats)**:
+  - `ctx[0] = ((1800.0 - tick) / 1800.0).clamp(0.0, 1.0)`: Remaining combat time fraction (180 seconds total).
+  - `ctx[1] = (destruction_pct / 100.0).clamp(0.0, 1.0)`: Current village destruction percentage.
+  - `ctx[2] = (stars / 3.0).clamp(0.0, 1.0)`: Victory stars achieved (50% destruction, Town Hall destroyed, 100% destruction).
+  - `ctx[3] = (active_attackers / 50.0).clamp(0.0, 1.0)`: Alive allied units currently on the battlefield.
+
+- **`[4..24]` 10 Attacking Troop Slots (20 floats, 2 floats per slot `i in 0..9`)**:
+  - `ctx[4 + i * 2] = (troop_id + 1) / 60.0`: Normalized troop type identifier.
+  - `ctx[4 + i * 2 + 1] = remaining_count / 20.0`: Normalized remaining count.
+  - **Depletion Invariant**: Once a troop slot is depleted (`remaining_count == 0`), **both entries immediately become `0.0`**.
+
+- **`[24..44]` 10 Attacking Spell Slots (20 floats, 2 floats per slot `i in 0..9`)**:
+  - `ctx[24 + i * 2] = (spell_id + 1) / 20.0`: Normalized spell type identifier.
+  - `ctx[24 + i * 2 + 1] = remaining_count / 8.0`: Normalized remaining spell count.
+  - **Depletion Invariant**: Once a spell slot is depleted (`remaining_count == 0`), **both entries immediately become `0.0`**.
+
+- **`[44..56]` 4 Attacking Hero Slots (12 floats, 3 floats per hero `i in 0..3`)**:
+  - `ctx[44 + i * 3] = ((hero_id + 1) * 60 + eq_sig + pet_sig) / 500.0`: Unique composite hero signature combining hero type, equipped gear (e.g. Giant Gauntlet, Spiky Ball, Fireball, Rocket Boots), and companion pet (e.g. Spirit Fox, Phoenix, Diggy).
+  - `ctx[44 + i * 3 + 1]`: Availability or current HP ratio. Equals `1.0` while undeployed in dock; equals `u.hp / u.max_hp` once alive on the battlefield.
+  - `ctx[44 + i * 3 + 2]`: Ability readiness state:
+    - `0.5`: Undeployed in dock.
+    - `1.0`: Deployed on battlefield and active ability is ready to trigger.
+    - `0.0`: Active ability already triggered / spent.
+
+- **`[56..64]` Siege Machine & Clan Castle Slots (8 floats)**:
+  - `ctx[56] = (siege_id + 1) / 60.0`: Normalized siege machine type identifier.
+  - `ctx[57]`: Undeployed siege machine availability in dock (`1.0` ready, `0.0` deployed/none).
+  - `ctx[58]`: Deployed siege machine manual pop availability (`1.0` active and unpopped, `0.0` popped or none).
+  - `ctx[59]`: Clan Castle popped flag (`1.0` if CC troops have broken out, `0.0` otherwise).
+  - `ctx[60..61]`: CC Troop Slot 0: `(troop_id + 1) / 60.0` and `count / 5.0`.
+  - `ctx[62..63]`: CC Troop Slot 1: `(troop_id + 1) / 60.0` and `count / 5.0`.
+
+---
+
+## 📤 Current Output Implementation (Action & Value Heads)
+
+Defined in `CoCActorCritic` (`python/coc_rl/networks.py`), the policy parameterizes a **factorized multi-discrete action space** with autoregressive conditioning and invalid-action masking, alongside a scalar state-value critic:
+
+```text
+                    [Fused Global Embedding (256-D)]
+                                   │
+       ┌───────────────────────────┼───────────────────────────┐
+       ▼                           ▼                           ▼
+[Head 1: slot_type]       [Critic: V(s) Value]        [Head 4: tile_xy]
+   (7 logits)                  (1 scalar)                (2500 logits)
+       │                                                       ▲
+       ├───────────────────────────┐                           │
+       ▼                           ▼                           │
+[Head 2: slot_idx]      [tile_cond_proj FiLM] ─────────────────┘
+  (10 logits)                      │
+       │                           ▼
+       └──────────────────> [Head 3: deploy_fraction]
+                               (5 logits)
+```
+
+### Head 1: `slot_type` (7 Categorical Logits)
+- **Module**: `slot_type_head: Linear(256 -> 7)`
+- **Action Classes**:
+  - `0 = NoOp`: Pass the decision step without deploying units or spending spells.
+  - `1 = Troop`: Deploy attacking troop(s) from the army loadout.
+  - `2 = Hero`: Deploy an available hero onto the battlefield.
+  - `3 = HeroAbility`: Trigger the manual active ability of an already-deployed hero.
+  - `4 = Siege`: Deploy the attacking siege machine.
+  - `5 = PopSiege`: Manually breach the active siege machine early to release Clan Castle reinforcements.
+  - `6 = Spell`: Cast a tactical spell from the spell deck.
+- **Masking**: Masked by `action_masks["slot_type"]` so illegal action categories (e.g. attempting to deploy an already-spent siege machine or hero) receive `-1e8` logit penalty.
+
+### Head 2: `slot_idx` (10 Categorical Logits)
+- **Module**: `slot_idx_head: MLP(embed_dim + 7 -> 128 -> 10)`
+- **Conditioning**: Autoregressively conditioned on `torch.cat([global_emb, one_hot(chosen_slot_type)], dim=-1)` (263 dimensions).
+- **Semantics**:
+  - When `slot_type == Troop`: Selects troop loadout slot index `0..9`.
+  - When `slot_type == Spell`: Selects spell loadout slot index `0..9`.
+  - When `slot_type in (Hero, HeroAbility)`: Selects hero index `0..3`.
+  - When `slot_type in (NoOp, Siege, PopSiege)`: Slot index is clamped / masked to `0`.
+- **Masking**: Masked by `action_masks["slot_idx"]` based on remaining inventory counts.
+
+### Head 3: `deploy_fraction` (5 Categorical Logits)
+- **Module**: `deploy_fraction_head: MLP(embed_dim + 7 + 10 -> 128 -> 5)`
+- **Conditioning**: Autoregressively conditioned on `torch.cat([global_emb, one_hot(chosen_type), one_hot(chosen_idx)], dim=-1)` (273 dimensions).
+- **Discrete Fraction Bins**: `(0.0, 0.25, 0.50, 0.75, 1.00)`
+- **Deployment Formula**:
+  ```python
+  def compute_deploy_count(avail_count: int, deploy_fraction: float) -> int:
+      if avail_count <= 0:
+          return 0
+      frac = max(0.0, min(1.0, float(deploy_fraction)))
+      return max(1, min(int(avail_count), int(round(avail_count * frac))))
+  ```
+- **Tactical Impact**: Allows the agent to drop a surgical scout unit (`bin 0` = 1 unit), commit half an army flank (`bin 2` = 50%), or dump an entire batch (e.g. all 15 Miners or all 8 Wall Breakers at once with `bin 4` = 100%) in a single decision step.
+
+### Head 4: `tile_xy` (2500 Spatial Logits, 50×50 Coordinate Map)
+- **Module**: `tile_cond_proj: Linear(263 -> 128)` + FiLM Spatial Modulation + `Conv2d(128 -> 32 -> 1)`
+- **Conditioning & Computation**:
+  ```python
+  cond_spatial = tile_cond_proj(cond_emb).unsqueeze(-1).unsqueeze(-1)  # (B, 128, 1, 1)
+  fused_spatial = F.silu(spatial_features + cond_spatial)               # (B, 128, 50, 50)
+  tile_logits = tile_conv_head(fused_spatial).reshape(B, 2500)         # (B, 2500)
+  ```
+- **Spatial Alignment**: Preserves full 1-to-1 coordinate alignment across the 50×50 village grid.
+- **Masking**:
+  - For Troops, Heroes, and Siege: Strictly masked to `-1e8` on any tile where `no_deploy_mask[y][x] == true` (red zone around living buildings).
+  - For Spells: Unrestricted across all 2500 tiles (spells can be dropped anywhere on the map).
+
+### Head 5: `value` (1 Scalar Critic Estimate)
+- **Module**: `critic_head: MLP(256 -> 128 -> 1)`
+- **Input**: Fused tactical state `global_emb` (256 dimensions).
+- **Semantics**: Outputs expected cumulative discounted future return `V(s) in R`, trained via clipped MSE against Generalized Advantage Estimation (GAE) targets.
+
+---
+
+## 📜 Architectural Decision Records (ADR Log)
+
+### ADR-001: Separation of Rust Simulation Core and Python Deep RL Runtime
+- **Date**: 2026-10-15
+- **Status**: Accepted
+- **Context**: High-throughput combat simulation requires sub-millisecond execution, while deep reinforcement learning research relies on PyTorch and CUDA.
+- **Decision**: Implement the deterministic combat loop, pathfinding, and combat mechanics in Rust (`crates/coc-engine`), compiled to WebAssembly via `wasm-pack` for web browsers and to a native CPython extension via `PyO3` / `maturin` for GPU training.
+- **Consequences**: Zero simulation overhead in Python training loops; identical deterministic combat mechanics between web visualizer and RL rollout workers.
+
+### ADR-002: Transition from 10-Channel Archetypes to 31-Channel Per-Defense Spatial Observation
+- **Date**: 2026-10-25
+- **Status**: Accepted
+- **Context**: In v2.0, defensive structures were compressed into scalar threat channels. The policy could not distinguish high-value primary targets (Monolith, Eagle/Revenge Tower, Scattershot) from standard defenses (Cannons, Archer Towers).
+- **Decision**: Dedicate Channels 10..30 to individual TH18 defense types, encoding active defense modes and directional cone facing angles directly.
+- **Consequences**: Convolutional stem layer acts as an exact spatial embedding lookup. Added only 12,096 parameters (0.89% increase) while boosting 3-star attack rate from 31% to 100% on reference layouts.
+
+### ADR-003: 64-Dimensional Live Available Inventory Vector (`army_context`)
+- **Date**: 2026-10-28
+- **Status**: Accepted
+- **Context**: The spatial grid only displays units currently on the map. Without inventory visibility, the policy attempted illegal deployments or failed to time hero ability triggers and spell follow-ups.
+- **Decision**: Introduce a 64-D vector tracking global progress, troop/spell remaining counts, hero gear/ability readiness, and siege state, zeroing out depleted slots.
+- **Consequences**: Completely eliminated invalid-action churn during RL exploration. Policy reliably executes multi-phase attacks (funnel -> breach -> hero charge -> cleanup).
+
+### ADR-004: Autoregressive Conditioning for Factorized Action Space
+- **Date**: 2026-10-28
+- **Status**: Accepted
+- **Context**: Independent action heads frequently chose contradictory outputs (e.g. selecting a spell slot index when the chosen action type was Hero).
+- **Decision**: Autoregressively condition each subordinate head on preceding categorical choices (`slot_type` -> `slot_idx` -> `deploy_fraction` -> `tile_xy`).
+- **Consequences**: Guaranteed semantic coherence across action heads; sharp reduction in invalid action masking interventions.
+
+### ADR-005: Single-Army Specialist Training Paradigm
+- **Date**: 2026-10-29
+- **Status**: Accepted
+- **Context**: Training a single policy across vastly different army archetypes (e.g. Ground Smash vs Air Hydra) caused catastrophic gradient interference and sub-optimal hybrid policies.
+- **Decision**: Specialize policies per army recipe across all 5 reference TH18 villages, embedding loadout metadata in checkpoints for automatic testing alignment.
+- **Consequences**: 100% 3-star convergence achieved on meta army loadouts with zero cross-archetype performance degradation.
+
+### ADR-006: Obsidian Vault as Central Long-Term Memory and Source of Truth
+- **Date**: 2026-10-30
+- **Status**: Accepted
+- **Context**: As the project grows, keeping documentation, tensor invariants, and decision history synchronized with code requires an explicit memory architecture.
+- **Decision**: Designate `obsidian_vault/` as the single source of truth for architectural decisions and system invariants, enforced by `AGENTS.md` and automated via the `vault-updater` agent.
+- **Consequences**: Permanent architectural memory across agent turns; seamless tracking of project evolution.

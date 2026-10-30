@@ -3,10 +3,10 @@ title: "v3.0 — 31-Channel Per-Defense CNN & Single-Army Specialist Actor-Criti
 model_id: "v3_per_defense_31ch"
 arch_version: "3.0"
 status: "active"
-total_episodes: 0
-best_pct: 0
-best_stars: 0
-updated_at: "2026-10-30 17:06:37"
+total_episodes: 1918
+best_pct: 100
+best_stars: 3
+updated_at: "2026-10-30 17:23:11"
 tags:
   - coc-rl
   - ppo
@@ -26,14 +26,15 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 - **Architecture Version**: `v3.0` (`1,364,344` Trainable Parameters)
 - **Dedicated Army Composition**: **`TH18 Thrower + Healer + Totem Smash (Meta)`** (Exported in `.pt` checkpoint metadata for testing)
 - **Active Status**: **ACTIVE**
-- **Total Episodes Trained**: **`0`** (Cumulative across **0** training sessions)
-- **Peak Combat Performance**: **`0%` (0★)** (Best dense return: `+0.0`)
-- **Latest Checkpoint**: `trained_models/thrower_healer_totem_smash_ep0_0pct_0star.pt`
+- **Total Episodes Trained**: **`1,918`** (Cumulative across **2** training sessions)
+- **Peak Combat Performance**: **`100%` (3★)** (Best dense return: `+101.01348554180662`)
+- **Latest Checkpoint**: `trained_models/thrower_healer_totem_smash_ep1918_100pct_3star.pt`
 
 ### 🔄 Resumed Training Sessions History
 | Session # | Start Ep | End Ep | Episodes Added | Checkpoint File | Peak % | Stars | Notes |
 | :---: | :---: | :---: | :---: | :--- | :---: | :---: | :--- |
-| *No sessions recorded yet* | `0` | `0` | `+0` | `—` | `0%` | `0★` | Ready for single-army training |
+| **#1** | `0` | `1,689` | `+1,689` | `thrower_healer_totem_smash_ep1689_100pct_3star.pt` | `100%` | `3★` | Initial training (1,689 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
+| **#2** | `1,689` | `1,918` | `+229` | `thrower_healer_totem_smash_ep1918_100pct_3star.pt` | `100%` | `3★` | Resumed training (+229 ep from thrower_healer_totem_smash_ep1689_100pct_3star.pt) on TH18 Thrower + Healer + Totem Smash (Meta) |
 
 ---
 
@@ -114,8 +115,8 @@ $$R_t = 0.35 \cdot \Delta \%_{\text{destr}} + 15.0 \cdot \Delta \text{HP}_{\text
 
 | Attack Composition | **Central Box** | **Offset Diamond** | **Anti-Hydra Ring** | **Anti-Fireball** | **Compact Teaser** | **Avg Destruction** | **3★ Rate** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **TH18 Thrower + Healer + Totem Smash** | `62% (2★)` | `75% (2★)` | `68% (2★)` | `62% (2★)` | `68% (2★)` | **67.0%** | **0.0%** |
-| **Base Defense Rate (Avg)** | **62.0% (2.0★)** | **75.0% (2.0★)** | **68.0% (2.0★)** | **62.0% (2.0★)** | **68.0% (2.0★)** | **Overall: 67.0%** | — |
+| **TH18 Thrower + Healer + Totem Smash** | `100% (3★)` | `81% (2★)` | `77% (2★)` | `85% (2★)` | `67% (2★)` | **82.0%** | **20.0%** |
+| **Base Defense Rate (Avg)** | **100.0% (3.0★)** | **81.0% (2.0★)** | **77.0% (2.0★)** | **85.0% (2.0★)** | **67.0% (2.0★)** | **Overall: 82.0%** | — |
 
 ---
 
@@ -146,4 +147,4 @@ See [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Tel
 | **GAE ($\lambda$)** | `0.95` | Generalized Advantage Estimation smoothing |
 | **Clip Coefficient** | `0.2` | PPO surrogate objective clipping range |
 | **Entropy Coefficient** | `0.015` | Normalized per-head exploration policy entropy bonus |
-| **Total Training Episodes** | **`0`** | **Cumulative episodes across all resumed sessions** |
+| **Total Training Episodes** | **`1,918`** | **Cumulative episodes across all resumed sessions** |
