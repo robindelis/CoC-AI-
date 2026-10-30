@@ -1,7 +1,7 @@
 {
-  "last_synced_commit": "f810ae865ad9be5595105956d167c3d47c6d27a2",
-  "last_synced_commit_short": "f810ae8",
-  "last_synced_at": "2026-10-30T22:20:26.864863+00:00",
-  "last_synced_subject": "feat(vault): add incremental git-commit diff analyzer and persistent sync state for vault-updater",
+  "last_synced_commit": "91d24ed9c525b1dbf7893aad01546566f3e1af08",
+  "last_synced_commit_short": "91d24ed",
+  "last_synced_at": "2026-10-30T22:22:00.396795+00:00",
+  "last_synced_subject": "fix(vault): detect code drift based on relevant code file changes",
   "branch": "main"
 }
