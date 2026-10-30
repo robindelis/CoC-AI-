@@ -313,3 +313,19 @@ Defined in `CoCActorCritic` (`python/coc_rl/networks.py`), the policy parameteri
   3. **Batched (`B=12`) Rollouts & BF16 Tensor Core Acceleration (`python/coc_rl/networks.py`, `python/coc_rl/ppo.py`, `python/train_ai.py`)**: Enabled `torch.backends.cudnn.benchmark`, TF32 matmuls, and `torch.amp.autocast("cuda", dtype=torch.bfloat16)` on `CoCSpatialEncoder` (keeping `DilatedResBlock` normalized activations in `bfloat16` to avoid 500+ MB FP32 upcast overhead), eliminated per-step `.item()`/`probs` stalls, and vectorized `evaluate_model_matchups` across all 5 reference villages in parallel.
   4. **Zero-Allocation `/api/ai/status` Polling (`python/ai_server.py`)**: Cached architecture manifests and checkpoint metadata in memory so 1-second UI status polls never touch disk or allocate GPU tensors during training.
 - **Consequences**: Pure RL environment rollout throughput jumped **24.7×** (from `5.3 eps/s` to `130.9 eps/s` on 12 Ryzen threads); full end-to-end GPU PPO rollout throughput reached **>10,400–11,800 combat ticks/sec** (~11× faster than before) while eliminating the 7.4 GB VRAM leak during long training runs.
+
+### ADR-010: Incremental Git-Commit Drift Analysis & Synchronization State Tracking (`scripts/vault_diff.py` & `.sync_state.json`)
+- **Date**: 2026-10-30
+- **Status**: Accepted
+- **Context**:
+  1. **Full-Codebase Inspection Overhead**: The `vault-updater` long-term memory agent previously scanned full source files (`crates/coc-engine/src/sim.rs` with 6,500+ lines, `python/coc_rl/networks.py`, etc.) or unbounded `git diff` outputs on every invocation, consuming tens of thousands of tokens and taking several minutes per update.
+  2. **Lack of Commit State Memory**: When working directory changes were committed across multiple discrete Git commits, the agent lacked persistent memory of the exact commit SHA to which the Obsidian vault was synchronized, risking drift or missed intermediate commits.
+- **Decision**:
+  1. **Persistent Vault Sync State (`obsidian_vault/.sync_state.json`)**: Introduce a canonical, Git-tracked sync state storing `last_synced_commit` (full 40-char SHA), `last_synced_commit_short` (7-char SHA), `last_synced_at` (ISO timestamp), `last_synced_subject`, and `branch`.
+  2. **Visual & Machine-Readable Index Integration (`00_Index_MOC.md`)**: Automatically surface the latest synchronized commit in frontmatter metadata and an aesthetic callout banner at the top of the Master Map of Content.
+  3. **High-Density Incremental Diff CLI (`scripts/vault_diff.py`)**: Built a zero-dependency CLI tool that computes the exact commit range `last_synced_commit..HEAD`, categorizes modified files by domain (Simulation Core, Deep RL, Web Sandbox, Tooling), flags modified high-impact symbols (`extract_spatial_observation`, `extract_army_context`, `CoCActorCritic`, `PyVecBattleEnv`, etc.), and extracts targeted unified diffs.
+  4. **Optimized Agent Protocol**: Updated `vault-updater` instructions so that it exclusively inspects the targeted diffs from `scripts/vault_diff.py` rather than reading full source files, executes `.venv/bin/python python/generate_vault.py`, and records the new commit via `python3 scripts/vault_diff.py --mark-synced`.
+- **Consequences**:
+  - **Zero-Token No-Op Exits**: If no new commits or code changes occurred since the last sync, `scripts/vault_diff.py` exits immediately in <0.05 seconds with 0 tokens wasted.
+  - **90%+ Reduction in Agent Context & Latency**: The agent only parses the exact modified lines (typically 20–200 lines) instead of full 6,500-line engine files.
+  - **Deterministic Audit Trail**: Connects the Obsidian long-term memory ledger directly to the Git version control commit graph.

@@ -6,18 +6,24 @@ tags:
   - ppo
   - architecture
 updated: 2026-10-30
+last_synced_commit: "f810ae8"
+last_synced_at: "2026-10-30 22:20:26"
 ---
 
 # 🏰 CoC TH18 Deep RL — Architecture & Training Vault
 
-Welcome to the central research vault tracking our **v3.0 50-Channel Dedicated Spatial CNN & Single-Army Specialist Actor-Critic** architecture, input/output tensor specifications, per-troop, per-hero, per-spell, and per-defense spatial encodings, and empirical training benchmarks for Clash of Clans Town Hall 18.
+> [!NOTE] 🔄 Codebase Synchronization Status
+> **Synchronized Commit**: [`f810ae8`](file:///home/robin/Projects/CoC) &mdash; *feat(vault): add incremental git-commit diff analyzer and persistent sync state for vault-updater*
+> **Synced At**: `2026-10-30 22:20:26 UTC` • **Full SHA**: `f810ae865ad9be5595105956d167c3d47c6d27a2`
+
+Welcome to the central research vault tracking our **v3.0 59-Channel Dedicated Spatial CNN & Single-Army Specialist Actor-Critic** architecture, input/output tensor specifications, per-troop, per-hero, per-spell, and per-defense spatial encodings, and empirical training benchmarks for Clash of Clans Town Hall 18.
 
 ---
 
 ## 🧭 Primary Navigation
 
 ### 🎨 [[01_Model_Architecture_and_Training_Tracker.canvas|Interactive Model Architecture & Training Canvas]]
-Open the interactive 2D whiteboard visualizer presenting the 50-channel stacked CNN computation graph, live available inventory (`army_context`) fusion, single-army vs. 5-village benchmark matrices, training curves, and resumed training session timelines.
+Open the interactive 2D whiteboard visualizer presenting the 59-channel stacked CNN computation graph, live available inventory (`army_context`) fusion, single-army vs. 5-village benchmark matrices, training curves, and resumed training session timelines.
 
 ---
 
@@ -25,7 +31,7 @@ Open the interactive 2D whiteboard visualizer presenting the 50-channel stacked 
 
 | Model Run | Arch | Inputs (`obs` + `army_context`) | Dedicated Army Composition | Total Episodes | Peak Combat Record | Status |
 | :--- | :---: | :---: | :--- | :---: | :---: | :---: |
-| [[runs/v3_per_defense_31ch\|v3.0 — 50-Channel Dedicated CNN & Single-Army Specialist Actor-Critic]] | `v3.0` | `(59, 50, 50)` + `64D` | **TH18 Thrower + Healer + Totem Smash (Meta)** | **`6,432`** (8 sessions) | **`100%` (3★)** | **ACTIVE** |
+| [[runs/v3_per_defense_31ch\|v3.0 — 50-Channel Dedicated CNN & Single-Army Specialist Actor-Critic]] | `v3.0` | `(59, 50, 50)` + `64D` | **TH18 Thrower + Healer + Totem Smash (Meta)** | **`6,492`** (9 sessions) | **`100%` (3★)** | **ACTIVE** |
 
 ---
 

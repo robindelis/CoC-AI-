@@ -3,10 +3,10 @@ title: "v3.0 — 50-Channel Dedicated CNN & Single-Army Specialist Actor-Critic"
 model_id: "v3_per_defense_31ch"
 arch_version: "3.0"
 status: "active"
-total_episodes: 6432
+total_episodes: 6492
 best_pct: 100
 best_stars: 3
-updated_at: "2026-10-30 23:10:25"
+updated_at: "2026-10-30 23:20:25"
 tags:
   - coc-rl
   - ppo
@@ -26,9 +26,9 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 - **Architecture Version**: `v3.0` (`1,375,288` Trainable Parameters)
 - **Dedicated Army Composition**: **`TH18 Thrower + Healer + Totem Smash (Meta)`** (Exported in `.pt` checkpoint metadata for testing)
 - **Active Status**: **ACTIVE**
-- **Total Episodes Trained**: **`6,432`** (Cumulative across **8** training sessions)
+- **Total Episodes Trained**: **`6,492`** (Cumulative across **9** training sessions)
 - **Peak Combat Performance**: **`100%` (3★)** (Best dense return: `+99.48079713290045`)
-- **Latest Checkpoint**: `trained_models/thrower_healer_totem_smash_ep6432_100pct_3star.pt`
+- **Latest Checkpoint**: `trained_models/thrower_healer_totem_smash_ep6492_100pct_3star.pt`
 
 ### 🔄 Resumed Training Sessions History
 | Session # | Start Ep | End Ep | Episodes Added | Checkpoint File | Peak % | Stars | Notes |
@@ -41,6 +41,7 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 | **#6** | `0` | `20` | `+20` | `thrower_healer_totem_smash_ep20_100pct_3star.pt` | `100%` | `3★` | Initial training (20 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
 | **#7** | `0` | `60` | `+60` | `thrower_healer_totem_smash_ep60_100pct_3star.pt` | `100%` | `3★` | Initial training (60 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
 | **#8** | `0` | `6,432` | `+6,432` | `thrower_healer_totem_smash_ep6432_100pct_3star.pt` | `100%` | `3★` | Initial training (6,432 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
+| **#9** | `6,432` | `6,492` | `+60` | `thrower_healer_totem_smash_ep6492_100pct_3star.pt` | `100%` | `3★` | Resumed training (+60 ep from thrower_healer_totem_smash_ep6432_100pct_3star.pt) on TH18 Thrower + Healer + Totem Smash (Meta) |
 
 ---
 
@@ -149,8 +150,8 @@ $$R_t = 0.35 \cdot \Delta \%_{\text{destr}} + 15.0 \cdot \Delta \text{HP}_{\text
 
 | Attack Composition | **Central Box** | **Offset Diamond** | **Anti-Hydra Ring** | **Anti-Fireball** | **Compact Teaser** | **Avg Destruction** | **3★ Rate** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **TH18 Thrower + Healer + Totem Smash** | `76% (2★)` | `61% (2★)` | `100% (3★)` | `65% (2★)` | `75% (2★)` | **75.4%** | **20.0%** |
-| **Base Defense Rate (Avg)** | **76.0% (2.0★)** | **61.0% (2.0★)** | **100.0% (3.0★)** | **65.0% (2.0★)** | **75.0% (2.0★)** | **Overall: 75.4%** | — |
+| **TH18 Thrower + Healer + Totem Smash** | `100% (3★)` | `78% (2★)` | `100% (3★)` | `100% (3★)` | `83% (2★)` | **92.2%** | **60.0%** |
+| **Base Defense Rate (Avg)** | **100.0% (3.0★)** | **78.0% (2.0★)** | **100.0% (3.0★)** | **100.0% (3.0★)** | **83.0% (2.0★)** | **Overall: 92.2%** | — |
 
 ---
 
@@ -181,4 +182,4 @@ See [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Tel
 | **GAE ($\lambda$)** | `0.95` | Generalized Advantage Estimation smoothing |
 | **Clip Coefficient** | `0.2` | PPO surrogate objective clipping range |
 | **Entropy Coefficient** | `0.015` | Normalized per-head exploration policy entropy bonus |
-| **Total Training Episodes** | **`6,432`** | **Cumulative episodes across all resumed sessions** |
+| **Total Training Episodes** | **`6,492`** | **Cumulative episodes across all resumed sessions** |
