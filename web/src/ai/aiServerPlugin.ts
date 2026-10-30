@@ -234,16 +234,18 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
         ?? sourceCode.match(/in_channels:\s*int\s*=\s*(\d+)/);
       const spatialDimMatch = sourceCode.match(/spatial_dim:\s*int\s*=\s*(\d+)/);
       const embedDimMatch = sourceCode.match(/embed_dim:\s*int\s*=\s*(\d+)/);
+      const armyCtxMatch = sourceCode.match(/army_context_dim:\s*int\s*=\s*(\d+)/);
       const fracBinsMatch = sourceCode.match(/num_fraction_bins:\s*int\s*=\s*(\d+)/);
       const s1ChMatch = sourceCode.match(/Conv2d\(\s*in_channels\s*,\s*(\d+)/);
       const g1ChMatch = sourceCode.match(/Conv2d\(\s*spatial_dim\s*,\s*(\d+)\s*,\s*kernel_size=3\s*,\s*stride=2/);
       const g2ChMatch = sourceCode.match(/Conv2d\(\s*\d+\s*,\s*(\d+)\s*,\s*kernel_size=3\s*,\s*stride=2/);
 
-      const inCh = inChMatch ? Number(inChMatch[1]) : 10;
-      const spatialDim = spatialDimMatch ? Number(spatialDimMatch[1]) : 64;
+      const inCh = inChMatch ? Number(inChMatch[1]) : 31;
+      const spatialDim = spatialDimMatch ? Number(spatialDimMatch[1]) : 128;
       const embedDim = embedDimMatch ? Number(embedDimMatch[1]) : 256;
+      const armyCtxDim = armyCtxMatch ? Number(armyCtxMatch[1]) : 64;
       const numFracBins = fracBinsMatch ? Number(fracBinsMatch[1]) : 5;
-      const s1Ch = s1ChMatch ? Number(s1ChMatch[1]) : 32;
+      const s1Ch = s1ChMatch ? Number(s1ChMatch[1]) : 64;
       const g1Ch = g1ChMatch ? Number(g1ChMatch[1]) : 96;
       const g2Ch = g2ChMatch ? Number(g2ChMatch[1]) : 128;
 
@@ -254,6 +256,7 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
       const g1Params = spatialDim * g1Ch * 9 + g1Ch;
       const g2Params = g1Ch * g2Ch * 9 + g2Ch;
       const g5Params = g2Ch * 16 * embedDim + embedDim + embedDim * 2;
+      const armyCtxParams = armyCtxDim * embedDim + embedDim + embedDim * 2;
       const slotTypeParams = embedDim * 7 + 7;
       const slotIdxParams = (embedDim + 7) * 128 + 128 + 128 * 10 + 10;
       const deployFracParams = (embedDim + 17) * 128 + 128 + 128 * numFracBins + numFracBins;
@@ -399,6 +402,21 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           coneLabel: 'Dense',
         },
         {
+          id: 'head_army_ctx',
+          stage: 'global' as const,
+          type: 'army_context_proj (Fusion)',
+          short: 'ArmyCtx',
+          desc: `army_context(${armyCtxDim}) → Linear(${armyCtxDim} → ${embedDim}) + LayerNorm(${embedDim}) + SiLU ⊕ global_emb`,
+          inputShape: [armyCtxDim],
+          outputShape: [embedDim],
+          receptiveField: 50,
+          params: armyCtxParams,
+          macs: armyCtxDim * embedDim,
+          color: '#0891b2',
+          border: '#38bdf8',
+          coneLabel: '64→256 ⊕',
+        },
+        {
           id: 'head_slot_type',
           stage: 'heads' as const,
           type: 'slot_type_head',
@@ -489,6 +507,7 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           in_channels: inCh,
           spatial_dim: spatialDim,
           embed_dim: embedDim,
+          army_context_dim: armyCtxDim,
           num_fraction_bins: numFracBins,
           total_params: totalParams,
           total_macs: totalMacs,
@@ -680,7 +699,7 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
       const sess = new WasmBattleSession(layoutJson, armyJson);
       const flatObs = sess.extract_spatial_observation();
       const channels: number[][][] = [];
-      for (let ch = 0; ch < 10; ch++) {
+      for (let ch = 0; ch < 31; ch++) {
         const grid: number[][] = [];
         for (let y = 0; y < 50; y++) {
           const row: number[] = [];

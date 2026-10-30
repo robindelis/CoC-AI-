@@ -36,8 +36,9 @@ class CoCSpatialEncoder(nn.Module):
 
     def __init__(
         self,
-        in_channels: int = 10,
-        spatial_dim: int = 64,
+        in_channels: int = 31,
+        subspatial_dim: int = 64,
+        spatial_dim: int = 128,
         embed_dim: int = 256,
     ):
         super().__init__()
@@ -49,14 +50,31 @@ class CoCSpatialEncoder(nn.Module):
         # Uses padding=1 to preserve exact tile coordinates and GroupNorm for stable RL updates.
         self.spatial_stem = nn.Sequential(
             nn.Conv2d(
-                in_channels, 32, kernel_size=3, padding=2, dilation=2, bias=False
+                in_channels,
+                subspatial_dim,
+                kernel_size=3,
+                padding=2,
+                dilation=2,
+                bias=False,
             ),
-            nn.GroupNorm(4, 32),
+            nn.GroupNorm(
+                4,
+                subspatial_dim,
+            ),
             nn.SiLU(),
-            nn.Conv2d(32, 32, kernel_size=3, padding=2, dilation=2, bias=False),
-            nn.GroupNorm(4, 32),
+            nn.Conv2d(
+                subspatial_dim,
+                subspatial_dim,
+                kernel_size=3,
+                padding=2,
+                dilation=2,
+                bias=False,
+            ),
+            nn.GroupNorm(4, subspatial_dim),
             nn.SiLU(),
-            nn.Conv2d(32, spatial_dim, kernel_size=3, padding=1, bias=False),
+            nn.Conv2d(
+                subspatial_dim, spatial_dim, kernel_size=3, padding=1, bias=False
+            ),
             nn.GroupNorm(8, spatial_dim),
             nn.SiLU(),
         )
@@ -119,8 +137,10 @@ class CoCActorCritic(nn.Module):
     """
     Live Tactical Attacker Network: Factorized Multi-Discrete Actor-Critic.
 
-    Maps the (B, 10, 50, 50) spatial battlefield tensor to a factorized policy
-    over MultiDiscrete([7, 10, 50, 50, 5]) for a single army composition:
+    Fuses the (B, 10, 50, 50) spatial battlefield tensor with the (B, 64) live available
+    army inventory vector (encoding what troops, spells, heroes, equipment, pets, and siege
+    machine are available and in what remaining quantity) to parameterize a factorized policy
+    over MultiDiscrete([7, 10, 50, 50, 5]):
 
       1. `slot_type`       (7 choices):  0=NoOp, 1=Troop, 2=Hero, 3=HeroAbility, 4=Siege, 5=PopSiege, 6=Spell
       2. `slot_idx`        (10 choices): Loadout slot index, conditioned on the chosen `slot_type`
@@ -133,21 +153,31 @@ class CoCActorCritic(nn.Module):
 
     def __init__(
         self,
-        in_channels: int = 10,
+        in_channels: int = 31,
+        army_context_dim: int = 64,
         num_fraction_bins: int = 5,
     ):
         super().__init__()
         self.in_channels = in_channels
+        self.army_context_dim = army_context_dim
         self.num_fraction_bins = num_fraction_bins
 
         # Dual-pathway CNN backbone
         self.encoder = CoCSpatialEncoder(
             in_channels=in_channels,
-            spatial_dim=64,
+            subspatial_dim=64,
+            spatial_dim=128,
             embed_dim=256,
         )
-        spatial_dim = self.encoder.spatial_dim  # 64
+        spatial_dim = self.encoder.spatial_dim  # 128
         embed_dim = self.encoder.embed_dim  # 256
+
+        # Live available army inventory & remaining quantities projection (64-D -> 256-D)
+        self.army_context_proj = nn.Sequential(
+            nn.Linear(army_context_dim, embed_dim),
+            nn.LayerNorm(embed_dim),
+            nn.SiLU(),
+        )
 
         # Head 1: Action Type logits (256-D -> 7 action types)
         self.slot_type_head = nn.Linear(embed_dim, 7)
@@ -167,7 +197,7 @@ class CoCActorCritic(nn.Module):
             nn.Linear(128, num_fraction_bins),
         )
 
-        # Head 4: Spatial Tile Pointer (projects conditioned embedding onto the 64x50x50 map)
+        # Head 4: Spatial Tile Pointer (projects conditioned embedding onto the spatial map)
         self.tile_cond_proj = nn.Linear(embed_dim + 7, spatial_dim)
         self.tile_conv_head = nn.Sequential(
             nn.Conv2d(spatial_dim, 32, kernel_size=3, padding=1),
@@ -182,12 +212,18 @@ class CoCActorCritic(nn.Module):
             nn.Linear(128, 1),
         )
 
-    def forward(self, obs: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def forward(
+        self, obs: torch.Tensor, army_context: Optional[torch.Tensor] = None
+    ) -> Dict[str, torch.Tensor]:
         """
         Deterministic forward pass returning raw head outputs for graph tracing (`torchview`).
         """
         B = obs.shape[0]
         spatial_feat, global_emb = self.encoder(obs)
+
+        if army_context is None:
+            army_context = obs.reshape(B, -1)[:, : self.army_context_dim] * 0.0
+        global_emb = global_emb + self.army_context_proj(army_context)
 
         # 1. Action Type
         type_logits = self.slot_type_head(global_emb)
@@ -226,6 +262,7 @@ class CoCActorCritic(nn.Module):
         masks: Optional[Dict[str, torch.Tensor]] = None,
         action: Optional[torch.Tensor] = None,
         deterministic: bool = False,
+        army_context: Optional[torch.Tensor] = None,
     ) -> Tuple[
         torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]
     ]:
@@ -236,8 +273,12 @@ class CoCActorCritic(nn.Module):
         B = obs.shape[0]
         device = obs.device
 
-        # Encode spatial grid into full-resolution map and global tactical vector
+        # Encode spatial grid and fuse with live available army inventory context
         spatial_feat, global_emb = self.encoder(obs)
+        if army_context is not None:
+            global_emb = global_emb + self.army_context_proj(
+                army_context.to(device=device, dtype=obs.dtype)
+            )
 
         # 1. Action Type Distribution (0=NoOp is always valid as a fallback)
         # Smooth logit bounding prevents premature discrete-head entropy collapse

@@ -446,6 +446,7 @@ def generate_ai_diagnostics_chart(out_png_path: str) -> str:
         "spatial_stem": 15.7,
         "context_res": 19.6,
         "global_tower": 33.3,
+        "army_context_proj": 24.7,
         "slot_type_head": 2.4,
         "slot_idx_head": 9.0,
         "deploy_fraction_head": 8.3,
@@ -889,7 +890,8 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 
 ## 1. Input Observation Space
 
-- **Spatial Observation Tensor**: `(B, {in_channels}, 50, 50)` (Dedicated Single-Army Policy)
+- **Spatial Observation Tensor**: `(B, {in_channels}, 50, 50)`
+- **Live Available Inventory Vector (`army_context`)**: `(B, 64)` (available troops, spells, heroes, abilities, sieges and their remaining quantities)
 
 {ch_table}
 
@@ -1132,7 +1134,8 @@ This canvas dynamically tracks our neural network architectures, spatial observa
             "height": 620,
             "color": "5",
             "text": f"""### 📥 Input Observation Space
-- **Spatial Grid Tensor**: **`(B, {in_ch}, 50, 50)`** (Dedicated Single-Army Policy)
+- **Spatial Grid Tensor**: **`(B, {in_ch}, 50, 50)`**
+- **Live Available Inventory (`army_context`)**: **`(B, 64)`** (what troops, spells, heroes, abilities, sieges and quantities are still available)
 
 | Ch | Feature Name | Normalization |
 | :-: | :--- | :--- |

@@ -6412,7 +6412,7 @@ impl BattleEngine {
         }
     }
 
-    /// Extracts a 10-channel 50x50 spatial tensor flattened `[10 * 50 * 50]` for RL agents:
+    /// Extracts a 31-channel 50x50 spatial tensor flattened `[31 * 50 * 50]` for RL agents:
     /// Ch 0: Building HP normalized (0..1)
     /// Ch 1: Defense DPS normalized (0..1)
     /// Ch 2: Town Hall indicator (0 or 1)
@@ -6424,12 +6424,23 @@ impl BattleEngine {
     /// Ch 8: Allied Unit Type Signature `max_{u in Attacker(x,y)} phi(u) in [0, 1]`
     /// Ch 9: Enemy Unit Type Signature `max_{u in Defender(x,y)} phi(u) in [0, 1]`
     ///       (Defending CC troops, defending Heroes, TH18 Guardians, and Ground [0.10] vs Air [0.28] Skeletons)
+    /// Ch 10..30: 21 Dedicated Defense Type Channels (1 channel per defense type with mode/direction encoding):
+    ///   - Ch 10: Archer Tower          - Ch 17: Super Wizard Tower    - Ch 24: Builder's Hut
+    ///   - Ch 11: Multi-Archer Tower    - Ch 18: Air Sweeper (dir)     - Ch 25: Spell Tower (mode)
+    ///   - Ch 12: Ricochet Cannon       - Ch 19: Hidden Tesla (rev)    - Ch 26: Monolith
+    ///   - Ch 13: Cannon                - Ch 20: Bomb Tower            - Ch 27: Multi-Gear Tower (mode)
+    ///   - Ch 14: Mortar                - Ch 21: X-Bow (mode)          - Ch 28: Firespitter (dir)
+    ///   - Ch 15: Air Defense           - Ch 22: Inferno Tower (mode)  - Ch 29: Revenge Tower
+    ///   - Ch 16: Wizard Tower          - Ch 23: Scattershot           - Ch 30: Hot Candle (CraftingStation)
     pub fn extract_spatial_observation(&self) -> Vec<f32> {
-        let mut obs = vec![0.0f32; 10 * 50 * 50];
+        let mut obs = vec![0.0f32; 31 * 50 * 50];
         let idx = |ch: usize, y: usize, x: usize| ch * 2500 + y * 50 + x;
 
         for b in &self.buildings {
             if b.destroyed {
+                continue;
+            }
+            if b.building_id == BuildingId::HiddenTesla && !b.is_hidden_tesla_revealed {
                 continue;
             }
             let hp_norm = (b.hp / 11000.0).clamp(0.0, 1.0);
@@ -6440,6 +6451,66 @@ impl BattleEngine {
             } else {
                 0.0
             };
+            let def_ch_val: Option<(usize, f32)> = match b.building_id {
+                BuildingId::ArcherTower => Some((10, 1.0)),
+                BuildingId::MultiArcherTower => Some((11, 1.0)),
+                BuildingId::RicochetCannon => Some((12, 1.0)),
+                BuildingId::Cannon => Some((13, 1.0)),
+                BuildingId::Mortar => Some((14, 1.0)),
+                BuildingId::AirDefense => Some((15, 1.0)),
+                BuildingId::WizardTower => Some((16, 1.0)),
+                BuildingId::SuperWizardTower => Some((17, 1.0)),
+                BuildingId::AirSweeper => Some((
+                    18,
+                    0.25 + 0.75 * (b.direction_deg.rem_euclid(360.0) / 360.0),
+                )),
+                BuildingId::HiddenTesla => Some((19, 1.0)),
+                BuildingId::BombTower => Some((20, 1.0)),
+                BuildingId::XBow => Some((
+                    21,
+                    if b.mode == DefenseMode::XBowGround {
+                        0.5
+                    } else {
+                        1.0
+                    },
+                )),
+                BuildingId::InfernoTower => Some((
+                    22,
+                    if b.mode == DefenseMode::InfernoMulti {
+                        0.5
+                    } else {
+                        1.0
+                    },
+                )),
+                BuildingId::Scattershot => Some((23, 1.0)),
+                BuildingId::BuildersHut => Some((24, 1.0)),
+                BuildingId::SpellTower => Some((
+                    25,
+                    match b.mode {
+                        DefenseMode::SpellTowerRage => 0.25,
+                        DefenseMode::SpellTowerPoison => 0.50,
+                        DefenseMode::SpellTowerInvisibility => 0.75,
+                        DefenseMode::SpellTowerEarthquake => 1.00,
+                        _ => 0.25,
+                    },
+                )),
+                BuildingId::Monolith => Some((26, 1.0)),
+                BuildingId::MultiGearTower => Some((
+                    27,
+                    if b.mode == DefenseMode::MultiGearFastAttack {
+                        0.5
+                    } else {
+                        1.0
+                    },
+                )),
+                BuildingId::Firespitter => Some((
+                    28,
+                    0.25 + 0.75 * (b.direction_deg.rem_euclid(360.0) / 360.0),
+                )),
+                BuildingId::RevengeTower => Some((29, 1.0)),
+                BuildingId::CraftingStation => Some((30, 1.0)),
+                _ => None,
+            };
             for dy in 0..b.footprint {
                 for dx in 0..b.footprint {
                     let x = (b.tile_x + dx).min(49) as usize;
@@ -6447,6 +6518,9 @@ impl BattleEngine {
                     obs[idx(0, y, x)] = hp_norm;
                     obs[idx(1, y, x)] = dps_norm;
                     obs[idx(2, y, x)] = is_th;
+                    if let Some((def_ch, val)) = def_ch_val {
+                        obs[idx(def_ch, y, x)] = val;
+                    }
                 }
             }
         }
@@ -6509,19 +6583,23 @@ impl BattleEngine {
         ctx[2] = (self.stars as f32 / 3.0).clamp(0.0, 1.0);
         ctx[3] = (active_attackers as f32 / 50.0).clamp(0.0, 1.0);
 
-        // [4..24]: 10 Troop slots (tid normalized + remaining count normalized)
+        // [4..24]: 10 Troop slots (tid normalized + remaining count normalized when available)
         for i in 0..10 {
             if let Some(&(tid, rem)) = self.remaining_troops.get(i) {
-                ctx[4 + i * 2] = ((tid as usize + 1) as f32 / 60.0).clamp(0.0, 1.0);
-                ctx[4 + i * 2 + 1] = (rem as f32 / 20.0).clamp(0.0, 1.0);
+                if rem > 0 {
+                    ctx[4 + i * 2] = ((tid as usize + 1) as f32 / 60.0).clamp(0.0, 1.0);
+                    ctx[4 + i * 2 + 1] = (rem as f32 / 20.0).clamp(0.0, 1.0);
+                }
             }
         }
 
-        // [24..44]: 10 Spell slots (sid normalized + remaining count normalized)
+        // [24..44]: 10 Spell slots (sid normalized + remaining count normalized when available)
         for i in 0..10 {
             if let Some(&(sid, rem)) = self.remaining_spells.get(i) {
-                ctx[24 + i * 2] = ((sid as usize + 1) as f32 / 20.0).clamp(0.0, 1.0);
-                ctx[24 + i * 2 + 1] = (rem as f32 / 8.0).clamp(0.0, 1.0);
+                if rem > 0 {
+                    ctx[24 + i * 2] = ((sid as usize + 1) as f32 / 20.0).clamp(0.0, 1.0);
+                    ctx[24 + i * 2 + 1] = (rem as f32 / 8.0).clamp(0.0, 1.0);
+                }
             }
         }
 

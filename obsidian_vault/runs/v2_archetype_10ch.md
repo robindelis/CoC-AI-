@@ -4,9 +4,9 @@ model_id: "v2_archetype_10ch"
 arch_version: "2.0"
 status: "active"
 total_episodes: 2
-best_pct: 84
-best_stars: 2
-updated_at: "2026-10-30 15:23:26"
+best_pct: 100
+best_stars: 3
+updated_at: "2026-10-30 16:45:38"
 tags:
   - coc-rl
   - ppo
@@ -25,21 +25,24 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 - **Model Identifier**: `v2_archetype_10ch`
 - **Architecture Version**: `v2.0`
 - **Active Status**: **ACTIVE**
-- **Total Episodes Trained**: **`2`** (Cumulative across **2** training sessions)
-- **Peak Combat Performance**: **`84%` (2★)** (Best dense return: `+76.49`)
-- **Latest Checkpoint**: `trained_models/thrower_healer_totem_smash_ep2_60pct_1star.pt`
+- **Total Episodes Trained**: **`2`** (Cumulative across **4** training sessions)
+- **Peak Combat Performance**: **`100%` (3★)** (Best dense return: `+98.39631437180981`)
+- **Latest Checkpoint**: `trained_models/thrower_healer_totem_smash_ep2_79pct_2star.pt`
 
 ### 🔄 Resumed Training Sessions History
 | Session # | Start Ep | End Ep | Episodes Added | Checkpoint File | Peak % | Stars | Notes |
 | :---: | :---: | :---: | :---: | :--- | :---: | :---: | :--- |
 | **#1** | `0` | `924` | `+924` | `latest_attacker.pt` | `84%` | `2★` | Initial training: fractional wave drops (0.25..1.0) and unit archetype perception (Ch 8 & 9) |
-| **#2** | `0` | `2` | `+2` | `thrower_healer_totem_smash_ep2_60pct_1star.pt` | `60%` | `1★` | Initial training (2 ep) |
+| **#2** | `0` | `747` | `+747` | `thrower_healer_totem_smash_ep747_100pct_3star.pt` | `100%` | `3★` | Initial training (747 ep) |
+| **#3** | `0` | `60` | `+60` | `thrower_healer_totem_smash_ep60_100pct_3star.pt` | `100%` | `3★` | Initial training (60 ep) |
+| **#4** | `0` | `2` | `+2` | `thrower_healer_totem_smash_ep2_79pct_2star.pt` | `79%` | `2★` | Initial training (2 ep) |
 
 ---
 
 ## 1. Input Observation Space
 
-- **Spatial Observation Tensor**: `(B, 10, 50, 50)` (Dedicated Single-Army Policy)
+- **Spatial Observation Tensor**: `(B, 10, 50, 50)`
+- **Live Available Inventory Vector (`army_context`)**: `(B, 64)` (available troops, spells, heroes, abilities, sieges and their remaining quantities)
 
 | Ch # | Name | Mathematical Normalization | Tactical Functional Role |
 | :---: | :--- | :--- | :--- |
@@ -92,10 +95,10 @@ $$R_t = 0.35 \cdot \Delta \%_{\text{destr}} + 15.0 \cdot \Delta \text{HP}_{\text
 
 | Attack Composition | **Central Box** | **Offset Diamond** | **Anti-Hydra Ring** | **Anti-Fireball** | **Compact Teaser** | **Avg Destruction** | **3★ Rate** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **TH18 Thrower + Healer + Totem Smash** | `43% (0★)` | `23% (1★)` | `50% (1★)` | `36% (1★)` | `47% (1★)` | **39.8%** | **0.0%** |
-| **TH18 Dragon Duke Charge Hydra** | `43% (0★)` | `23% (1★)` | `50% (1★)` | `36% (1★)` | `47% (1★)` | **39.8%** | **0.0%** |
-| **TH18 Fireball Super Bowler & Meteor Golem Smash** | `43% (0★)` | `23% (1★)` | `50% (1★)` | `36% (1★)` | `47% (1★)` | **39.8%** | **0.0%** |
-| **Base Defense Rate (Avg)** | **43.0% (0.0★)** | **23.0% (1.0★)** | **50.0% (1.0★)** | **36.0% (1.0★)** | **47.0% (1.0★)** | **Overall: 39.8%** | — |
+| **TH18 Thrower + Healer + Totem Smash** | `40% (0★)` | `31% (1★)` | `61% (1★)` | `35% (1★)` | `60% (2★)` | **45.4%** | **0.0%** |
+| **TH18 Dragon Duke Charge Hydra** | `40% (0★)` | `31% (1★)` | `61% (1★)` | `35% (1★)` | `60% (2★)` | **45.4%** | **0.0%** |
+| **TH18 Fireball Super Bowler & Meteor Golem Smash** | `40% (0★)` | `31% (1★)` | `61% (1★)` | `35% (1★)` | `60% (2★)` | **45.4%** | **0.0%** |
+| **Base Defense Rate (Avg)** | **40.0% (0.0★)** | **31.0% (1.0★)** | **61.0% (1.0★)** | **35.0% (1.0★)** | **60.0% (2.0★)** | **Overall: 45.4%** | — |
 
 ---
 

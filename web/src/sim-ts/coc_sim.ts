@@ -557,8 +557,32 @@ export class WasmBattleSession {
   }
 
   public extract_spatial_observation(): number[] {
-    const obs = new Array<number>(10 * 50 * 50).fill(0);
+    const obs = new Array<number>(31 * 50 * 50).fill(0);
     const idx = (ch: number, y: number, x: number) => ch * 2500 + y * 50 + x;
+
+    const defChannelMap: Record<string, number> = {
+      ArcherTower: 10,
+      MultiArcherTower: 11,
+      RicochetCannon: 12,
+      Cannon: 13,
+      Mortar: 14,
+      AirDefense: 15,
+      WizardTower: 16,
+      SuperWizardTower: 17,
+      AirSweeper: 18,
+      HiddenTesla: 19,
+      BombTower: 20,
+      XBow: 21,
+      InfernoTower: 22,
+      Scattershot: 23,
+      BuildersHut: 24,
+      SpellTower: 25,
+      Monolith: 26,
+      MultiGearTower: 27,
+      Firespitter: 28,
+      RevengeTower: 29,
+      CraftingStation: 30,
+    };
 
     for (const b of this.internalBuildings) {
       if (b.destroyed) continue;
@@ -566,6 +590,7 @@ export class WasmBattleSession {
       const spec = BUILDING_MAP.get(b.building_id);
       const dpsNorm = Math.max(0, Math.min(1, (spec?.dps ?? 0) / 750.0));
       const isTh = b.building_id === 'TownHall' ? 1.0 : 0.0;
+      const defCh = defChannelMap[b.building_id];
       for (let dy = 0; dy < b.footprint; dy++) {
         for (let dx = 0; dx < b.footprint; dx++) {
           const x = Math.min(49, b.tile_x + dx);
@@ -573,6 +598,9 @@ export class WasmBattleSession {
           obs[idx(0, y, x)] = hpNorm;
           obs[idx(1, y, x)] = dpsNorm;
           obs[idx(2, y, x)] = isTh;
+          if (defCh !== undefined) {
+            obs[idx(defCh, y, x)] = 1.0;
+          }
         }
       }
     }
@@ -637,7 +665,7 @@ export class WasmBattleSession {
 
     for (let i = 0; i < 10; i++) {
       const entry = this.state.remaining_troops[i];
-      if (entry) {
+      if (entry && entry[1] > 0) {
         const tIdx = FULL_CATALOG.troops.findIndex((t) => t.id === entry[0]);
         ctx[4 + i * 2] = Math.max(0, Math.min(1, (tIdx + 1) / 60));
         ctx[4 + i * 2 + 1] = Math.max(0, Math.min(1, entry[1] / 20));
@@ -646,7 +674,7 @@ export class WasmBattleSession {
 
     for (let i = 0; i < 10; i++) {
       const entry = this.state.remaining_spells[i];
-      if (entry) {
+      if (entry && entry[1] > 0) {
         const sIdx = FULL_CATALOG.spells.findIndex((s) => s.id === entry[0]);
         ctx[24 + i * 2] = Math.max(0, Math.min(1, (sIdx + 1) / 20));
         ctx[24 + i * 2 + 1] = Math.max(0, Math.min(1, entry[1] / 8));

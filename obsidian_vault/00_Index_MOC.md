@@ -25,7 +25,7 @@ Open the interactive 2D whiteboard visualizer presenting side-by-side architectu
 
 | Model Run | Arch | Spatial Input | Total Episodes | Peak Combat Record | Status |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| [[runs/v2_archetype_10ch\|v2.0 — 10-Channel Archetype & Batch-Deploy Fraction]] | `v2.0` | `(10, 50, 50)` | **`2`** (2 sessions) | **`84%` (2★)** | **ACTIVE** |
+| [[runs/v2_archetype_10ch\|v2.0 — 10-Channel Archetype & Batch-Deploy Fraction]] | `v2.0` | `(10, 50, 50)` | **`2`** (4 sessions) | **`100%` (3★)** | **ACTIVE** |
 
 ---
 

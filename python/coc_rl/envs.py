@@ -14,7 +14,7 @@ class CoCAttackerEnv(gym.Env):
     Gymnasium RL Environment for training an AI to attack a max-level Town Hall 18 village.
 
     Observation Space:
-        Box(0.0, 1.0, shape=(10, 50, 50), dtype=np.float32)
+        Box(0.0, 1.0, shape=(31, 50, 50), dtype=np.float32)
         - Channel 0: Live Building HP normalized (0..1)
         - Channel 1: Defense DPS threat normalized (0..1)
         - Channel 2: Town Hall 18 mask (0 or 1)
@@ -25,6 +25,10 @@ class CoCAttackerEnv(gym.Env):
         - Channel 7: Active Spell zone indicator
         - Channel 8: Allied Unit Type Signature phi(u) in [0, 1]
         - Channel 9: Enemy Unit Type Signature phi(u) in [0, 1] (CC, Heroes, Guardians, Ground vs Air Skeletons)
+        - Channels 10..30: 21 Dedicated Defense Type Channels (ArcherTower, MultiArcherTower, RicochetCannon,
+          Cannon, Mortar, AirDefense, WizardTower, SuperWizardTower, AirSweeper, HiddenTesla, BombTower, XBow,
+          InfernoTower, Scattershot, BuildersHut, SpellTower, Monolith, MultiGearTower, Firespitter, RevengeTower,
+          CraftingStation / Hot Candle)
 
     Action Space:
         MultiDiscrete([7, 10, 50, 50, 5]):
@@ -64,7 +68,7 @@ class CoCAttackerEnv(gym.Env):
         self._last_ability_tick = -999
         self._deploy_coords: List[Tuple[float, float]] = []
         self.observation_space = spaces.Box(
-            low=0.0, high=1.0, shape=(10, 50, 50), dtype=np.float32
+            low=0.0, high=1.0, shape=(31, 50, 50), dtype=np.float32
         )
         self.action_space = spaces.MultiDiscrete([7, 10, 50, 50, 5])
         self.fraction_bins = (0.0, 0.25, 0.50, 0.75, 1.00)
@@ -146,6 +150,9 @@ class CoCAttackerEnv(gym.Env):
             "raw_slot_type": np.asarray(slot_type_mask, dtype=bool),
         }
 
+    def get_army_context(self) -> np.ndarray:
+        return np.asarray(self._sim.get_army_context(), dtype=np.float32)
+
     def reset(
         self,
         *,
@@ -169,7 +176,7 @@ class CoCAttackerEnv(gym.Env):
         self._last_spell_tick = -999
         self._last_ability_tick = -999
         self._deploy_coords = []
-        obs = np.asarray(raw_obs, dtype=np.float32).reshape((10, 50, 50))
+        obs = np.asarray(raw_obs, dtype=np.float32).reshape((31, 50, 50))
         masks_now = self.get_action_masks()
         return obs, {
             "destruction_pct": 0,
@@ -183,6 +190,7 @@ class CoCAttackerEnv(gym.Env):
             "tick": 0,
             "has_remaining_inventory": bool(masks_now["raw_slot_type"][1:].any()),
             "action_masks": masks_now,
+            "army_context": self.get_army_context(),
         }
 
     def step(
@@ -254,7 +262,7 @@ class CoCAttackerEnv(gym.Env):
         self._prev_dmg = float(dmg_total)
         self._prev_th_destroyed = bool(th_destroyed)
 
-        obs = np.asarray(raw_obs, dtype=np.float32).reshape((10, 50, 50))
+        obs = np.asarray(raw_obs, dtype=np.float32).reshape((31, 50, 50))
         masks_now = self.get_action_masks()
         info = {
             "destruction_pct": int(destruction_pct),
@@ -270,6 +278,7 @@ class CoCAttackerEnv(gym.Env):
             "tick": int(tick),
             "has_remaining_inventory": bool(masks_now["raw_slot_type"][1:].any()),
             "action_masks": masks_now,
+            "army_context": self.get_army_context(),
         }
         return obs, float(reward), bool(done), False, info
 
@@ -291,7 +300,7 @@ class CoCAttackerEnv(gym.Env):
         self._prev_dmg = float(dmg_total)
         self._prev_th_destroyed = bool(th_destroyed)
 
-        obs = np.asarray(raw_obs, dtype=np.float32).reshape((10, 50, 50))
+        obs = np.asarray(raw_obs, dtype=np.float32).reshape((31, 50, 50))
         masks_now = self.get_action_masks()
         info = {
             "destruction_pct": int(destruction_pct),
@@ -306,6 +315,7 @@ class CoCAttackerEnv(gym.Env):
             "tick": int(tick),
             "has_remaining_inventory": bool(masks_now["raw_slot_type"][1:].any()),
             "action_masks": masks_now,
+            "army_context": self.get_army_context(),
         }
         return obs, float(reward), bool(done), info
 

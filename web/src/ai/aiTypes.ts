@@ -188,6 +188,7 @@ export interface AIArchitectureSpec {
   in_channels: number;
   spatial_dim: number;
   embed_dim: number;
+  army_context_dim: number;
   num_fraction_bins: number;
   total_params: number;
   total_macs: number;
@@ -262,6 +263,8 @@ export interface AIRolloutResponse {
   villages?: VillageLayout[];
 }
 
+export const POLICY_HEATMAP_CHANNEL_ID = 31;
+
 export const SPATIAL_CHANNELS = [
   { id: 0, label: 'Ch 0 • Building HP', color: '#22c55e' },
   { id: 1, label: 'Ch 1 • Defense DPS Threat', color: '#ef4444' },
@@ -273,7 +276,28 @@ export const SPATIAL_CHANNELS = [
   { id: 7, label: 'Ch 7 • Active Spells', color: '#fb923c' },
   { id: 8, label: 'Ch 8 • Allied Unit Types φ(u)', color: '#14b8a6' },
   { id: 9, label: 'Ch 9 • Enemy CC / Hero / Skeleton Types φ(u)', color: '#f43f5e' },
-  { id: 10, label: 'Policy Tile Heatmap', color: '#f59e0b' },
+  { id: 10, label: 'Ch 10 • Archer Tower', color: '#38bdf8' },
+  { id: 11, label: 'Ch 11 • Multi-Archer Tower', color: '#0ea5e9' },
+  { id: 12, label: 'Ch 12 • Ricochet Cannon', color: '#f97316' },
+  { id: 13, label: 'Ch 13 • Cannon', color: '#fb923c' },
+  { id: 14, label: 'Ch 14 • Mortar', color: '#a855f7' },
+  { id: 15, label: 'Ch 15 • Air Defense', color: '#ef4444' },
+  { id: 16, label: 'Ch 16 • Wizard Tower', color: '#c084fc' },
+  { id: 17, label: 'Ch 17 • Super Wizard Tower', color: '#8b5cf6' },
+  { id: 18, label: 'Ch 18 • Air Sweeper (Dir)', color: '#22d3ee' },
+  { id: 19, label: 'Ch 19 • Hidden Tesla (Revealed)', color: '#fde047' },
+  { id: 20, label: 'Ch 20 • Bomb Tower', color: '#fb7185' },
+  { id: 21, label: 'Ch 21 • X-Bow (Mode)', color: '#e879f9' },
+  { id: 22, label: 'Ch 22 • Inferno Tower (Single/Multi)', color: '#f43f5e' },
+  { id: 23, label: 'Ch 23 • Scattershot', color: '#6366f1' },
+  { id: 24, label: 'Ch 24 • Builder\'s Hut', color: '#4ade80' },
+  { id: 25, label: 'Ch 25 • Spell Tower (Mode)', color: '#a3e635' },
+  { id: 26, label: 'Ch 26 • Monolith', color: '#9333ea' },
+  { id: 27, label: 'Ch 27 • Multi-Gear Tower (Mode)', color: '#f59e0b' },
+  { id: 28, label: 'Ch 28 • Firespitter (Dir)', color: '#ea580c' },
+  { id: 29, label: 'Ch 29 • Revenge Tower', color: '#dc2626' },
+  { id: 30, label: 'Ch 30 • Hot Candle (Crafted)', color: '#fbbf24' },
+  { id: 31, label: 'Policy Tile Heatmap', color: '#f59e0b' },
 ] as const;
 
 export const SLOT_TYPE_LABELS = [

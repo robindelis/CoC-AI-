@@ -37,65 +37,65 @@ const HEAD_META: HeadMetaSpec[] = [
     index: 1,
     title: 'Head 1 Sub-Network • Action Type Policy (slot_type_head)',
     shortTitle: 'H1: Action Type (7)',
-    moduleName: 'encoder + slot_type_head',
+    moduleName: 'encoder + army_context_proj + slot_type_head',
     color: '#ca8a04',
     border: '#facc15',
     outputDim: '7 Action Types',
     params: 1799,
-    backboneParams: 795936,
-    formula: 'π(type | s) = Categorical(1.4 · tanh(Linear_256→7(global_emb) / 3) + M_type)',
+    backboneParams: 813088,
+    formula: 'π(type | s) = Categorical(1.4 · tanh(Linear_256→7(g_spatial ⊕ g_army) / 3) + M_type)',
   },
   {
     id: 'head_slot_idx',
     index: 2,
     title: 'Head 2 Sub-Network • Autoregressive Loadout Slot Index (slot_idx_head)',
     shortTitle: 'H2: Slot Index (10)',
-    moduleName: 'encoder + slot_type_head + slot_idx_head',
+    moduleName: 'encoder + army_context_proj + slot_type_head + slot_idx_head',
     color: '#0284c7',
     border: '#38bdf8',
     outputDim: '10 Loadout Slots',
     params: 35082,
-    backboneParams: 797735,
-    formula: 'π(idx | s, type) = Categorical(1.6 · tanh(MLP_263→128→10([global_emb ‖ 1hot(type)]) / 3) + M_idx[type])',
+    backboneParams: 814887,
+    formula: 'π(idx | s, type) = Categorical(1.6 · tanh(MLP_263→128→10([g_emb ‖ 1hot(type)]) / 3) + M_idx[type])',
   },
   {
     id: 'head_deploy_fraction',
     index: 3,
     title: 'Head 3 Sub-Network • Autoregressive Troop Wave Fraction (deploy_fraction_head)',
     shortTitle: 'H3: Deploy Frac (5)',
-    moduleName: 'encoder + H1 + H2 + deploy_fraction_head',
+    moduleName: 'encoder + army_context_proj + H1 + H2 + deploy_fraction_head',
     color: '#9333ea',
     border: '#c084fc',
     outputDim: '5 Wave Bins α∈[0,1]',
     params: 35717,
-    backboneParams: 832817,
-    formula: 'π(α | s, type, idx) = Categorical(1.4 · tanh(MLP_273→128→5([global_emb ‖ 1hot(type) ‖ 1hot(idx)]) / 3))',
+    backboneParams: 849969,
+    formula: 'π(α | s, type, idx) = Categorical(1.4 · tanh(MLP_273→128→5([g_emb ‖ 1hot(type) ‖ 1hot(idx)]) / 3))',
   },
   {
     id: 'head_tile_conv',
     index: 4,
     title: 'Head 4 Sub-Network • Dual-Pathway 50×50 Spatial Tile Pointer (tile_conv_head)',
     shortTitle: 'H4: Tile Pointer (2500)',
-    moduleName: 'spatial_stem + global_tower + tile_cond_proj + tile_conv_head',
+    moduleName: 'spatial_stem + global_tower + army_ctx + tile_cond_proj + tile_conv_head',
     color: '#d97706',
     border: '#facc15',
     outputDim: '1×50×50 (2,500 Tiles)',
     params: 35393,
-    backboneParams: 797735,
-    formula: 'π(x,y | s, type) = Categorical(2.2 · Conv1×1(SiLU(Conv3×3(FiLM(F_64×50×50, c_263→64)))) + Prior_50×50 + M_tile)',
+    backboneParams: 814887,
+    formula: 'π(x,y | s, type) = Categorical(2.2 · Conv1×1(SiLU(Conv3×3(FiLM(F_spatial, c_263→spatial)))) + Prior_50×50 + M_tile)',
   },
   {
     id: 'head_critic',
     index: 5,
     title: 'Head 5 Sub-Network • State-Value Critic V(s) (critic_head)',
     shortTitle: 'H5: Value Critic (1)',
-    moduleName: 'encoder + critic_head',
+    moduleName: 'encoder + army_context_proj + critic_head',
     color: '#16a34a',
     border: '#4ade80',
     outputDim: 'Scalar V(s) ∈ ℝ',
     params: 33025,
-    backboneParams: 795936,
-    formula: 'V(s) = Linear_128→1(SiLU(Linear_256→128(global_emb(obs))))',
+    backboneParams: 813088,
+    formula: 'V(s) = Linear_128→1(SiLU(Linear_256→128(g_spatial(obs) ⊕ g_army(army_context))))',
   },
 ];
 
@@ -237,6 +237,21 @@ const DEFAULT_LAYERS: AIArchitectureLayerSpec[] = [
     coneLabel: 'Dense',
   },
   {
+    id: 'head_army_ctx',
+    stage: 'global',
+    type: 'army_context_proj (Fusion)',
+    short: 'ArmyCtx',
+    desc: 'army_context(64) → Linear(64 → 256) + LayerNorm(256) + SiLU ⊕ global_emb',
+    inputShape: [64],
+    outputShape: [256],
+    receptiveField: 50,
+    params: 17152,
+    macs: 16384,
+    color: '#0891b2',
+    border: '#38bdf8',
+    coneLabel: '64→256 ⊕',
+  },
+  {
     id: 'head_slot_type',
     stage: 'heads',
     type: 'slot_type_head (Head 1)',
@@ -322,7 +337,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
   const [vizMode, setVizMode] = useState<'schematic' | 'torchview'>('schematic');
   const [headFilter, setHeadFilter] = useState<HeadFilterId>('all');
-  const [selectedBlockId, setSelectedBlockId] = useState<string | null>('s4');
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>('head_army_ctx');
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null);
   const [zoom, setZoom] = useState<number>(1.0);
   const [torchviewDetail, setTorchviewDetail] = useState<'overview' | 'detailed'>('overview');
@@ -360,11 +375,12 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
   }, [architectureSpec, architectureHash]);
 
   const activeLayers =
-    liveSpec?.layers && liveSpec.layers.length >= 14
+    liveSpec?.layers && liveSpec.layers.length >= 15
       ? liveSpec.layers
       : DEFAULT_LAYERS;
-  const inChannels = liveSpec?.in_channels ?? 10;
-  const spatialDim = liveSpec?.spatial_dim ?? 64;
+  const inChannels = liveSpec?.in_channels ?? 31;
+  const armyContextDim = liveSpec?.army_context_dim ?? 64;
+  const spatialDim = liveSpec?.spatial_dim ?? 128;
   const embedDim = liveSpec?.embed_dim ?? 256;
   const numFracBins = liveSpec?.num_fraction_bins ?? 5;
   const totalParams =
@@ -373,7 +389,12 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
     liveSpec?.total_macs ?? activeLayers.reduce((acc, l) => acc + l.macs, 0);
 
   const spatialLayers = activeLayers.filter((l) => l.stage === 'spatial');
-  const globalTowerLayers = activeLayers.filter((l) => l.stage === 'global');
+  const globalTowerLayers = activeLayers.filter(
+    (l) => l.stage === 'global' && l.id !== 'head_army_ctx'
+  );
+  const armyCtxLayer =
+    activeLayers.find((l) => l.id === 'head_army_ctx') ??
+    DEFAULT_LAYERS.find((l) => l.id === 'head_army_ctx')!;
   const hoveredSummary = activeLayers.find((l) => l.id === hoveredBlockId) ?? null;
 
   // =========================================================================
@@ -681,25 +702,43 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
     );
   };
 
+  const drawFusionCircle = (cx: number, cy: number, symbol: string, topText: string, subText: string, border = '#facc15') => (
+    <g key={`fusion-${cx}-${cy}-${topText}`} transform={`translate(${cx}, ${cy})`}>
+      <circle r={14} fill="#0f172a" stroke={border} strokeWidth={2.0} />
+      <text y={4} textAnchor="middle" fill={border} fontSize={12.5} fontWeight={900}>
+        {symbol}
+      </text>
+      <text y={-19} textAnchor="middle" fill="#fde047" fontSize={8.8} fontWeight={800}>
+        {topText}
+      </text>
+      <text y={26} textAnchor="middle" fill="#34d399" fontSize={8.0} fontWeight={700}>
+        {subText}
+      </text>
+    </g>
+  );
+
   // =========================================================================
-  // 1. FULL UNIFIED NETWORK DIAGRAM (obs + 5 Heads)
+  // 1. FULL UNIFIED NETWORK DIAGRAM (obs + army_context + 5 Heads)
   // =========================================================================
   const renderUnifiedNetworkSvg = () => {
     const stepX = 96;
     const startX = 62;
-    const stemY = 175;
-    const topBranchY = 112;
-    const botBranchY = 305;
+    const stemY = 152;
+    const topBranchY = 92;
+    const armyTrackY = 236;
+    const botBranchY = 330;
 
     const splitX = startX + (spatialLayers.length + 1) * stepX;
     const globalEndX = splitX + (globalTowerLayers.length - 1) * stepX;
-    const headsX = globalEndX + 124;
-    const svgWidth = Math.max(1160, headsX + 185);
-    const svgHeight = 390;
+    const fusionX = globalEndX + 86;
+    const headsX = fusionX + 118;
+    const svgWidth = Math.max(1220, headsX + 185);
+    const svgHeight = 420;
 
     const stemLastX = splitX - stepX;
-    const tileFiLMX = splitX + 1.2 * stepX;
-    const tileMidX = splitX + 2.6 * stepX;
+    const armyProjX = splitX + 2 * stepX;
+    const tileFiLMX = splitX + 1.5 * stepX;
+    const tileMidX = splitX + 3.0 * stepX;
     const tileOutX = tileMidX + 1.15 * stepX;
 
     return (
@@ -721,13 +760,13 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
           <rect width={svgWidth} height={svgHeight} fill="url(#bgGridGrad)" rx={8} />
 
           <text x={20} y={20} fill="#60a5fa" fontSize={10} fontWeight={800}>
-            STAGE 1 • SPATIAL CNN STEM (Full-Res 50×50 Pathway: S1 d=2 → S2 d=2 → S3 d=1 → S4 ResBlock)
+            STAGE 1 • DUAL INPUTS &amp; SPATIAL CNN STEM (Full-Res 50×50 Pathway: S1 d=2 → S2 d=2 → S3 d=1 → S4 ResBlock)
           </text>
           <text x={splitX - 18} y={20} fill="#34d399" fontSize={10} fontWeight={800}>
-            STAGE 2 • GLOBAL TOWER (256D) &amp; STAGE 3 • 5 AUTOREGRESSIVE HEADS
+            STAGE 2 • GLOBAL TOWER + AVAILABLE ARMY FUSION (⊕ 256D) &amp; STAGE 3 • 5 AUTOREGRESSIVE HEADS
           </text>
 
-          {/* INPUT: Spatial Observation Grid obs (10×50×50) */}
+          {/* INPUT 1: Spatial Observation Grid obs (10×50×50) */}
           {drawCuboid({
             key: 'input_obs',
             cx: startX,
@@ -737,9 +776,25 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
             w: 50,
             color: '#0284c7',
             borderColor: '#38bdf8',
-            topLabel: 'Input: obs',
+            topLabel: 'Input 1: obs',
             shapeLabel: `${inChannels}×50×50`,
             subLabel: 'Village Grid',
+          })}
+
+          {/* INPUT 2: Available Army Inventory Vector army_context (64-D) */}
+          {drawDenseBar({
+            key: 'input_army_ctx',
+            cx: startX,
+            cy: armyTrackY + 42,
+            dim: armyContextDim,
+            color: '#0891b2',
+            borderColor: '#38bdf8',
+            dimColor: '#38bdf8',
+            topLabel: 'Input 2: army_context',
+            subLabel: 'Avail Troops/Spells/Heroes',
+            isSelected: selectedBlockId === 'head_army_ctx',
+            onClick: () => setSelectedBlockId('head_army_ctx'),
+            onHover: setHoveredBlockId,
           })}
 
           {/* Spatial Stem Blocks S1, S2, S3, S4 */}
@@ -830,18 +885,67 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
             );
           })}
 
+          {/* Middle Branch: Available Army Projection (64D -> 256D) & Residual Fusion (⊕) */}
+          <path
+            d={`M ${startX + 14} ${armyTrackY + 42} L ${armyProjX - 18} ${armyTrackY}`}
+            fill="none"
+            stroke="#38bdf8"
+            strokeWidth={2}
+            strokeDasharray="5 3"
+          />
+          <text
+            x={(startX + armyProjX) / 2 - 20}
+            y={armyTrackY + 12}
+            textAnchor="middle"
+            fill="#38bdf8"
+            fontSize={8.8}
+            fontWeight={700}
+          >
+            army_context (B, 64) → Linear(64→256) + LayerNorm + SiLU
+          </text>
+          {drawDenseBar({
+            key: armyCtxLayer.id,
+            cx: armyProjX,
+            cy: armyTrackY,
+            dim: embedDim,
+            color: '#0891b2',
+            borderColor: '#38bdf8',
+            dimColor: '#38bdf8',
+            topLabel: 'army_context_proj',
+            subLabel: `${(armyCtxLayer.params / 1000).toFixed(1)}K p`,
+            isSelected: selectedBlockId === armyCtxLayer.id,
+            isHovered: hoveredBlockId === armyCtxLayer.id,
+            onClick: () => setSelectedBlockId(armyCtxLayer.id),
+            onHover: setHoveredBlockId,
+          })}
+
+          {/* Fusion Node: global_emb = global_tower(obs) + army_context_proj(army_context) */}
+          <path
+            d={`M ${globalEndX + 14} ${topBranchY} L ${fusionX - 16} ${topBranchY + 34}`}
+            fill="none"
+            stroke="#34d399"
+            strokeWidth={2.2}
+          />
+          <path
+            d={`M ${armyProjX + 14} ${armyTrackY} C ${armyProjX + 95} ${armyTrackY}, ${fusionX - 60} ${topBranchY + 34}, ${fusionX - 16} ${topBranchY + 34}`}
+            fill="none"
+            stroke="#38bdf8"
+            strokeWidth={2.2}
+          />
+          {drawFusionCircle(fusionX, topBranchY + 34, '⊕', 'global_emb', '256D Fused State')}
+
           {/* Lower Branch: Spatial Tile Pointer (Head 4) with FiLM Conditioning + Spatial Prior */}
           {drawFilterCone(
             stemLastX,
             stemY,
             tileFiLMX,
             botBranchY,
-            'spatial_feat (64×50×50)',
+            `spatial_feat (${spatialDim}×50×50)`,
             'rgba(96, 165, 250, 0.2)',
             '#60a5fa'
           )}
           <path
-            d={`M ${globalEndX} ${topBranchY + 38} C ${globalEndX - 30} ${botBranchY - 70}, ${tileFiLMX} ${topBranchY + 110}, ${tileFiLMX} ${botBranchY - 42}`}
+            d={`M ${fusionX} ${topBranchY + 50} C ${fusionX - 30} ${botBranchY - 70}, ${tileFiLMX} ${topBranchY + 120}, ${tileFiLMX} ${botBranchY - 42}`}
             fill="none"
             stroke="#facc15"
             strokeWidth={1.6}
@@ -855,7 +959,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
             fontSize={8.2}
             fontWeight={700}
           >
-            tile_cond_proj(263→64) FiLM
+            tile_cond_proj(263→{spatialDim}) FiLM
           </text>
           {drawCuboid({
             key: 'tile_film_fusion',
@@ -867,7 +971,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
             color: '#b45309',
             borderColor: '#facc15',
             topLabel: 'FiLM Spatial Fusion',
-            shapeLabel: '64×50×50',
+            shapeLabel: `${spatialDim}×50×50`,
             subLabel: 'F·(1+0.5tanh(c))+c',
             isSelected: selectedBlockId === 'head_tile_conv',
             onClick: () => {
@@ -934,7 +1038,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
           {[
             {
               id: 'head_slot_type' as const,
-              y: 44,
+              y: 52,
               title: 'H1: Action Type (7)',
               sub: 'Linear(256→7) • 1.8K p',
               cond: '256D',
@@ -943,7 +1047,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
             },
             {
               id: 'head_slot_idx' as const,
-              y: 104,
+              y: 112,
               title: 'H2: Slot Index (10)',
               sub: 'MLP(263→128→10) • 35.1K p',
               cond: '256 + 1hot(type:7) = 263D',
@@ -952,7 +1056,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
             },
             {
               id: 'head_deploy_fraction' as const,
-              y: 164,
+              y: 172,
               title: `H3: Deploy Frac (${numFracBins})`,
               sub: `MLP(273→128→${numFracBins}) • 35.7K p`,
               cond: '263 + 1hot(idx:10) = 273D',
@@ -961,7 +1065,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
             },
             {
               id: 'head_critic' as const,
-              y: 224,
+              y: 232,
               title: 'H5: Critic Value V(s) (1)',
               sub: 'MLP(256→128→1) • 33.0K p',
               cond: '256D (2.5× Actor LR)',
@@ -980,7 +1084,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
               onMouseLeave={() => setHoveredBlockId(null)}
             >
               <path
-                d={`M ${globalEndX + 14} ${topBranchY} C ${globalEndX + 55} ${topBranchY}, ${headsX - 55} ${hItem.y + 18}, ${headsX - 8} ${hItem.y + 18}`}
+                d={`M ${fusionX + 16} ${topBranchY + 34} C ${fusionX + 55} ${topBranchY + 34}, ${headsX - 55} ${hItem.y + 18}, ${headsX - 8} ${hItem.y + 18}`}
                 fill="none"
                 stroke={hItem.border}
                 strokeWidth={1.6}
@@ -1028,14 +1132,14 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
           ))}
 
           <path
-            d={`M ${headsX + 168} ${66} Q ${headsX + 182} ${85} ${headsX + 168} ${104}`}
+            d={`M ${headsX + 168} ${74} Q ${headsX + 182} ${93} ${headsX + 168} ${112}`}
             fill="none"
             stroke="#facc15"
             strokeWidth={1.5}
             strokeDasharray="2 2"
           />
           <path
-            d={`M ${headsX + 168} ${126} Q ${headsX + 182} ${145} ${headsX + 168} ${164}`}
+            d={`M ${headsX + 168} ${134} Q ${headsX + 182} ${153} ${headsX + 168} ${172}`}
             fill="none"
             stroke="#38bdf8"
             strokeWidth={1.5}
@@ -1066,16 +1170,19 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
   const renderVisualSubModel3D = (head: HeadMetaSpec, isCompact: boolean) => {
     const startX = 52;
     const stepX = 82;
-    const topY = 128;
-    const midY = 128;
+    const topY = 92;
+    const botY = 205;
+    const midY = 135;
 
     const splitX = startX + 5 * stepX; // Col 5
     const g5X = splitX + 4 * stepX; // Col 9
-    const globalBarX = g5X;
+    const armyProjX = splitX + 2 * stepX; // Col 7
+    const fusionX = g5X + 68;
+    const globalBarX = fusionX + 58;
 
     const isTileHead = head.id === 'head_tile_conv';
-    const svgHeight = isTileHead ? 315 : 230;
-    const svgWidth = isTileHead ? 1240 : head.id === 'head_deploy_fraction' ? 1240 : 1160;
+    const svgHeight = isTileHead ? 315 : 265;
+    const svgWidth = isTileHead ? 1310 : head.id === 'head_deploy_fraction' ? 1360 : 1280;
 
     return (
       <div
@@ -1135,13 +1242,13 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
             <rect width={svgWidth} height={svgHeight} fill="#070d19" rx={8} />
 
             <text x={18} y={18} fill="#60a5fa" fontSize={9.2} fontWeight={800}>
-              SHARED ENCODER PATHWAY • Input: obs ({inChannels}×50×50) → GlobalTower ({embedDim}D)
+              SHARED ENCODER PATHWAY • Input 1: obs ({inChannels}×50×50) + Input 2: army_context ({armyContextDim}D)
             </text>
-            <text x={g5X + 35} y={18} fill={head.border} fontSize={9.2} fontWeight={800}>
+            <text x={fusionX - 10} y={18} fill={head.border} fontSize={9.2} fontWeight={800}>
               HEAD {head.index} VOLUMETRIC PIPELINE • {head.shortTitle.toUpperCase()} ({head.params.toLocaleString()} PARAMS)
             </text>
 
-            {/* 1. Input: obs (10×50×50) */}
+            {/* 1. Input 1: obs (10×50×50) */}
             {drawCuboid({
               key: `${head.id}_obs`,
               cx: startX,
@@ -1157,7 +1264,21 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
               subLabel: 'Village Grid',
             })}
 
-            {/* 2. Spatial CNN Stem S1..S4 */}
+            {/* 2. Input 2: army_context (64D) */}
+            {drawDenseBar({
+              key: `${head.id}_army_in`,
+              cx: startX,
+              cy: botY,
+              dim: armyContextDim,
+              scale: 0.88,
+              color: '#0891b2',
+              borderColor: '#38bdf8',
+              dimColor: '#38bdf8',
+              topLabel: 'army_context',
+              subLabel: 'Inventory 64D',
+            })}
+
+            {/* 3. Spatial CNN Stem S1..S4 */}
             {spatialLayers.map((sLayer, idx) => {
               const prevX = startX + idx * stepX;
               const curX = startX + (idx + 1) * stepX;
@@ -1184,7 +1305,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
               );
             })}
 
-            {/* 3. Global Tower G1..G5 */}
+            {/* 4. Global Tower G1..G5 */}
             {globalTowerLayers.map((gLayer, idx) => {
               const prevX = idx === 0 ? startX + 4 * stepX : splitX + (idx - 1) * stepX;
               const curX = splitX + idx * stepX;
@@ -1231,6 +1352,71 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                       })}
                 </React.Fragment>
               );
+            })}
+
+            {/* 5. Army Context Projection & Residual Addition ⊕ */}
+            <path
+              d={`M ${startX + 14} ${botY} L ${armyProjX - 16} ${botY}`}
+              fill="none"
+              stroke="#38bdf8"
+              strokeWidth={1.8}
+              strokeDasharray="5 3"
+            />
+            <text
+              x={(startX + armyProjX) / 2}
+              y={botY - 8}
+              textAnchor="middle"
+              fill="#38bdf8"
+              fontSize={8.2}
+              fontWeight={700}
+            >
+              Linear(64→256) + LayerNorm + SiLU
+            </text>
+            {drawDenseBar({
+              key: `${head.id}_army_proj`,
+              cx: armyProjX,
+              cy: botY,
+              dim: embedDim,
+              scale: 0.88,
+              color: '#0891b2',
+              borderColor: '#38bdf8',
+              dimColor: '#38bdf8',
+              topLabel: 'army_context_proj',
+              subLabel: '17.2K p',
+            })}
+
+            <path
+              d={`M ${g5X + 12} ${topY} L ${fusionX - 14} ${midY}`}
+              fill="none"
+              stroke="#34d399"
+              strokeWidth={2}
+            />
+            <path
+              d={`M ${armyProjX + 12} ${botY} C ${armyProjX + 80} ${botY}, ${fusionX - 50} ${midY}, ${fusionX - 14} ${midY}`}
+              fill="none"
+              stroke="#38bdf8"
+              strokeWidth={2}
+            />
+            {drawFusionCircle(fusionX, midY, '⊕', 'State Fusion', 'spatial + army')}
+
+            <line
+              x1={fusionX + 14}
+              y1={midY}
+              x2={globalBarX - 12}
+              y2={midY}
+              stroke="#34d399"
+              strokeWidth={2}
+            />
+            {drawDenseBar({
+              key: `${head.id}_global_emb`,
+              cx: globalBarX,
+              cy: midY,
+              dim: embedDim,
+              scale: 0.92,
+              color: '#059669',
+              borderColor: '#34d399',
+              topLabel: 'global_emb',
+              subLabel: 'Fused State',
             })}
 
             {/* ============================================================= */}
@@ -1805,15 +1991,19 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
 
         <div className="ai-arch-kpi-pills">
           <div className="arch-pill">
-            <span>Input (obs)</span>
+            <span>Input 1 (obs)</span>
             <strong>{inChannels}×50×50</strong>
+          </div>
+          <div className="arch-pill" style={{ borderColor: '#0891b2' }}>
+            <span>Input 2 (army_context)</span>
+            <strong style={{ color: '#38bdf8' }}>{armyContextDim}D → 256D ⊕</strong>
           </div>
           <div className="arch-pill">
             <span>Spatial Map</span>
             <strong>{spatialDim}×50×50 (RF 15×15)</strong>
           </div>
           <div className="arch-pill">
-            <span>Global State</span>
+            <span>Fused State</span>
             <strong style={{ color: '#34d399' }}>{embedDim}D</strong>
           </div>
           <div className="arch-pill">
@@ -1863,7 +2053,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                   setHeadFilter('all');
                 }}
               >
-                🧊 Full Network (obs + 5 Heads)
+                🧊 Full Network (obs + army_context + 5 Heads)
               </button>
               <button
                 type="button"

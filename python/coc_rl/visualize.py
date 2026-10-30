@@ -63,9 +63,10 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
     so the 3D CNN Feature Map diagram, Layer-by-Layer table, KPI pills, and PyTorch code
     in the Web UI always reflect any edits made to `python/coc_rl/networks.py` on every refresh.
     """
-    in_ch = int(getattr(model, "in_channels", 10))
+    in_ch = int(getattr(model, "in_channels", 31))
+    army_ctx_dim = int(getattr(model, "army_context_dim", 64))
     num_frac_bins = int(getattr(model, "num_fraction_bins", 5))
-    spatial_dim = int(getattr(model.encoder, "spatial_dim", 64))
+    spatial_dim = int(getattr(model.encoder, "spatial_dim", 128))
     embed_dim = int(getattr(model.encoder, "embed_dim", 256))
 
     def _mod_params(m: nn.Module) -> int:
@@ -231,6 +232,21 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
             "coneLabel": "Dense",
         },
         {
+            "id": "head_army_ctx",
+            "stage": "global",
+            "type": "army_context_proj (Fusion)",
+            "short": "ArmyCtx",
+            "desc": f"army_context({army_ctx_dim}) → Linear({army_ctx_dim} → {embed_dim}) + LayerNorm({embed_dim}) + SiLU ⊕ global_emb",
+            "inputShape": [army_ctx_dim],
+            "outputShape": [embed_dim],
+            "receptiveField": 50,
+            "params": _mod_params(model.army_context_proj),
+            "macs": army_ctx_dim * embed_dim,
+            "color": "#0891b2",
+            "border": "#38bdf8",
+            "coneLabel": "64→256 ⊕",
+        },
+        {
             "id": "head_slot_type",
             "stage": "heads",
             "type": "slot_type_head (Head 1)",
@@ -317,6 +333,7 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
         "in_channels": in_ch,
         "spatial_dim": spatial_dim,
         "embed_dim": embed_dim,
+        "army_context_dim": army_ctx_dim,
         "num_fraction_bins": num_frac_bins,
         "total_params": total_params,
         "total_macs": total_macs,
@@ -353,9 +370,17 @@ class _TracedModelWrapper(nn.Module):
         for name, child in model.named_children():
             setattr(self, name, child)
 
-    def forward(self, obs: torch.Tensor) -> Any:
+    def forward(
+        self, obs: torch.Tensor, army_context: Optional[torch.Tensor] = None
+    ) -> Any:
         self.captured_outputs.clear()
-        out = self.model.forward(obs)
+        if army_context is not None and (
+            isinstance(self.model, CoCActorCritic)
+            or type(self.model).__name__ == "CoCActorCritic"
+        ):
+            out = self.model.forward(obs, army_context)
+        else:
+            out = self.model.forward(obs)
         if isinstance(out, dict):
             for k, v in out.items():
                 if hasattr(v, "tensor_nodes") and v.tensor_nodes:
@@ -372,16 +397,30 @@ def _render_torchview_variant(
     out_dir: Optional[str] = None,
 ) -> Dict[str, str]:
     wrapper = _TracedModelWrapper(model)
+    is_actor_critic = (
+        isinstance(model, CoCActorCritic)
+        or type(model).__name__ == "CoCActorCritic"
+    )
+    army_ctx_dim = int(getattr(model, "army_context_dim", 64))
+    effective_input_size: Any = (
+        [input_size, (input_size[0], army_ctx_dim)]
+        if is_actor_critic
+        else input_size
+    )
     with _named_module_classes(model):
         graph = draw_graph(
             wrapper,
-            input_size=input_size,
+            input_size=effective_input_size,
             expand_nested=True,
             depth=depth,
             graph_name=graph_name,
             device="cpu",
         )
-        root_names = ["obs (1×10×50×50)"]
+        root_names = (
+            [f"obs (1×{input_size[1]}×50×50)", f"army_context (1×{army_ctx_dim})"]
+            if is_actor_critic
+            else ["obs (input)"]
+        )
         for idx, root_node in enumerate(graph.root_container):
             root_node.name = root_names[idx] if idx < len(root_names) else f"input_{idx}"
         for out_key, tensor_nodes in wrapper.captured_outputs.items():
@@ -414,7 +453,7 @@ def render_model_architecture(
     model: nn.Module,
     out_dir: str,
     stem_name: str,
-    input_size: tuple[int, ...] = (1, 10, 50, 50),
+    input_size: tuple[int, ...] = (1, 31, 50, 50),
     depth: int = 2,
     graph_name: str = "CoCActorCritic",
 ) -> Dict[str, str]:
@@ -445,10 +484,10 @@ def ensure_architecture_diagrams(
     """
     os.makedirs(ARCH_DIR, exist_ok=True)
     if model is None:
-        in_ch = input_size[1] if input_size is not None else 10
+        in_ch = input_size[1] if input_size is not None else 31
         model = CoCActorCritic(in_channels=in_ch)
     else:
-        in_ch = int(getattr(model, "in_channels", 10))
+        in_ch = int(getattr(model, "in_channels", 31))
 
     if input_size is None:
         input_size = (1, in_ch, 50, 50)

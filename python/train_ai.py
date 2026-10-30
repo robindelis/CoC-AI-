@@ -313,7 +313,7 @@ def load_attacker_model(
         except Exception:
             attacker_ckpt_meta = {}
 
-    live_attacker = CoCActorCritic(in_channels=10).to(device)
+    live_attacker = CoCActorCritic(in_channels=31, army_context_dim=64).to(device)
 
     if "model_state_dict" in attacker_ckpt_meta and isinstance(attacker_ckpt_meta["model_state_dict"], dict):
         try:
@@ -540,6 +540,9 @@ def simulate_model_rollout(
     for step_i in range(max_steps):
         current_tick = int(info.get("tick", step_i * ticks_per_step))
         obs_t = torch.as_tensor(obs_np, dtype=torch.float32, device=device).unsqueeze(0)
+        army_ctx_t = torch.as_tensor(
+            info["army_context"], dtype=torch.float32, device=device
+        ).unsqueeze(0)
         masks_t = masks_np_to_torch(
             info["action_masks"], device, prevent_early_noop=(step_i == 0)
         )
@@ -549,6 +552,7 @@ def simulate_model_rollout(
                 obs_t,
                 masks=masks_t,
                 deterministic=deterministic,
+                army_context=army_ctx_t,
             )
 
         act = action_t.squeeze(0).cpu().tolist()
@@ -791,6 +795,7 @@ def train_pytorch_ppo(
     history: List[Dict[str, Any]] = []
 
     buf_obs: List[torch.Tensor] = []
+    buf_ctx: List[torch.Tensor] = []
     buf_act: List[torch.Tensor] = []
     buf_lp: List[torch.Tensor] = []
     buf_adv: List[torch.Tensor] = []
@@ -913,9 +918,10 @@ def train_pytorch_ppo(
         )
 
         # ---------------------------------------------------------------------
-        # Live Battle Rollout (`CoCActorCritic` on 10x50x50 spatial grid)
+        # Live Battle Rollout (`CoCActorCritic` with live available army_context)
         # ---------------------------------------------------------------------
         obs_list: List[torch.Tensor] = []
+        army_ctx_list: List[torch.Tensor] = []
         actions_list: List[torch.Tensor] = []
         logprobs_list: List[torch.Tensor] = []
         values_list: List[torch.Tensor] = []
@@ -942,6 +948,9 @@ def train_pytorch_ppo(
 
         for step_i in range(max_steps_per_ep):
             obs_t = torch.as_tensor(obs_np, dtype=torch.float32, device=device).unsqueeze(0)
+            army_ctx_t = torch.as_tensor(
+                info["army_context"], dtype=torch.float32, device=device
+            ).unsqueeze(0)
 
             prevent_noop = curriculum_deploy and (step_i == 0)
             masks_t = masks_np_to_torch(
@@ -950,7 +959,7 @@ def train_pytorch_ppo(
 
             with torch.no_grad():
                 action_t, logprob_t, entropy_t, value_t, step_diag = live_attacker.get_action_and_value(
-                    obs_t, masks=masks_t
+                    obs_t, masks=masks_t, army_context=army_ctx_t
                 )
                 ep_entropies.append(float(entropy_t.item()))
                 if "h_type" in step_diag:
@@ -1008,6 +1017,7 @@ def train_pytorch_ppo(
             steps_run += 1
 
             obs_list.append(obs_t.squeeze(0))
+            army_ctx_list.append(army_ctx_t.squeeze(0))
             actions_list.append(action_t.squeeze(0))
             logprobs_list.append(logprob_t.squeeze(0))
             values_list.append(value_t.squeeze(0))
@@ -1032,8 +1042,11 @@ def train_pytorch_ppo(
             next_obs_t = torch.as_tensor(
                 obs_np, dtype=torch.float32, device=device
             ).unsqueeze(0)
+            next_ctx_t = torch.as_tensor(
+                info["army_context"], dtype=torch.float32, device=device
+            ).unsqueeze(0)
             _, _, _, next_val_t, _ = live_attacker.get_action_and_value(
-                next_obs_t
+                next_obs_t, army_context=next_ctx_t
             )
 
         rewards_t = torch.tensor(rewards_list, dtype=torch.float32, device=device)
@@ -1050,6 +1063,7 @@ def train_pytorch_ppo(
         )
 
         buf_obs.append(torch.stack(obs_list))
+        buf_ctx.append(torch.stack(army_ctx_list))
         buf_act.append(torch.stack(actions_list))
         buf_lp.append(torch.stack(logprobs_list))
         buf_adv.append(advantages_t)
@@ -1061,6 +1075,7 @@ def train_pytorch_ppo(
 
         if buf_eps_count >= b_eps or ep == episodes:
             obs_b = torch.cat(buf_obs, dim=0)
+            army_ctx_b = torch.cat(buf_ctx, dim=0)
             actions_b = torch.cat(buf_act, dim=0)
             old_logprobs_b = torch.cat(buf_lp, dim=0)
             adv_b = torch.cat(buf_adv, dim=0)
@@ -1080,6 +1095,7 @@ def train_pytorch_ppo(
                 advantages_b=adv_b,
                 returns_b=ret_b,
                 masks_b=masks_b,
+                army_context_b=army_ctx_b,
                 ppo_epochs=ppo_epochs,
                 minibatch_size=minibatch_size,
                 clip_coef=clip_coef,
@@ -1097,6 +1113,7 @@ def train_pytorch_ppo(
                     prev_rec["explained_variance"] = round(last_metrics.get("explained_variance", 0.0), 4)
 
             buf_obs.clear()
+            buf_ctx.clear()
             buf_act.clear()
             buf_lp.clear()
             buf_adv.clear()

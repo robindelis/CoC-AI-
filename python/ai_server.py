@@ -289,11 +289,14 @@ def inspect_policy_and_tensors(req: InspectRequest) -> Dict[str, Any]:
     obs_np, info = env.reset()
 
     obs_t = torch.as_tensor(obs_np, dtype=torch.float32, device=DEVICE).unsqueeze(0)
+    army_ctx_t = torch.as_tensor(
+        info["army_context"], dtype=torch.float32, device=DEVICE
+    ).unsqueeze(0)
     masks_t = masks_np_to_torch(info["action_masks"], DEVICE, prevent_early_noop=False)
 
     with torch.no_grad():
         action_t, _, entropy_t, value_t, diag = live_attacker.get_action_and_value(
-            obs_t, masks=masks_t
+            obs_t, masks=masks_t, army_context=army_ctx_t
         )
 
     act = action_t.squeeze(0).cpu().tolist()

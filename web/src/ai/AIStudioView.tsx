@@ -32,6 +32,7 @@ import {
   AITrainingFeedbackResponse,
   AIVillageStat,
   MatchupMode,
+  POLICY_HEATMAP_CHANNEL_ID,
   SLOT_TYPE_LABELS,
   SPATIAL_CHANNELS,
 } from './aiTypes';
@@ -328,7 +329,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
 }) => {
   const [serverStatus, setServerStatus] = useState<AIServerStatus | null>(null);
   const [inspectData, setInspectData] = useState<AIInspectResponse | null>(null);
-  const [selectedChannel, setSelectedChannel] = useState<number>(10);
+  const [selectedChannel, setSelectedChannel] = useState<number>(POLICY_HEATMAP_CHANNEL_ID);
 
   // Trainer setup state
   const [matchupMode, setMatchupMode] = useState<MatchupMode>('random');
@@ -545,7 +546,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
     ctx.fillRect(0, 0, size, size);
 
     let grid50x50: number[][] | null = null;
-    if (selectedChannel === 10 && inspectData?.tile_heatmap) {
+    if (selectedChannel === POLICY_HEATMAP_CHANNEL_ID && inspectData?.tile_heatmap) {
       grid50x50 = inspectData.tile_heatmap;
     } else {
       const localFlat = extractLocalObservation();
@@ -574,7 +575,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
     for (let y = 0; y < 50; y++) {
       for (let x = 0; x < 50; x++) {
         const raw = grid50x50[y][x];
-        const norm = selectedChannel === 10 ? raw / maxVal : Math.min(1, raw);
+        const norm = selectedChannel === POLICY_HEATMAP_CHANNEL_ID ? raw / maxVal : Math.min(1, raw);
         if (norm <= 0.01) continue;
         ctx.globalAlpha = Math.max(0.15, norm);
         ctx.fillStyle = chMeta.color;
