@@ -146,9 +146,6 @@ class CoCAttackerEnv(gym.Env):
             "raw_slot_type": np.asarray(slot_type_mask, dtype=bool),
         }
 
-    def get_army_context(self) -> np.ndarray:
-        return np.asarray(self._sim.get_army_context(), dtype=np.float32)
-
     def reset(
         self,
         *,
@@ -186,7 +183,6 @@ class CoCAttackerEnv(gym.Env):
             "tick": 0,
             "has_remaining_inventory": bool(masks_now["raw_slot_type"][1:].any()),
             "action_masks": masks_now,
-            "army_context": self.get_army_context(),
         }
 
     def step(
@@ -274,7 +270,6 @@ class CoCAttackerEnv(gym.Env):
             "tick": int(tick),
             "has_remaining_inventory": bool(masks_now["raw_slot_type"][1:].any()),
             "action_masks": masks_now,
-            "army_context": self.get_army_context(),
         }
         return obs, float(reward), bool(done), False, info
 
@@ -311,7 +306,6 @@ class CoCAttackerEnv(gym.Env):
             "tick": int(tick),
             "has_remaining_inventory": bool(masks_now["raw_slot_type"][1:].any()),
             "action_masks": masks_now,
-            "army_context": self.get_army_context(),
         }
         return obs, float(reward), bool(done), info
 

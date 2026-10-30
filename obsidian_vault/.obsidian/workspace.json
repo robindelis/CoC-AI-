@@ -11,17 +11,12 @@
             "id": "a12dbd6778e0f270",
             "type": "leaf",
             "state": {
-              "type": "canvas",
+              "type": "pdf",
               "state": {
-                "file": "01_Model_Architecture_and_Training_Tracker.canvas",
-                "viewState": {
-                  "x": 2075.007331262454,
-                  "y": 366.02098543174134,
-                  "zoom": -0.9500000000000007
-                }
+                "file": "file:/home/robin/site/CV_Robin_De_Lissnyder_En.pdf"
               },
-              "icon": "lucide-layout-dashboard",
-              "title": "01_Model_Architecture_and_Training_Tracker"
+              "icon": "lucide-file-text",
+              "title": "CV_Robin_De_Lissnyder_En"
             }
           }
         ]
@@ -193,10 +188,11 @@
   },
   "active": "a12dbd6778e0f270",
   "lastOpenFiles": [
+    "file:/home/robin/jobs/CV_Robin_De_Lissnyder_En.pdf",
+    "01_Model_Architecture_and_Training_Tracker.canvas",
     "assets/charts/v2_ai_diagnostics_telemetry.png",
     "experiments/AI_Diagnostics_And_Training_Fixes.md",
     "00_Index_MOC.md",
-    "01_Model_Architecture_and_Training_Tracker.canvas",
     "runs/v2_archetype_10ch.md",
     "runs/v1_baseline_8ch.md",
     "assets/charts/v2_archetype_10ch_training_curves.png",

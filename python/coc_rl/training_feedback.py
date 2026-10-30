@@ -138,7 +138,6 @@ def probe_live_model_diagnostics(
         ("spatial_stem", live_attacker.encoder.spatial_stem),
         ("context_res", live_attacker.encoder.context_res),
         ("global_tower", live_attacker.encoder.global_tower),
-        ("army_context_proj", live_attacker.army_context_proj),
         ("slot_type_head", live_attacker.slot_type_head),
         ("slot_idx_head", live_attacker.slot_idx_head),
         ("deploy_fraction_head", live_attacker.deploy_fraction_head),
@@ -195,13 +194,12 @@ def probe_live_model_diagnostics(
 
     for step_i in range(120):
         obs_t = torch.as_tensor(obs_np, dtype=torch.float32, device=device).unsqueeze(0)
-        ctx_t = torch.as_tensor(info["army_context"], dtype=torch.float32, device=device).unsqueeze(0)
         masks_t = masks_np_to_torch(
             info["action_masks"], device, prevent_early_noop=(step_i == 0)
         )
         with torch.no_grad():
             act_t, _, _, val_t, diag = live_attacker.get_action_and_value(
-                obs_t, masks=masks_t, army_context=ctx_t
+                obs_t, masks=masks_t
             )
             tp = diag["slot_type_probs"].squeeze(0)
             ip = diag["slot_idx_probs"].squeeze(0)
@@ -586,7 +584,7 @@ def _build_Diagnostic_prompt(telemetry: Dict[str, Any]) -> str:
 You are an expert Deep Reinforcement Learning & PPO Diagnostics Architect analyzing a live Clash of Clans Town Hall 18 (TH18) combat RL training run (`CoCActorCritic` + PPO + GAE).
 
 ### Architecture & Environment Context
-- **Observation**: `(10, 50, 50)` spatial grid (building HP, defense DPS, TH18, walls, red-zone mask, ground/air unit density, spells, allied/enemy unit types) + `64-D` army inventory context.
+- **Observation**: `(10, 50, 50)` spatial grid (building HP, defense DPS, TH18, walls, red-zone mask, ground/air unit density, spells, allied/enemy unit types) trained for a single dedicated army composition.
 - **Factorized Action Space**: `MultiDiscrete([7, 10, 50, 50, 5])` -> `slot_type` (0=NoOp, 1=Troop, 2=Hero, 3=HeroAbility, 4=Siege, 5=PopSiege, 6=Spell), `slot_idx` (0..9), `tile_x` (0..49), `tile_y` (0..49), `deploy_fraction_bin` (0%, 25%, 50%, 75%, 100%).
 - **Two-Phase Tactical Pacing & Reward Shaping**:
   - Calibrated 100-point scale: 35 pts for 100% destruction + 15 pts for continuous building/core HP damage + 36 pts for 3 stars (12 pts/star) + 14 pts milestone bonus for Town Hall 18 takedown + spatial funnel cohesion bonus.

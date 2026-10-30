@@ -361,6 +361,10 @@ export const App: React.FC = () => {
             }}
             onSelectLayout={(nextLayout) => setLayout(nextLayout)}
             onSelectArmy={(nextArmy) => setArmy(nextArmy)}
+            onGoToArmyBuilder={() => {
+              setIsAiPlaying(false);
+              setActiveTab('armory');
+            }}
             onPlayTrainedRollout={playTrainedRollout}
           />
           {showTacticalDrawer && activeTab === 'ai_test' && (

@@ -119,9 +119,8 @@ class CoCActorCritic(nn.Module):
     """
     Live Tactical Attacker Network: Factorized Multi-Discrete Actor-Critic.
 
-    Fuses the (B, 10, 50, 50) spatial battlefield tensor with the (B, 64) army context vector
-    (encoding remaining troops, heroes, hero equipment, pets, siege machine, and spells)
-    to parameterize a factorized policy over MultiDiscrete([7, 10, 50, 50, 5]):
+    Maps the (B, 10, 50, 50) spatial battlefield tensor to a factorized policy
+    over MultiDiscrete([7, 10, 50, 50, 5]) for a single army composition:
 
       1. `slot_type`       (7 choices):  0=NoOp, 1=Troop, 2=Hero, 3=HeroAbility, 4=Siege, 5=PopSiege, 6=Spell
       2. `slot_idx`        (10 choices): Loadout slot index, conditioned on the chosen `slot_type`
@@ -135,12 +134,10 @@ class CoCActorCritic(nn.Module):
     def __init__(
         self,
         in_channels: int = 10,
-        army_context_dim: int = 64,
         num_fraction_bins: int = 5,
     ):
         super().__init__()
         self.in_channels = in_channels
-        self.army_context_dim = army_context_dim
         self.num_fraction_bins = num_fraction_bins
 
         # Dual-pathway CNN backbone
@@ -151,13 +148,6 @@ class CoCActorCritic(nn.Module):
         )
         spatial_dim = self.encoder.spatial_dim  # 64
         embed_dim = self.encoder.embed_dim  # 256
-
-        # Army inventory & composition projection (64-D -> 256-D)
-        self.army_context_proj = nn.Sequential(
-            nn.Linear(army_context_dim, embed_dim),
-            nn.LayerNorm(embed_dim),
-            nn.SiLU(),
-        )
 
         # Head 1: Action Type logits (256-D -> 7 action types)
         self.slot_type_head = nn.Linear(embed_dim, 7)
@@ -192,18 +182,12 @@ class CoCActorCritic(nn.Module):
             nn.Linear(128, 1),
         )
 
-    def forward(
-        self, obs: torch.Tensor, army_context: Optional[torch.Tensor] = None
-    ) -> Dict[str, torch.Tensor]:
+    def forward(self, obs: torch.Tensor) -> Dict[str, torch.Tensor]:
         """
         Deterministic forward pass returning raw head outputs for graph tracing (`torchview`).
         """
         B = obs.shape[0]
         spatial_feat, global_emb = self.encoder(obs)
-
-        if army_context is None:
-            army_context = obs.reshape(B, -1)[:, : self.army_context_dim] * 0.0
-        global_emb = global_emb + self.army_context_proj(army_context)
 
         # 1. Action Type
         type_logits = self.slot_type_head(global_emb)
@@ -242,7 +226,6 @@ class CoCActorCritic(nn.Module):
         masks: Optional[Dict[str, torch.Tensor]] = None,
         action: Optional[torch.Tensor] = None,
         deterministic: bool = False,
-        army_context: Optional[torch.Tensor] = None,
     ) -> Tuple[
         torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]
     ]:
@@ -253,12 +236,8 @@ class CoCActorCritic(nn.Module):
         B = obs.shape[0]
         device = obs.device
 
-        # Encode spatial grid and fuse with live army inventory context
+        # Encode spatial grid into full-resolution map and global tactical vector
         spatial_feat, global_emb = self.encoder(obs)
-        if army_context is not None:
-            global_emb = global_emb + self.army_context_proj(
-                army_context.to(device=device, dtype=obs.dtype)
-            )
 
         # 1. Action Type Distribution (0=NoOp is always valid as a fallback)
         # Smooth logit bounding prevents premature discrete-head entropy collapse

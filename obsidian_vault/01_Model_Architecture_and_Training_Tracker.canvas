@@ -18,7 +18,7 @@
       "width": 1500,
       "height": 3480,
       "color": "4",
-      "label": "Model Section: v2.0 \u2014 10-Channel Archetype & Batch-Deploy Fraction (120 Cumulative Episodes \u2014 ACTIVE)"
+      "label": "Model Section: v2.0 \u2014 10-Channel Archetype & Batch-Deploy Fraction (2 Cumulative Episodes \u2014 ACTIVE)"
     },
     {
       "id": "v2_archetype_10ch-overview",
@@ -28,7 +28,7 @@
       "width": 700,
       "height": 620,
       "color": "4",
-      "text": "### \ud83c\udff7\ufe0f Run Overview & Resumption Lineage\n- **Model Name**: **v2.0 \u2014 10-Channel Archetype & Batch-Deploy Fraction**\n- **Architecture**: `v2.0` (10 Spatial Channels)\n- **Status**: **ACTIVE**\n- **Total Training Episodes**: **`120`** (Cumulative)\n- **Peak Record**: **`100%` (3\u2605)** (Return: `+98.21449594687596`)\n- **Latest Checkpoint**: `trained_models/attacker_ep120_100pct_3star.pt`\n\n#### \ud83d\udd04 Resumed Training Sessions (2 Total)\n| Session | Episode Range | Delta | Peak Result |\n| :---: | :---: | :---: | :---: |\n| **Session #1** | `0 -> 924` | `+924 ep` | `84% (2\u2605)` |\n| **Session #2** | `0 -> 120` | `+120 ep` | `100% (3\u2605)` |\n\n> **Resumption Rule**: When training resumes from this model, its card automatically updates with cumulative episodes (**120**) and re-evaluates the latest weights across all matchups."
+      "text": "### \ud83c\udff7\ufe0f Run Overview & Resumption Lineage\n- **Model Name**: **v2.0 \u2014 10-Channel Archetype & Batch-Deploy Fraction**\n- **Architecture**: `v2.0` (10 Spatial Channels)\n- **Status**: **ACTIVE**\n- **Total Training Episodes**: **`2`** (Cumulative)\n- **Peak Record**: **`84%` (2\u2605)** (Return: `+76.49`)\n- **Latest Checkpoint**: `trained_models/thrower_healer_totem_smash_ep2_60pct_1star.pt`\n\n#### \ud83d\udd04 Resumed Training Sessions (2 Total)\n| Session | Episode Range | Delta | Peak Result |\n| :---: | :---: | :---: | :---: |\n| **Session #1** | `0 -> 924` | `+924 ep` | `84% (2\u2605)` |\n| **Session #2** | `0 -> 2` | `+2 ep` | `60% (1\u2605)` |\n\n> **Resumption Rule**: When training resumes from this model, its card automatically updates with cumulative episodes (**2**) and re-evaluates the latest weights across all matchups."
     },
     {
       "id": "v2_archetype_10ch-inputs",
@@ -38,7 +38,7 @@
       "width": 710,
       "height": 620,
       "color": "5",
-      "text": "### \ud83d\udce5 Input Observation Space\n- **Spatial Grid Tensor**: **`(B, 10, 50, 50)`**\n- **Army Context Vector**: **`(B, 64)`** (remaining troop counts, heroes, abilities, sieges, spells)\n\n| Ch | Feature Name | Normalization |\n| :-: | :--- | :--- |\n| `0` | **Building HP Ratio** | `hp / max_hp across footprint` |\n| `1` | **Defense DPS Threat** | `min(DPS / 1000, 1.0)` |\n| `2` | **Town Hall 18 Mask** | `1.0 on TH18 tiles, 0.0 elsewhere` |\n| `3` | **Wall Integrity** | `wall_hp / max_wall_hp` |\n| `4` | **No-Deploy Red Zone** | `1.0 = forbidden, 0.0 = legal deploy` |\n| `5` | **Friendly Ground HP** | `min(sum(HP_ground) / 5000, 1.0)` |\n| `6` | **Friendly Air HP** | `min(sum(HP_air) / 5000, 1.0)` |\n| `7` | **Active Spell Field** | `min(remaining_ticks / 300, 1.0)` |\n| `8` | **Allied Tactical Archetype** | `max phi(u) in [0, 1]` |\n| `9` | **Enemy Tactical Archetype** | `max phi(u) in [0, 1]` |\n\n*Preserves exact 1-to-1 tile spatial resolution without destructive downsampling.*"
+      "text": "### \ud83d\udce5 Input Observation Space\n- **Spatial Grid Tensor**: **`(B, 10, 50, 50)`** (Dedicated Single-Army Policy)\n\n| Ch | Feature Name | Normalization |\n| :-: | :--- | :--- |\n| `0` | **Building HP Ratio** | `hp / max_hp across footprint` |\n| `1` | **Defense DPS Threat** | `min(DPS / 1000, 1.0)` |\n| `2` | **Town Hall 18 Mask** | `1.0 on TH18 tiles, 0.0 elsewhere` |\n| `3` | **Wall Integrity** | `wall_hp / max_wall_hp` |\n| `4` | **No-Deploy Red Zone** | `1.0 = forbidden, 0.0 = legal deploy` |\n| `5` | **Friendly Ground HP** | `min(sum(HP_ground) / 5000, 1.0)` |\n| `6` | **Friendly Air HP** | `min(sum(HP_air) / 5000, 1.0)` |\n| `7` | **Active Spell Field** | `min(remaining_ticks / 300, 1.0)` |\n| `8` | **Allied Tactical Archetype** | `max phi(u) in [0, 1]` |\n| `9` | **Enemy Tactical Archetype** | `max phi(u) in [0, 1]` |\n\n*Preserves exact 1-to-1 tile spatial resolution without destructive downsampling.*"
     },
     {
       "id": "v2_archetype_10ch-outputs",
@@ -77,7 +77,7 @@
       "width": 1440,
       "height": 460,
       "color": "4",
-      "text": "### \u2694\ufe0f Main Performance Metric: Army Compositions vs. Reference Villages\n\nDeterministic rollout benchmarks evaluated across all 3 Meta Compositions against all 5 Reference TH18 Base Layouts:\n\n| Attack Composition | **Central Box** | **Offset Diamond** | **Anti-Hydra Ring** | **Anti-Fireball** | **Compact Teaser** | **Avg Destruction** | **3\u2605 Rate** |\n| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n| **TH18 Thrower + Healer + Totem Smash** | `28% (0\u2605)` | `33% (1\u2605)` | `40% (1\u2605)` | `28% (0\u2605)` | `39% (1\u2605)` | **33.6%** | **0.0%** |\n| **TH18 Dragon Duke Charge Hydra** | `26% (0\u2605)` | `18% (0\u2605)` | `34% (0\u2605)` | `36% (0\u2605)` | `52% (2\u2605)` | **33.2%** | **0.0%** |\n| **TH18 Fireball Super Bowler & Meteor Golem Smash** | `15% (0\u2605)` | `16% (0\u2605)` | `32% (0\u2605)` | `29% (0\u2605)` | `28% (1\u2605)` | **24.0%** | **0.0%** |\n| **Base Defense Rate (Avg)** | **23.0% (0.0\u2605)** | **22.3% (0.33\u2605)** | **35.3% (0.33\u2605)** | **31.0% (0.0\u2605)** | **39.7% (1.33\u2605)** | **Overall: 30.3%** | \u2014 |\n\n- **Overall Matchup Average**: **`30.3% Destruction`** with **`0.4\u2605 Average Stars`**.\n- **Model Checkpoint Tested**: `trained_models/attacker_ep120_100pct_3star.pt`."
+      "text": "### \u2694\ufe0f Main Performance Metric: Army Compositions vs. Reference Villages\n\nDeterministic rollout benchmarks evaluated across all 3 Meta Compositions against all 5 Reference TH18 Base Layouts:\n\n| Attack Composition | **Central Box** | **Offset Diamond** | **Anti-Hydra Ring** | **Anti-Fireball** | **Compact Teaser** | **Avg Destruction** | **3\u2605 Rate** |\n| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n| **TH18 Thrower + Healer + Totem Smash** | `43% (0\u2605)` | `23% (1\u2605)` | `50% (1\u2605)` | `36% (1\u2605)` | `47% (1\u2605)` | **39.8%** | **0.0%** |\n| **TH18 Dragon Duke Charge Hydra** | `43% (0\u2605)` | `23% (1\u2605)` | `50% (1\u2605)` | `36% (1\u2605)` | `47% (1\u2605)` | **39.8%** | **0.0%** |\n| **TH18 Fireball Super Bowler & Meteor Golem Smash** | `43% (0\u2605)` | `23% (1\u2605)` | `50% (1\u2605)` | `36% (1\u2605)` | `47% (1\u2605)` | **39.8%** | **0.0%** |\n| **Base Defense Rate (Avg)** | **43.0% (0.0\u2605)** | **23.0% (1.0\u2605)** | **50.0% (1.0\u2605)** | **36.0% (1.0\u2605)** | **47.0% (1.0\u2605)** | **Overall: 39.8%** | \u2014 |\n\n- **Overall Matchup Average**: **`39.8% Destruction`** with **`0.8\u2605 Average Stars`**.\n- **Model Checkpoint Tested**: `trained_models/thrower_healer_totem_smash_ep2_60pct_1star.pt`."
     },
     {
       "id": "v2_archetype_10ch-curves-img",
@@ -96,95 +96,7 @@
       "width": 1440,
       "height": 560,
       "color": "2",
-      "text": "### \u2699\ufe0f Hyperparameters & Training Configuration\n\n| Parameter | Configured Value | Tactical Function in PPO |\n| :--- | :---: | :--- |\n| **Total Cumulative Episodes** | **`120`** | Total combat experience across **2** resumed sessions |\n| **Learning Rate (`lr`)** | `0.0003` | Adam optimizer step size with linear/cosine warmup |\n| **Batch Episodes** | `12` | Number of combat episodes accumulated per PPO policy update |\n| **Minibatch Size** | `128` | Mini-batch sample size for SGD gradient steps |\n| **PPO Epochs (`K`)** | `4` | Number of optimization epochs over each rollout buffer |\n| **Simulation Ticks / Step** | `8` | Combat granularity: `8 ticks` = `0.64s` per agent decision |\n| **Discount Factor ($\\gamma$)** | `0.99` | Long-term return horizon weighting |\n| **GAE Parameter ($\\lambda$)** | `0.95` | Bias-variance tradeoff in advantage estimation |\n| **PPO Clipping ($\\epsilon$)** | `0.2` | Surrogate policy clipping threshold |\n| **Entropy Coefficient** | `0.015` | Exploration incentive preventing early deployment collapse |\n| **Matchup Sampling Mode** | `random` | Sampling distribution across reference compositions and base layouts |"
-    },
-    {
-      "id": "group-v1_baseline_8ch",
-      "type": "group",
-      "x": 1600,
-      "y": 0,
-      "width": 1500,
-      "height": 3480,
-      "color": "1",
-      "label": "Model Section: v1.0 \u2014 Baseline 8-Channel Single-Deploy (30,102 Cumulative Episodes \u2014 SUPERSEDED)"
-    },
-    {
-      "id": "v1_baseline_8ch-overview",
-      "type": "text",
-      "x": 1630,
-      "y": 40,
-      "width": 700,
-      "height": 620,
-      "color": "1",
-      "text": "### \ud83c\udff7\ufe0f Run Overview & Resumption Lineage\n- **Model Name**: **v1.0 \u2014 Baseline 8-Channel Single-Deploy**\n- **Architecture**: `v1.0` (8 Spatial Channels)\n- **Status**: **SUPERSEDED**\n- **Total Training Episodes**: **`30,102`** (Cumulative)\n- **Peak Record**: **`100%` (3\u2605)** (Return: `+101.75`)\n- **Latest Checkpoint**: `trained_models/attacker_ep30102_100pct_3star.pt`\n\n#### \ud83d\udd04 Resumed Training Sessions (6 Total)\n| Session | Episode Range | Delta | Peak Result |\n| :---: | :---: | :---: | :---: |\n| **Session #1** | `0 -> 2,400` | `+2,400 ep` | `86% (2\u2605)` |\n| **Session #2** | `2,400 -> 3,824` | `+1,424 ep` | `86% (2\u2605)` |\n| **Session #3** | `3,824 -> 6,514` | `+2,690 ep` | `87% (2\u2605)` |\n| **Session #4** | `6,514 -> 10,208` | `+3,694 ep` | `97% (2\u2605)` |\n| **Session #5** | `10,208 -> 15,216` | `+5,008 ep` | `97% (2\u2605)` |\n| **Session #6** | `15,216 -> 30,102` | `+14,886 ep` | `100% (3\u2605)` |\n\n> **Resumption Rule**: When training resumes from this model, its card automatically updates with cumulative episodes (**30,102**) and re-evaluates the latest weights across all matchups."
-    },
-    {
-      "id": "v1_baseline_8ch-inputs",
-      "type": "text",
-      "x": 2360,
-      "y": 40,
-      "width": 710,
-      "height": 620,
-      "color": "5",
-      "text": "### \ud83d\udce5 Input Observation Space\n- **Spatial Grid Tensor**: **`(B, 8, 50, 50)`**\n- **Army Context Vector**: **`(B, 64)`** (remaining troop counts, heroes, abilities, sieges, spells)\n\n| Ch | Feature Name | Normalization |\n| :-: | :--- | :--- |\n| `0` | **Building HP Ratio** | `hp / max_hp across footprint` |\n| `1` | **Defense DPS Threat** | `min(DPS / 1000, 1.0)` |\n| `2` | **Town Hall 18 Mask** | `1.0 on TH18 tiles, 0.0 elsewhere` |\n| `3` | **Wall Integrity** | `wall_hp / max_wall_hp` |\n| `4` | **No-Deploy Red Zone** | `1.0 = forbidden, 0.0 = legal deploy` |\n| `5` | **Friendly Ground HP** | `min(sum(HP_ground) / 5000, 1.0)` |\n| `6` | **Friendly Air HP** | `min(sum(HP_air) / 5000, 1.0)` |\n| `7` | **Active Spell Field** | `min(remaining_ticks / 300, 1.0)` |\n| `8` | **Allied Tactical Archetype** | `max phi(u) in [0, 1]` |\n| `9` | **Enemy Tactical Archetype** | `max phi(u) in [0, 1]` |\n\n*Preserves exact 1-to-1 tile spatial resolution without destructive downsampling.*"
-    },
-    {
-      "id": "v1_baseline_8ch-outputs",
-      "type": "text",
-      "x": 1630,
-      "y": 690,
-      "width": 700,
-      "height": 420,
-      "color": "6",
-      "text": "### \ud83d\udce4 Output Policy & Critic Heads\nFactorized Multi-Discrete Action Space:\n- **Head 1**: `slot_type (7)`\n- **Head 2**: `slot_idx (10)`\n- **Head 3**: `tile_xy (2500)`\n- **Head 4**: `critic_value (1)`\n- **Critic Head**: `Linear(256 -> 1)` scalar state-value estimate $V(s) \\in \\mathbb{R}$.\n\n#### Deployment Dynamics:\n- Multi-unit wave drop via `deploy_fraction_head` ($\\alpha \\in \\{0.0, 0.25, 0.50, 0.75, 1.00\\}$), dropping full squads in a single $0.64\\text{s}$ step!"
-    },
-    {
-      "id": "v1_baseline_8ch-reward",
-      "type": "text",
-      "x": 2360,
-      "y": 690,
-      "width": 710,
-      "height": 420,
-      "color": "3",
-      "text": "### \ud83c\udfaf Reward Formulation & Two-Phase Pacing (TH18 Combat v2.1)\n\nCalibrated 100-point dense & milestone reward shaping balancing **Destruction + Core HP Damage** ($50\\text{ pts}$) and **Victory Stars + Town Hall 18 Takedown** ($50\\text{ pts}$):\n\n$$R_t = 0.35 \\cdot \\Delta \\%_{\\text{destr}} + 15.0 \\cdot \\Delta \\text{HP}_{\\text{ratio}} + 12.0 \\cdot \\Delta \\text{stars} + 14.0 \\cdot \\mathbb{I}_{\\text{TH18}} + 0.08 \\cdot C_{\\text{funnel}} - 0.05 \\cdot \\mathbb{I}_{\\text{invalid}}$$\n\n- **Destruction & Core HP Damage**: $0.35\\text{ pts}$ per $1\\%$ destruction ($35.0\\text{ pts}$ max) $+ 15.0\\text{ pts}$ continuous building/core HP pool damage ($50.0\\text{ pts}$ combined).\n- **Stars & TH18 Takedown**: $12.0\\text{ pts}$ per star ($36.0\\text{ pts}$ max) $+ 14.0\\text{ pts}$ dedicated milestone bonus upon destroying Town Hall 18 ($50.0\\text{ pts}$ combined).\n- **Two-Phase Tactical Masking & Normalized Per-Head Entropy (`reg_entropy`)**: Phase 1 deploys frontline troop waves along exterior cardinal funnels (excluding interior teaser holes) before Siege/Heroes; Phase 2 paces Spells (`t >= 40`) and Hero Abilities (`t >= 64`) with `NoOp` waiting and Town Hall spell-halo protection."
-    },
-    {
-      "id": "v1_baseline_8ch-arch-img",
-      "type": "file",
-      "file": "assets/architectures/v2_architecture.png",
-      "x": 1630,
-      "y": 1140,
-      "width": 1440,
-      "height": 480
-    },
-    {
-      "id": "v1_baseline_8ch-results-matrix",
-      "type": "text",
-      "x": 1630,
-      "y": 1650,
-      "width": 1440,
-      "height": 460,
-      "color": "4",
-      "text": "### \u2694\ufe0f Main Performance Metric: Army Compositions vs. Reference Villages\n\nDeterministic rollout benchmarks evaluated across all 3 Meta Compositions against all 5 Reference TH18 Base Layouts:\n\n| Attack Composition | **Central Box** | **Offset Diamond** | **Anti-Hydra Ring** | **Anti-Fireball** | **Compact Teaser** | **Avg Destruction** | **3\u2605 Rate** |\n| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n| **TH18 Thrower + Healer + Totem Smash** | `28% (0\u2605)` | `33% (1\u2605)` | `40% (1\u2605)` | `28% (0\u2605)` | `39% (1\u2605)` | **33.6%** | **0.0%** |\n| **TH18 Dragon Duke Charge Hydra** | `26% (0\u2605)` | `18% (0\u2605)` | `34% (0\u2605)` | `36% (0\u2605)` | `52% (2\u2605)` | **33.2%** | **0.0%** |\n| **TH18 Fireball Super Bowler & Meteor Golem Smash** | `15% (0\u2605)` | `16% (0\u2605)` | `32% (0\u2605)` | `29% (0\u2605)` | `28% (1\u2605)` | **24.0%** | **0.0%** |\n| **Base Defense Rate (Avg)** | **23.0% (0.0\u2605)** | **22.3% (0.33\u2605)** | **35.3% (0.33\u2605)** | **31.0% (0.0\u2605)** | **39.7% (1.33\u2605)** | **Overall: 30.3%** | \u2014 |\n\n- **Overall Matchup Average**: **`30.3% Destruction`** with **`0.4\u2605 Average Stars`**.\n- **Model Checkpoint Tested**: `trained_models/attacker_ep30102_100pct_3star.pt`."
-    },
-    {
-      "id": "v1_baseline_8ch-curves-img",
-      "type": "file",
-      "file": "assets/charts/v1_baseline_8ch_training_curves.png",
-      "x": 1630,
-      "y": 2140,
-      "width": 1440,
-      "height": 700
-    },
-    {
-      "id": "v1_baseline_8ch-hyperparams",
-      "type": "text",
-      "x": 1630,
-      "y": 2870,
-      "width": 1440,
-      "height": 560,
-      "color": "2",
-      "text": "### \u2699\ufe0f Hyperparameters & Training Configuration\n\n| Parameter | Configured Value | Tactical Function in PPO |\n| :--- | :---: | :--- |\n| **Total Cumulative Episodes** | **`30,102`** | Total combat experience across **6** resumed sessions |\n| **Learning Rate (`lr`)** | `0.0003` | Adam optimizer step size with linear/cosine warmup |\n| **Batch Episodes** | `4` | Number of combat episodes accumulated per PPO policy update |\n| **Minibatch Size** | `64` | Mini-batch sample size for SGD gradient steps |\n| **PPO Epochs (`K`)** | `4` | Number of optimization epochs over each rollout buffer |\n| **Simulation Ticks / Step** | `8` | Combat granularity: `8 ticks` = `0.64s` per agent decision |\n| **Discount Factor ($\\gamma$)** | `0.99` | Long-term return horizon weighting |\n| **GAE Parameter ($\\lambda$)** | `0.95` | Bias-variance tradeoff in advantage estimation |\n| **PPO Clipping ($\\epsilon$)** | `0.2` | Surrogate policy clipping threshold |\n| **Entropy Coefficient** | `0.015` | Exploration incentive preventing early deployment collapse |\n| **Matchup Sampling Mode** | `random` | Sampling distribution across reference compositions and base layouts |"
+      "text": "### \u2699\ufe0f Hyperparameters & Training Configuration\n\n| Parameter | Configured Value | Tactical Function in PPO |\n| :--- | :---: | :--- |\n| **Total Cumulative Episodes** | **`2`** | Total combat experience across **2** resumed sessions |\n| **Learning Rate (`lr`)** | `0.0003` | Adam optimizer step size with linear/cosine warmup |\n| **Batch Episodes** | `2` | Number of combat episodes accumulated per PPO policy update |\n| **Minibatch Size** | `128` | Mini-batch sample size for SGD gradient steps |\n| **PPO Epochs (`K`)** | `4` | Number of optimization epochs over each rollout buffer |\n| **Simulation Ticks / Step** | `8` | Combat granularity: `8 ticks` = `0.64s` per agent decision |\n| **Discount Factor ($\\gamma$)** | `0.99` | Long-term return horizon weighting |\n| **GAE Parameter ($\\lambda$)** | `0.95` | Bias-variance tradeoff in advantage estimation |\n| **PPO Clipping ($\\epsilon$)** | `0.2` | Surrogate policy clipping threshold |\n| **Entropy Coefficient** | `0.015` | Exploration incentive preventing early deployment collapse |\n| **Matchup Sampling Mode** | `random` | Sampling distribution across reference compositions and base layouts |"
     },
     {
       "id": "ai-diagnostics-summary",

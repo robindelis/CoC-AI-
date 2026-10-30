@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Clash of Clans TH18 — Deep RL Attacker Trainer, Checkpoint Manager & Benchmark:
-  - CoCActorCritic: Village Layout (10×50×50) + Full Army Context (64) -> Live Placement / NoOp
+  - CoCActorCritic: Village Layout (10×50×50) -> Live Placement / NoOp for a Single Army Composition
 """
 import argparse
 import json
@@ -48,6 +48,21 @@ VILLAGE_SHORT_NAMES = [
     "Anti-Fireball Wide Spread",
     "Teaser War Killzone",
 ]
+
+
+def army_name_to_slug(name: str) -> str:
+    s = (name or "army").strip()
+    s = re.sub(r"(?i)^th\d+\s*", "", s)
+    s = re.sub(r"(?i)\s*\(meta\)\s*$", "", s)
+    slug = re.sub(r"[^a-zA-Z0-9]+", "_", s.lower()).strip("_")
+    return slug or "army"
+
+
+def build_default_model_filename(
+    army_name: str, episode: int, best_pct: int, best_stars: int
+) -> str:
+    slug = army_name_to_slug(army_name)
+    return f"{slug}_ep{episode}_{best_pct}pct_{best_stars}star.pt"
 
 
 def ensure_trained_models_dir() -> None:
@@ -126,6 +141,7 @@ def list_trained_models() -> List[Dict[str, Any]]:
     ensure_trained_models_dir()
     items: List[Dict[str, Any]] = []
     default_layouts, default_armies = get_meta_presets()
+    default_single_army = default_armies[0]
     for fname in os.listdir(TRAINED_MODELS_DIR):
         if not fname.endswith(".pt"):
             continue
@@ -149,9 +165,12 @@ def list_trained_models() -> List[Dict[str, Any]]:
             "best_reward": 0.0,
             "model_type": "live_attacker",
             "hyperparams": {},
-            "armies": default_armies,
+            "army": default_single_army,
+            "army_name": default_single_army.get("name", "Army #1"),
+            "army_slug": army_name_to_slug(default_single_army.get("name", "army")),
+            "armies": [default_single_army],
             "villages": default_layouts,
-            "army_names": [a.get("name", f"Army #{i+1}") for i, a in enumerate(default_armies)],
+            "army_names": [default_single_army.get("name", "Army #1")],
             "village_names": [v.get("name", f"Village #{i+1}") for i, v in enumerate(default_layouts)],
             "has_history": False,
             "history_episodes": 0,
@@ -169,11 +188,19 @@ def list_trained_models() -> List[Dict[str, Any]]:
             meta["model_type"] = str(ckpt.get("model_type", "live_attacker"))
             if "hyperparams" in ckpt and isinstance(ckpt["hyperparams"], dict):
                 meta["hyperparams"] = ckpt["hyperparams"]
-            if "armies" in ckpt and isinstance(ckpt["armies"], list) and len(ckpt["armies"]) > 0:
-                meta["armies"] = ckpt["armies"]
+            if "army" in ckpt and isinstance(ckpt["army"], dict):
+                trained_army = ckpt["army"]
+            elif "armies" in ckpt and isinstance(ckpt["armies"], list) and len(ckpt["armies"]) > 0:
+                trained_army = ckpt["armies"][0]
+            else:
+                trained_army = default_single_army
+            meta["army"] = trained_army
+            meta["army_name"] = trained_army.get("name", "Army #1")
+            meta["army_slug"] = ckpt.get("army_slug") or army_name_to_slug(meta["army_name"])
+            meta["armies"] = [trained_army]
             if "villages" in ckpt and isinstance(ckpt["villages"], list) and len(ckpt["villages"]) > 0:
                 meta["villages"] = ckpt["villages"]
-            meta["army_names"] = [a.get("name", f"Army #{i+1}") for i, a in enumerate(meta["armies"])]
+            meta["army_names"] = [meta["army_name"]]
             meta["village_names"] = [v.get("name", f"Village #{i+1}") for i, v in enumerate(meta["villages"])]
             hist_blob = ckpt.get("history_compressed") or ckpt.get("history")
             hist_meta = get_compressed_history_meta(hist_blob)
@@ -183,7 +210,7 @@ def list_trained_models() -> List[Dict[str, Any]]:
         _MODEL_META_CACHE[fname] = (mtime, size_kb, meta)
         items.append(meta)
 
-    items.sort(key=lambda x: (x["filename"] == "latest_attacker.pt", x["mtime"]), reverse=True)
+    items.sort(key=lambda x: x["mtime"], reverse=True)
     return items
 
 
@@ -211,9 +238,15 @@ def get_model_training_history(model_file: str) -> Dict[str, Any]:
 
     default_layouts, default_armies = get_meta_presets()
     ckpt = torch.load(fpath, map_location="cpu", weights_only=False)
-    armies = ckpt.get("armies") if isinstance(ckpt.get("armies"), list) and ckpt.get("armies") else default_armies
+    if "army" in ckpt and isinstance(ckpt["army"], dict):
+        trained_army = ckpt["army"]
+    elif isinstance(ckpt.get("armies"), list) and ckpt.get("armies"):
+        trained_army = ckpt["armies"][0]
+    else:
+        trained_army = default_armies[0]
+    armies = [trained_army]
     villages = ckpt.get("villages") if isinstance(ckpt.get("villages"), list) and ckpt.get("villages") else default_layouts
-    army_names = [a.get("name", f"Army #{i+1}") for i, a in enumerate(armies)]
+    army_names = [trained_army.get("name", "Army #1")]
     village_names = [v.get("name", f"Village #{i+1}") for i, v in enumerate(villages)]
 
     hist_blob = ckpt.get("history_compressed") or ckpt.get("history")
@@ -229,6 +262,9 @@ def get_model_training_history(model_file: str) -> Dict[str, Any]:
         "best_stars": int(ckpt.get("best_stars", 0)),
         "best_reward": round(float(ckpt.get("best_reward", 0.0)), 2),
         "hyperparams": ckpt.get("hyperparams", {}),
+        "army": trained_army,
+        "army_name": trained_army.get("name", "Army #1"),
+        "army_slug": ckpt.get("army_slug") or army_name_to_slug(trained_army.get("name", "army")),
         "armies": armies,
         "villages": villages,
         "army_names": army_names,
@@ -243,21 +279,30 @@ def get_model_training_history(model_file: str) -> Dict[str, Any]:
 
 def resolve_model_path(model_file: Optional[str]) -> Optional[str]:
     ensure_trained_models_dir()
-    if not model_file or model_file in ("scratch", "none", "new"):
+    if model_file in ("scratch", "none", "new"):
         return None
-    candidate = os.path.join(TRAINED_MODELS_DIR, os.path.basename(model_file))
-    if os.path.exists(candidate):
-        return candidate
-    if os.path.exists(model_file):
-        return model_file
+    if model_file and model_file not in ("latest", "latest_attacker.pt"):
+        candidate = os.path.join(TRAINED_MODELS_DIR, os.path.basename(model_file))
+        if os.path.exists(candidate):
+            return candidate
+        if os.path.exists(model_file):
+            return model_file
     if os.path.exists(DEFAULT_CKPT_PATH):
         return DEFAULT_CKPT_PATH
+    pt_files = [
+        os.path.join(TRAINED_MODELS_DIR, f)
+        for f in os.listdir(TRAINED_MODELS_DIR)
+        if f.endswith(".pt") and os.path.isfile(os.path.join(TRAINED_MODELS_DIR, f))
+    ]
+    if pt_files:
+        pt_files.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        return pt_files[0]
     return None
 
 
 def load_attacker_model(
     device: torch.device,
-    attacker_model_file: Optional[str] = "latest_attacker.pt",
+    attacker_model_file: Optional[str] = None,
 ) -> Tuple[CoCActorCritic, Dict[str, Any]]:
     ensure_trained_models_dir()
     attacker_ckpt_meta: Dict[str, Any] = {}
@@ -268,7 +313,7 @@ def load_attacker_model(
         except Exception:
             attacker_ckpt_meta = {}
 
-    live_attacker = CoCActorCritic(in_channels=10, army_context_dim=64).to(device)
+    live_attacker = CoCActorCritic(in_channels=10).to(device)
 
     if "model_state_dict" in attacker_ckpt_meta and isinstance(attacker_ckpt_meta["model_state_dict"], dict):
         try:
@@ -310,14 +355,14 @@ def compute_matchup_stats(
     armies: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
-    Computes empirical performance breakdowns per army and per village layout:
+    Computes empirical performance breakdowns for the model's army and per village layout:
       - Usage %, recent 50-ep destruction %, overall avg %, peak %, and star rates.
     """
     default_layouts, default_armies = get_meta_presets()
     if layouts is None or len(layouts) == 0:
         layouts = default_layouts
     if armies is None or len(armies) == 0:
-        armies = default_armies
+        armies = [default_armies[0]]
 
     hist = history or []
     total_eps = len(hist)
@@ -327,7 +372,7 @@ def compute_matchup_stats(
 
     army_stats = []
     for a_idx in range(len(armies)):
-        recs = [r for r in hist if r.get("army_idx") == a_idx]
+        recs = [r for r in hist if r.get("army_idx", 0) == a_idx] if len(armies) > 1 else list(hist)
         n = len(recs)
         recent_recs = recs[-50:]
         avg_pct = round(float(np.mean([r["destruction_pct"] for r in recs])), 1) if n else 0.0
@@ -344,11 +389,7 @@ def compute_matchup_stats(
         army_stats.append(
             {
                 "army_idx": a_idx,
-                "name": (
-                    ARMY_SHORT_NAMES[a_idx]
-                    if a_idx < len(ARMY_SHORT_NAMES)
-                    else army_names[a_idx]
-                ),
+                "name": army_names[a_idx],
                 "full_name": army_names[a_idx],
                 "episodes": n,
                 "usage_pct": usage_pct,
@@ -458,9 +499,10 @@ def simulate_model_rollout(
     deterministic: bool = False,
 ) -> Dict[str, Any]:
     """
-    Runs a trained model from `trained_models/` on the specified (Village, Army)
-    and returns the full schedule of actions and telemetry so the frontend can replay
-    and test the exact neural network policy on the interactive village canvas.
+    Runs a trained model from `trained_models/` on the specified Village using
+    the model's trained army composition (or `army_json` fallback) and returns
+    the full schedule of actions and telemetry so the frontend can replay and test
+    the exact neural network policy on the interactive village canvas.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     live_attacker, ckpt_meta = load_attacker_model(
@@ -468,12 +510,24 @@ def simulate_model_rollout(
     )
     live_attacker.eval()
 
-    army_dict = json.loads(army_json)
+    ckpt_army = ckpt_meta.get("army")
+    if not isinstance(ckpt_army, dict):
+        ckpt_armies = ckpt_meta.get("armies")
+        if isinstance(ckpt_armies, list) and len(ckpt_armies) > 0 and isinstance(ckpt_armies[0], dict):
+            ckpt_army = ckpt_armies[0]
+
+    if isinstance(ckpt_army, dict):
+        army_dict = ckpt_army
+        effective_army_json = json.dumps(army_dict)
+    else:
+        army_dict = json.loads(army_json)
+        effective_army_json = army_json
+
     remaining_slot_counts = [int(c) for _, c in army_dict.get("troops", [])]
     fraction_bins = (0.0, 0.25, 0.50, 0.75, 1.00)
     env = CoCAttackerEnv(
         layout_json=layout_json,
-        army_json=army_json,
+        army_json=effective_army_json,
         ticks_per_step=ticks_per_step,
     )
     obs_np, info = env.reset()
@@ -486,9 +540,6 @@ def simulate_model_rollout(
     for step_i in range(max_steps):
         current_tick = int(info.get("tick", step_i * ticks_per_step))
         obs_t = torch.as_tensor(obs_np, dtype=torch.float32, device=device).unsqueeze(0)
-        army_ctx_t = torch.as_tensor(
-            info["army_context"], dtype=torch.float32, device=device
-        ).unsqueeze(0)
         masks_t = masks_np_to_torch(
             info["action_masks"], device, prevent_early_noop=(step_i == 0)
         )
@@ -498,7 +549,6 @@ def simulate_model_rollout(
                 obs_t,
                 masks=masks_t,
                 deterministic=deterministic,
-                army_context=army_ctx_t,
             )
 
         act = action_t.squeeze(0).cpu().tolist()
@@ -570,7 +620,7 @@ def simulate_model_rollout(
             break
 
     return {
-        "model_file": model_file or "latest_attacker.pt",
+        "model_file": model_file or "",
         "model_episode": int(ckpt_meta.get("episode", 0)),
         "ticks_per_step": ticks_per_step,
         "steps_run": steps_run,
@@ -580,7 +630,9 @@ def simulate_model_rollout(
         "total_reward": round(float(total_reward), 2),
         "noop_pct": round(100.0 * noop_steps / max(1, steps_run), 1),
         "actions_schedule": actions_schedule,
-        "armies": ckpt_meta.get("armies", []),
+        "army": army_dict,
+        "army_name": army_dict.get("name", "Army"),
+        "armies": [army_dict],
         "villages": ckpt_meta.get("villages", []),
         "hyperparams": ckpt_meta.get("hyperparams", {}),
     }
@@ -600,7 +652,7 @@ def train_pytorch_ppo(
     ppo_epochs: int = 4,
     curriculum_deploy: bool = True,
     matchup_mode: str = "random",
-    resume_from: Optional[str] = "latest_attacker.pt",
+    resume_from: Optional[str] = "scratch",
     save_name: Optional[str] = None,
     layout_json: Optional[str] = None,
     army_json: Optional[str] = None,
@@ -609,44 +661,45 @@ def train_pytorch_ppo(
     on_episode_callback: Optional[Callable[[Dict[str, Any]], bool]] = None,
 ) -> Dict[str, Any]:
     """
-    Trains the TH18 Attacker AI (`CoCActorCritic`) with full checkpoint resume & save support in `trained_models/`.
+    Trains the TH18 Attacker AI (`CoCActorCritic`) for a single dedicated army composition
+    with full checkpoint resume & save support in `trained_models/`.
     """
     ensure_trained_models_dir()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     default_layouts, default_armies = get_meta_presets()
     layouts = default_layouts
-    armies = default_armies
+    trained_army: Dict[str, Any] = default_armies[0]
 
     is_resuming = bool(resume_from and resume_from not in ("scratch", "none", "new"))
     loaded_ckpt: Dict[str, Any] = {}
+    resume_resolved_path = resolve_model_path(resume_from) if is_resuming else None
 
-    if is_resuming:
-        atk_path = resolve_model_path(resume_from)
-        if atk_path and os.path.exists(atk_path):
-            try:
-                loaded_ckpt = torch.load(atk_path, map_location=device, weights_only=False)
-            except Exception:
-                loaded_ckpt = {}
+    if is_resuming and resume_resolved_path and os.path.exists(resume_resolved_path):
+        try:
+            loaded_ckpt = torch.load(resume_resolved_path, map_location=device, weights_only=False)
+        except Exception:
+            loaded_ckpt = {}
 
-        # Strictly enforce and retrieve the bundled villages and attack compositions from checkpoint
-        if "armies" in loaded_ckpt and isinstance(loaded_ckpt["armies"], list) and len(loaded_ckpt["armies"]) > 0:
-            armies = loaded_ckpt["armies"]
+        if "army" in loaded_ckpt and isinstance(loaded_ckpt["army"], dict):
+            trained_army = loaded_ckpt["army"]
+        elif "armies" in loaded_ckpt and isinstance(loaded_ckpt["armies"], list) and len(loaded_ckpt["armies"]) > 0:
+            trained_army = loaded_ckpt["armies"][0]
         if "villages" in loaded_ckpt and isinstance(loaded_ckpt["villages"], list) and len(loaded_ckpt["villages"]) > 0:
             layouts = loaded_ckpt["villages"]
     else:
-        # Fresh training: parse selected attack compositions and villages
-        if armies_json:
-            try:
-                parsed_armies = json.loads(armies_json) if isinstance(armies_json, str) else armies_json
-                if isinstance(parsed_armies, list) and len(parsed_armies) > 0:
-                    armies = parsed_armies
-            except Exception:
-                pass
-        elif army_json:
+        if army_json:
             try:
                 parsed_army = json.loads(army_json) if isinstance(army_json, str) else army_json
-                armies = [parsed_army]
+                if isinstance(parsed_army, dict) and parsed_army.get("troops") is not None:
+                    trained_army = parsed_army
+            except Exception:
+                pass
+        elif armies_json:
+            try:
+                parsed_armies = json.loads(armies_json) if isinstance(armies_json, str) else armies_json
+                if isinstance(parsed_armies, list) and len(parsed_armies) > 0 and isinstance(parsed_armies[0], dict):
+                    trained_army = parsed_armies[0]
             except Exception:
                 pass
 
@@ -664,9 +717,13 @@ def train_pytorch_ppo(
             except Exception:
                 pass
 
+    armies = [trained_army]
+    trained_army_name = trained_army.get("name", "Army #1")
+    army_slug = army_name_to_slug(trained_army_name)
+
     live_attacker, loaded_ckpt = load_attacker_model(
         device,
-        attacker_model_file=resume_from if is_resuming else None,
+        attacker_model_file=resume_from if is_resuming else "scratch",
     )
     ensure_architecture_diagrams(live_attacker)
 
@@ -680,7 +737,6 @@ def train_pytorch_ppo(
         ],
         eps=1e-5,
     )
-    # Restore optimizer momentum if resuming from a checkpoint, while applying the new LR!
     if loaded_ckpt and "optimizer_state_dict" in loaded_ckpt:
         try:
             opt_live.load_state_dict(loaded_ckpt["optimizer_state_dict"])
@@ -698,7 +754,7 @@ def train_pytorch_ppo(
     best_stars = int(loaded_ckpt.get("best_stars", 0)) if loaded_ckpt else 0
     best_reward = float(loaded_ckpt.get("best_reward", -1e9)) if loaded_ckpt else -1e9
 
-    army_names = [a.get("name", f"Army #{i+1}") for i, a in enumerate(armies)]
+    army_names = [trained_army_name]
     village_names = [v.get("name", f"Village #{i+1}") for i, v in enumerate(layouts)]
 
     base_history: List[Dict[str, Any]] = []
@@ -725,16 +781,16 @@ def train_pytorch_ppo(
                 }
             )
 
+    trained_army_json = json.dumps(trained_army)
     env = CoCAttackerEnv(
         layout_json=json.dumps(layouts[0]),
-        army_json=json.dumps(armies[0]),
+        army_json=trained_army_json,
         ticks_per_step=ticks_per_step,
     )
 
     history: List[Dict[str, Any]] = []
 
     buf_obs: List[torch.Tensor] = []
-    buf_ctx: List[torch.Tensor] = []
     buf_act: List[torch.Tensor] = []
     buf_lp: List[torch.Tensor] = []
     buf_adv: List[torch.Tensor] = []
@@ -765,12 +821,22 @@ def train_pytorch_ppo(
         "ticks_per_step": ticks_per_step,
         "matchup_mode": matchup_mode,
         "resumed_from": resume_from or "scratch",
+        "army_name": trained_army_name,
+        "army_slug": army_slug,
     }
 
-    strat_armies = list(range(len(armies)))
     strat_villages = list(range(len(layouts)))
+    prev_intermediate_path: Optional[str] = None
 
-    def _save_attacker_ckpt(path: str, ep_total: int) -> None:
+    def _get_ckpt_filename(ep_total: int) -> str:
+        if save_name and save_name.strip():
+            return sanitize_model_filename(save_name)
+        return build_default_model_filename(trained_army_name, ep_total, best_pct, best_stars)
+
+    def _save_attacker_ckpt(ep_total: int) -> str:
+        nonlocal prev_intermediate_path
+        fname = _get_ckpt_filename(ep_total)
+        path = os.path.join(TRAINED_MODELS_DIR, fname)
         compressed_hist = compress_training_history(
             base_history + history, session_boundaries=session_boundaries
         )
@@ -783,6 +849,9 @@ def train_pytorch_ppo(
             "best_reward": best_reward,
             "model_type": "live_attacker",
             "hyperparams": hyperparams_meta,
+            "army": trained_army,
+            "army_name": trained_army_name,
+            "army_slug": army_slug,
             "armies": armies,
             "villages": layouts,
             "army_names": army_names,
@@ -790,6 +859,20 @@ def train_pytorch_ppo(
             "history_compressed": compressed_hist,
         }
         torch.save(payload, path)
+        if (
+            prev_intermediate_path
+            and prev_intermediate_path != path
+            and prev_intermediate_path != resume_resolved_path
+            and os.path.exists(prev_intermediate_path)
+        ):
+            try:
+                os.remove(prev_intermediate_path)
+                _MODEL_META_CACHE.pop(os.path.basename(prev_intermediate_path), None)
+                _MODEL_HISTORY_CACHE.pop(os.path.basename(prev_intermediate_path), None)
+            except Exception:
+                pass
+        prev_intermediate_path = path
+        return path
 
     live_attacker.train()
 
@@ -798,18 +881,16 @@ def train_pytorch_ppo(
         cumulative_ep = base_trained_episodes + ep
 
         # ---------------------------------------------------------------------
-        # Matchup Selection
+        # Village Selection (Single Army Composition)
         # ---------------------------------------------------------------------
+        army_idx = 0
         if matchup_mode == "round_robin":
             village_idx = (ep - 1) % len(layouts)
-            army_idx = ((ep - 1) // len(layouts)) % len(armies)
             chosen_layout_dict = layouts[village_idx]
-            chosen_army_dict = armies[army_idx]
         elif matchup_mode == "fixed_current":
             chosen_layout_dict = (
                 json.loads(layout_json) if layout_json else layouts[0]
             )
-            chosen_army_dict = json.loads(army_json) if army_json else armies[0]
             village_idx = next(
                 (
                     i
@@ -818,36 +899,23 @@ def train_pytorch_ppo(
                 ),
                 0,
             )
-            army_idx = next(
-                (
-                    i
-                    for i, a in enumerate(armies)
-                    if a.get("name") == chosen_army_dict.get("name")
-                ),
-                0,
-            )
         else:
-            if (ep - 1) % max(1, len(armies)) == 0:
-                random.shuffle(strat_armies)
             if (ep - 1) % max(1, len(layouts)) == 0:
                 random.shuffle(strat_villages)
-            army_idx = strat_armies[(ep - 1) % len(armies)]
             village_idx = strat_villages[(ep - 1) % len(layouts)]
             chosen_layout_dict = layouts[village_idx]
-            chosen_army_dict = armies[army_idx]
 
         obs_np, info = env.reset(
             options={
                 "layout_json": json.dumps(chosen_layout_dict),
-                "army_json": json.dumps(chosen_army_dict),
+                "army_json": trained_army_json,
             }
         )
 
         # ---------------------------------------------------------------------
-        # Live Battle Rollout (`CoCActorCritic` with full army_context)
+        # Live Battle Rollout (`CoCActorCritic` on 10x50x50 spatial grid)
         # ---------------------------------------------------------------------
         obs_list: List[torch.Tensor] = []
-        army_ctx_list: List[torch.Tensor] = []
         actions_list: List[torch.Tensor] = []
         logprobs_list: List[torch.Tensor] = []
         values_list: List[torch.Tensor] = []
@@ -874,9 +942,6 @@ def train_pytorch_ppo(
 
         for step_i in range(max_steps_per_ep):
             obs_t = torch.as_tensor(obs_np, dtype=torch.float32, device=device).unsqueeze(0)
-            army_ctx_t = torch.as_tensor(
-                info["army_context"], dtype=torch.float32, device=device
-            ).unsqueeze(0)
 
             prevent_noop = curriculum_deploy and (step_i == 0)
             masks_t = masks_np_to_torch(
@@ -885,7 +950,7 @@ def train_pytorch_ppo(
 
             with torch.no_grad():
                 action_t, logprob_t, entropy_t, value_t, step_diag = live_attacker.get_action_and_value(
-                    obs_t, masks=masks_t, army_context=army_ctx_t
+                    obs_t, masks=masks_t
                 )
                 ep_entropies.append(float(entropy_t.item()))
                 if "h_type" in step_diag:
@@ -943,7 +1008,6 @@ def train_pytorch_ppo(
             steps_run += 1
 
             obs_list.append(obs_t.squeeze(0))
-            army_ctx_list.append(army_ctx_t.squeeze(0))
             actions_list.append(action_t.squeeze(0))
             logprobs_list.append(logprob_t.squeeze(0))
             values_list.append(value_t.squeeze(0))
@@ -968,11 +1032,8 @@ def train_pytorch_ppo(
             next_obs_t = torch.as_tensor(
                 obs_np, dtype=torch.float32, device=device
             ).unsqueeze(0)
-            next_ctx_t = torch.as_tensor(
-                info["army_context"], dtype=torch.float32, device=device
-            ).unsqueeze(0)
             _, _, _, next_val_t, _ = live_attacker.get_action_and_value(
-                next_obs_t, army_context=next_ctx_t
+                next_obs_t
             )
 
         rewards_t = torch.tensor(rewards_list, dtype=torch.float32, device=device)
@@ -989,7 +1050,6 @@ def train_pytorch_ppo(
         )
 
         buf_obs.append(torch.stack(obs_list))
-        buf_ctx.append(torch.stack(army_ctx_list))
         buf_act.append(torch.stack(actions_list))
         buf_lp.append(torch.stack(logprobs_list))
         buf_adv.append(advantages_t)
@@ -1001,7 +1061,6 @@ def train_pytorch_ppo(
 
         if buf_eps_count >= b_eps or ep == episodes:
             obs_b = torch.cat(buf_obs, dim=0)
-            army_ctx_b = torch.cat(buf_ctx, dim=0)
             actions_b = torch.cat(buf_act, dim=0)
             old_logprobs_b = torch.cat(buf_lp, dim=0)
             adv_b = torch.cat(buf_adv, dim=0)
@@ -1021,7 +1080,6 @@ def train_pytorch_ppo(
                 advantages_b=adv_b,
                 returns_b=ret_b,
                 masks_b=masks_b,
-                army_context_b=army_ctx_b,
                 ppo_epochs=ppo_epochs,
                 minibatch_size=minibatch_size,
                 clip_coef=clip_coef,
@@ -1039,7 +1097,6 @@ def train_pytorch_ppo(
                     prev_rec["explained_variance"] = round(last_metrics.get("explained_variance", 0.0), 4)
 
             buf_obs.clear()
-            buf_ctx.clear()
             buf_act.clear()
             buf_lp.clear()
             buf_adv.clear()
@@ -1050,7 +1107,7 @@ def train_pytorch_ppo(
             buf_eps_count = 0
 
             # Periodically sync latest weights so live inspection reflects ongoing training
-            _save_attacker_ckpt(DEFAULT_CKPT_PATH, cumulative_ep)
+            _save_attacker_ckpt(cumulative_ep)
 
         elapsed = max(1e-6, time.perf_counter() - t0)
         sim_ticks = info.get("tick", steps_run * ticks_per_step)
@@ -1060,7 +1117,7 @@ def train_pytorch_ppo(
             best_pct = max(best_pct, pct)
             best_stars = max(best_stars, stars)
             best_reward = max(best_reward, ep_custom_reward)
-            _save_attacker_ckpt(DEFAULT_CKPT_PATH, cumulative_ep)
+            _save_attacker_ckpt(cumulative_ep)
 
         recent_rewards = [h["reward"] for h in history[-9:]] + [ep_custom_reward]
         avg_reward_10 = float(np.mean(recent_rewards))
@@ -1078,12 +1135,8 @@ def train_pytorch_ppo(
             "episode": ep,
             "cumulative_episode": cumulative_ep,
             "total_episodes": episodes,
-            "army_idx": army_idx,
-            "army_name": (
-                ARMY_SHORT_NAMES[army_idx]
-                if army_idx < len(ARMY_SHORT_NAMES)
-                else f"Army {army_idx}"
-            ),
+            "army_idx": 0,
+            "army_name": trained_army_name,
             "village_idx": village_idx,
             "village_name": (
                 VILLAGE_SHORT_NAMES[village_idx]
@@ -1128,15 +1181,8 @@ def train_pytorch_ppo(
                 break
 
     final_cum_ep = base_trained_episodes + len(history)
-    _save_attacker_ckpt(DEFAULT_CKPT_PATH, final_cum_ep)
-
-    # Also save a snapshot in `trained_models/` with either custom `save_name` or auto-snapshot name
-    if save_name and save_name.strip():
-        named_file = sanitize_model_filename(save_name)
-    else:
-        named_file = f"attacker_ep{final_cum_ep}_{best_pct}pct_{best_stars}star.pt"
-    named_path = os.path.join(TRAINED_MODELS_DIR, named_file)
-    _save_attacker_ckpt(named_path, final_cum_ep)
+    named_path = _save_attacker_ckpt(final_cum_ep)
+    named_file = os.path.basename(named_path)
 
     # Automatically update the Obsidian Vault & Canvas with the new training results
     try:
@@ -1165,6 +1211,9 @@ def train_pytorch_ppo(
         "checkpoint_path": named_path,
         "saved_filename": named_file,
         "matchup_stats": matchup_stats,
+        "army": trained_army,
+        "army_name": trained_army_name,
+        "army_slug": army_slug,
         "armies": armies,
         "villages": layouts,
         "army_names": army_names,
@@ -1178,7 +1227,6 @@ def run_attacker_benchmark() -> None:
     obs, info = env.reset()
     valid_tiles = env.valid_deploy_tiles()
     print(f"Observation tensor shape: {obs.shape} (dtype={obs.dtype})")
-    print(f"Army context vector shape: {info['army_context'].shape}")
     print(f"Valid deployment tiles outside village red-zone: {len(valid_tiles)} / 2500")
 
     t0 = time.perf_counter()
@@ -1235,8 +1283,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--resume-from",
         type=str,
-        default="latest_attacker.pt",
+        default="scratch",
         help="Checkpoint file in trained_models/ to resume from (or 'scratch')",
+    )
+    parser.add_argument(
+        "--army-idx",
+        type=int,
+        default=0,
+        help="Index of preset army (0..2) to train on when starting from scratch",
     )
     parser.add_argument(
         "--save-name",
@@ -1248,8 +1302,10 @@ if __name__ == "__main__":
 
     if args.train_ppo:
         device_str = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
+        _, preset_armies = get_meta_presets()
+        chosen_army = preset_armies[max(0, min(len(preset_armies) - 1, args.army_idx))]
         print(
-            f"=== Training TH18 Attacker AI (matchup={args.matchup} | resume={args.resume_from}) on {device_str} ==="
+            f"=== Training TH18 Attacker AI (army={chosen_army['name']} | matchup={args.matchup} | resume={args.resume_from}) on {device_str} ==="
         )
 
         def log_ep(rec: Dict[str, Any]) -> bool:
@@ -1268,6 +1324,7 @@ if __name__ == "__main__":
             matchup_mode=args.matchup,
             resume_from=args.resume_from,
             save_name=args.save_name,
+            army_json=json.dumps(chosen_army),
             on_episode_callback=log_ep,
         )
     else:

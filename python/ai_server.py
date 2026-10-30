@@ -35,6 +35,7 @@ from train_ai import (
     ARMY_SHORT_NAMES,
     DEFAULT_CKPT_PATH,
     VILLAGE_SHORT_NAMES,
+    army_name_to_slug,
     compute_matchup_stats,
     delete_custom_army,
     get_all_army_presets,
@@ -74,8 +75,10 @@ _training_state: Dict[str, Any] = {
     "is_training": False,
     "stop_requested": False,
     "matchup_mode": "random",
-    "resume_from": "latest_attacker.pt",
-    "saved_filename": "latest_attacker.pt",
+    "resume_from": "scratch",
+    "saved_filename": "",
+    "army_name": "",
+    "army": None,
     "current_episode": 0,
     "cumulative_episode": 0,
     "total_episodes": 0,
@@ -107,11 +110,11 @@ if os.path.exists(_LAST_STATE_PATH):
 class InspectRequest(BaseModel):
     layout_json: Optional[str] = None
     army_json: Optional[str] = None
-    model_file: Optional[str] = "latest_attacker.pt"
+    model_file: Optional[str] = None
 
 
 class RolloutRequest(BaseModel):
-    model_file: Optional[str] = "latest_attacker.pt"
+    model_file: Optional[str] = None
     layout_json: str
     army_json: str
     ticks_per_step: int = 8
@@ -126,7 +129,7 @@ class TrainStartRequest(BaseModel):
     lr: float = 3e-4
     ticks_per_step: int = 8
     matchup_mode: str = "random"
-    resume_from: Optional[str] = "latest_attacker.pt"
+    resume_from: Optional[str] = "scratch"
     save_name: Optional[str] = None
     layout_json: Optional[str] = None
     army_json: Optional[str] = None
@@ -265,26 +268,32 @@ def get_architecture_svg(detail: str = "overview", force: bool = False) -> FileR
 
 @app.post("/api/ai/inspect")
 def inspect_policy_and_tensors(req: InspectRequest) -> Dict[str, Any]:
-    env = CoCAttackerEnv(
-        layout_json=req.layout_json,
-        army_json=req.army_json,
-        ticks_per_step=5,
-    )
-    obs_np, info = env.reset()
     live_attacker, atk_ckpt = load_attacker_model(
         DEVICE, attacker_model_file=req.model_file
     )
     live_attacker.eval()
 
+    ckpt_army = atk_ckpt.get("army")
+    if not isinstance(ckpt_army, dict):
+        ckpt_armies = atk_ckpt.get("armies")
+        if isinstance(ckpt_armies, list) and len(ckpt_armies) > 0 and isinstance(ckpt_armies[0], dict):
+            ckpt_army = ckpt_armies[0]
+
+    effective_army_json = json.dumps(ckpt_army) if isinstance(ckpt_army, dict) else req.army_json
+
+    env = CoCAttackerEnv(
+        layout_json=req.layout_json,
+        army_json=effective_army_json,
+        ticks_per_step=5,
+    )
+    obs_np, info = env.reset()
+
     obs_t = torch.as_tensor(obs_np, dtype=torch.float32, device=DEVICE).unsqueeze(0)
-    army_ctx_t = torch.as_tensor(
-        info["army_context"], dtype=torch.float32, device=DEVICE
-    ).unsqueeze(0)
     masks_t = masks_np_to_torch(info["action_masks"], DEVICE, prevent_early_noop=False)
 
     with torch.no_grad():
         action_t, _, entropy_t, value_t, diag = live_attacker.get_action_and_value(
-            obs_t, masks=masks_t, army_context=army_ctx_t
+            obs_t, masks=masks_t
         )
 
     act = action_t.squeeze(0).cpu().tolist()
@@ -293,8 +302,9 @@ def inspect_policy_and_tensors(req: InspectRequest) -> Dict[str, Any]:
     frac_bin = int(act[4])
     deploy_fraction = fraction_bins[max(0, min(len(fraction_bins) - 1, frac_bin))]
 
-    model_armies = atk_ckpt.get("armies", [])
+    model_armies = [ckpt_army] if isinstance(ckpt_army, dict) else atk_ckpt.get("armies", [])
     model_villages = atk_ckpt.get("villages", [])
+    model_army_name = ckpt_army.get("name", "Army") if isinstance(ckpt_army, dict) else ""
 
     return {
         "channels": obs_np.tolist(),
@@ -312,12 +322,15 @@ def inspect_policy_and_tensors(req: InspectRequest) -> Dict[str, Any]:
             "deploy_fraction": round(float(deploy_fraction), 2),
         },
         "model_meta": {
-            "filename": req.model_file or "latest_attacker.pt",
+            "filename": req.model_file or "",
             "episode": int(atk_ckpt.get("episode", 0)),
             "best_pct": int(atk_ckpt.get("best_pct", 0)),
             "best_stars": int(atk_ckpt.get("best_stars", 0)),
             "best_reward": round(float(atk_ckpt.get("best_reward", 0.0)), 2),
             "hyperparams": atk_ckpt.get("hyperparams", {}),
+            "army": ckpt_army,
+            "army_name": model_army_name,
+            "army_slug": atk_ckpt.get("army_slug") or (army_name_to_slug(model_army_name) if model_army_name else ""),
             "armies": model_armies,
             "villages": model_villages,
             "army_names": [a.get("name") for a in model_armies if isinstance(a, dict)],
@@ -396,6 +409,10 @@ def start_ppo_training(req: TrainStartRequest) -> Dict[str, Any]:
                 _training_state["matchup_stats"] = res["matchup_stats"]
             if "saved_filename" in res:
                 _training_state["saved_filename"] = res["saved_filename"]
+            if "army" in res:
+                _training_state["army"] = res["army"]
+            if "army_name" in res:
+                _training_state["army_name"] = res["army_name"]
             if "armies" in res:
                 _training_state["armies"] = res["armies"]
             if "villages" in res:

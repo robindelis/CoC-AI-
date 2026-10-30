@@ -150,7 +150,7 @@ def enrich_sparse_history_records(records: List[Dict[str, Any]]) -> List[Dict[st
             r_dmg = round(rew - r_destr - r_stars, 3)
 
         # Matchup indices
-        army_idx = int(r.get("army_idx", (i + (i // 3)) % 3)) % 3
+        army_idx = int(r.get("army_idx", 0))
         village_idx = int(r.get("village_idx", (i * 2 + (i // 5)) % 5)) % 5
 
         # Action pacing

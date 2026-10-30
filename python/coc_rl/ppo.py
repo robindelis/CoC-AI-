@@ -83,7 +83,6 @@ def ppo_update_step(
     advantages_b: torch.Tensor,
     returns_b: torch.Tensor,
     masks_b: Optional[Dict[str, torch.Tensor]] = None,
-    army_context_b: Optional[torch.Tensor] = None,
     clip_coef: float = 0.2,
     vf_coef: float = 0.5,
     ent_coef: float = 0.01,
@@ -93,7 +92,7 @@ def ppo_update_step(
     Clipped Proximal Policy Optimization (PPO) Minibatch Update.
     """
     _, new_logprob, entropy, new_value, _ = model.get_action_and_value(
-        obs_b, masks=masks_b, action=actions_b, army_context=army_context_b
+        obs_b, masks=masks_b, action=actions_b
     )
 
     adv = (advantages_b - advantages_b.mean()) / (advantages_b.std(unbiased=False) + 1e-8)
@@ -138,7 +137,6 @@ def ppo_minibatch_update(
     advantages_b: torch.Tensor,
     returns_b: torch.Tensor,
     masks_b: Dict[str, torch.Tensor],
-    army_context_b: Optional[torch.Tensor] = None,
     ppo_epochs: int = 4,
     minibatch_size: int = 64,
     clip_coef: float = 0.2,
@@ -187,7 +185,6 @@ def ppo_minibatch_update(
             mb_old_lp = old_logprobs_b[mb_idx]
             mb_adv = adv_norm_full[mb_idx]
             mb_ret = returns_b[mb_idx]
-            mb_ctx = army_context_b[mb_idx] if army_context_b is not None else None
             mb_masks = {
                 "slot_type": masks_b["slot_type"][mb_idx],
                 "slot_idx": masks_b["slot_idx"][mb_idx],
@@ -195,7 +192,7 @@ def ppo_minibatch_update(
             }
 
             _, new_logprob, entropy, new_value, diag = model.get_action_and_value(
-                mb_obs, masks=mb_masks, action=mb_act, army_context=mb_ctx
+                mb_obs, masks=mb_masks, action=mb_act
             )
 
             logratio = new_logprob - mb_old_lp

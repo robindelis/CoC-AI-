@@ -5,7 +5,7 @@ tags:
   - coc-rl
   - ppo
   - architecture
-updated: 2026-10-29
+updated: 2026-10-30
 ---
 
 # 🏰 CoC TH18 Deep RL — Architecture & Training Vault
@@ -25,8 +25,7 @@ Open the interactive 2D whiteboard visualizer presenting side-by-side architectu
 
 | Model Run | Arch | Spatial Input | Total Episodes | Peak Combat Record | Status |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| [[runs/v1_baseline_8ch\|v1.0 — Baseline 8-Channel Single-Deploy]] | `v1.0` | `(8, 50, 50)` | **`30,102`** (6 sessions) | **`100%` (3★)** | **SUPERSEDED** |
-| [[runs/v2_archetype_10ch\|v2.0 — 10-Channel Archetype & Batch-Deploy Fraction]] | `v2.0` | `(10, 50, 50)` | **`120`** (2 sessions) | **`100%` (3★)** | **ACTIVE** |
+| [[runs/v2_archetype_10ch\|v2.0 — 10-Channel Archetype & Batch-Deploy Fraction]] | `v2.0` | `(10, 50, 50)` | **`2`** (2 sessions) | **`84%` (2★)** | **ACTIVE** |
 
 ---
 

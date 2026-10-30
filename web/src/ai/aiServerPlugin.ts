@@ -18,12 +18,6 @@ import type {
   SavedModelMeta,
 } from './aiTypes';
 
-const ARMY_SHORT_NAMES = [
-  'Thrower + Healer Smash',
-  'Dragon Duke Hydra',
-  'Fireball Super Bowlers',
-];
-
 const VILLAGE_SHORT_NAMES = [
   'Central Box Legends',
   'Offset Diamond (Hot Candle)',
@@ -75,92 +69,32 @@ function sendJson(res: ServerResponse, status: number, payload: unknown): void {
   res.end(JSON.stringify(payload));
 }
 
-function buildInitialHistory(): AITrainingEpisodeRecord[] {
-  const history: AITrainingEpisodeRecord[] = [];
-  let bestPct = 42;
-  let bestStars = 1;
-  for (let ep = 1; ep <= 40; ep++) {
-    const progress = ep / 40;
-    const armyIdx = (ep - 1) % 3;
-    const villageIdx = (ep - 1) % 5;
-    const wave = Math.sin(ep * 0.7) * 8;
-    const pct = Math.min(
-      100,
-      Math.max(28, Math.round(44 + progress * 46 + wave))
-    );
-    const stars = pct >= 100 ? 3 : pct >= 68 ? 2 : pct >= 50 ? 1 : 0;
-    if (pct > bestPct) bestPct = pct;
-    if (stars > bestStars) bestStars = stars;
-    const reward = Number((pct * 0.14 + stars * 3.2 - 1.5).toFixed(2));
-    const slice10 = history.slice(-9);
-    const avgReward10 = Number(
-      (
-        (slice10.reduce((a, b) => a + b.reward, 0) + reward) /
-        (slice10.length + 1)
-      ).toFixed(2)
-    );
-    const avgPct10 = Number(
-      (
-        (slice10.reduce((a, b) => a + b.destruction_pct, 0) + pct) /
-        (slice10.length + 1)
-      ).toFixed(1)
-    );
-    history.push({
-      episode: ep,
-      cumulative_episode: ep,
-      total_episodes: 40,
-      army_idx: armyIdx,
-      army_name: ARMY_SHORT_NAMES[armyIdx],
-      village_idx: villageIdx,
-      village_name: VILLAGE_SHORT_NAMES[villageIdx],
-      reward,
-      avg_reward_10: avgReward10,
-      destruction_pct: pct,
-      avg_pct_10: avgPct10,
-      avg_pct_50: avgPct10,
-      stars,
-      best_pct: bestPct,
-      best_stars: bestStars,
-      noop_pct: Number(Math.max(12, 48 - progress * 28).toFixed(1)),
-      deploy_steps: 28,
-      spell_steps: 9,
-      ability_steps: 4,
-      policy_loss: Number((0.085 - progress * 0.04).toFixed(4)),
-      value_loss: Number((0.42 - progress * 0.21).toFixed(4)),
-      entropy: Number((2.85 - progress * 0.65).toFixed(3)),
-      approx_kl: Number((0.012 + (ep % 4) * 0.002).toFixed(4)),
-      fps_ticks: 4850 + (ep % 7) * 120,
-      steps: 120,
-    });
-  }
-  return history;
-}
-
 function computeMatchupStats(
-  history: AITrainingEpisodeRecord[]
+  history: AITrainingEpisodeRecord[],
+  armyName: string = FULL_CATALOG.preset_armies[0].name
 ): AIMatchupStats {
-  const armyStats: AIArmyStat[] = ARMY_SHORT_NAMES.map((name, idx) => {
-    const eps = history.filter((h) => h.army_idx === idx);
-    const count = Math.max(1, eps.length);
-    const avgPct = eps.reduce((a, b) => a + b.destruction_pct, 0) / count;
-    const avgStars = eps.reduce((a, b) => a + b.stars, 0) / count;
-    const avgReward = eps.reduce((a, b) => a + b.reward, 0) / count;
-    const triples = eps.filter((e) => e.stars === 3).length / count;
-    const peak = eps.reduce((m, e) => Math.max(m, e.destruction_pct), 0);
-    return {
-      army_idx: idx,
-      name,
-      full_name: FULL_CATALOG.preset_armies[idx]?.name ?? name,
-      episodes: eps.length,
-      usage_pct: Number(((eps.length / Math.max(1, history.length)) * 100).toFixed(1)),
+  const count = Math.max(1, history.length);
+  const avgPct = history.reduce((a, b) => a + b.destruction_pct, 0) / count;
+  const avgStars = history.reduce((a, b) => a + b.stars, 0) / count;
+  const avgReward = history.reduce((a, b) => a + b.reward, 0) / count;
+  const triples = history.filter((e) => e.stars === 3).length / count;
+  const peak = history.reduce((m, e) => Math.max(m, e.destruction_pct), 0);
+
+  const armyStats: AIArmyStat[] = [
+    {
+      army_idx: 0,
+      name: armyName,
+      full_name: armyName,
+      episodes: history.length,
+      usage_pct: history.length > 0 ? 100.0 : 0.0,
       avg_pct: Number(avgPct.toFixed(1)),
       recent_avg_pct: Number(avgPct.toFixed(1)),
       peak_pct: peak,
       avg_stars: Number(avgStars.toFixed(2)),
       avg_reward: Number(avgReward.toFixed(2)),
       triple_rate: Number((triples * 100).toFixed(1)),
-    };
-  });
+    },
+  ];
 
   const villageStats: AIVillageStat[] = VILLAGE_SHORT_NAMES.map((name, idx) => {
     const eps = history.filter((h) => h.village_idx === idx);
@@ -184,79 +118,44 @@ function computeMatchupStats(
   });
 
   return {
-    armies: ARMY_SHORT_NAMES,
+    armies: [armyName],
     villages: VILLAGE_SHORT_NAMES,
     army_stats: armyStats,
     village_stats: villageStats,
   };
 }
 
+function armyNameToSlug(name: string): string {
+  const s = (name || 'army')
+    .trim()
+    .replace(/^th\d+\s*/i, '')
+    .replace(/\s*\(meta\)\s*$/i, '');
+  const slug = s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return slug || 'army';
+}
+
 export function createCocAiServerPlugin(rootDir: string): Plugin {
   const customArmiesPath = path.join(rootDir, 'trained_models', 'custom_armies.json');
-  const initialHistory = buildInitialHistory();
+  const initialHistory: AITrainingEpisodeRecord[] = [];
 
-  const savedModels: SavedModelMeta[] = [
-    {
-      filename: 'latest_attacker.pt',
-      size_kb: 3642.8,
-      updated_at: '2026-10-28 04:45:00',
-      mtime: Date.now() / 1000,
-      episode: initialHistory.length,
-      best_pct: 96,
-      best_stars: 3,
-      best_reward: 21.84,
-      model_type: 'live_attacker',
-      armies: FULL_CATALOG.preset_armies,
-      villages: FULL_CATALOG.preset_layouts,
-      army_names: FULL_CATALOG.preset_armies.map((a) => a.name),
-      village_names: FULL_CATALOG.preset_layouts.map((v) => v.name),
-      hyperparams: {
-        lr: 0.0003,
-        batch_episodes: 4,
-        minibatch_size: 64,
-        ppo_epochs: 4,
-        episodes: 40,
-        ticks_per_step: 8,
-        matchup_mode: 'random',
-      },
-    },
-    {
-      filename: 'th18_thrower_specialist.pt',
-      size_kb: 3642.8,
-      updated_at: '2026-10-27 21:15:00',
-      mtime: Date.now() / 1000 - 3600,
-      episode: 120,
-      best_pct: 100,
-      best_stars: 3,
-      best_reward: 24.5,
-      model_type: 'live_attacker',
-      armies: FULL_CATALOG.preset_armies,
-      villages: FULL_CATALOG.preset_layouts,
-      army_names: FULL_CATALOG.preset_armies.map((a) => a.name),
-      village_names: FULL_CATALOG.preset_layouts.map((v) => v.name),
-      hyperparams: {
-        lr: 0.0003,
-        batch_episodes: 4,
-        minibatch_size: 64,
-        ppo_epochs: 4,
-        episodes: 120,
-        ticks_per_step: 8,
-        matchup_mode: 'round_robin',
-      },
-    },
-  ];
+  const savedModels: SavedModelMeta[] = [];
 
   const trainingState: AITrainingState = {
     is_training: false,
     stop_requested: false,
     matchup_mode: 'random',
-    resume_from: 'latest_attacker.pt',
-    saved_filename: 'latest_attacker.pt',
-    current_episode: initialHistory.length,
-    cumulative_episode: initialHistory.length,
-    total_episodes: initialHistory.length,
-    best_pct: 96,
-    best_stars: 3,
+    resume_from: 'scratch',
+    saved_filename: '',
+    army: FULL_CATALOG.preset_armies[0],
+    army_name: FULL_CATALOG.preset_armies[0].name,
+    current_episode: 0,
+    cumulative_episode: 0,
+    total_episodes: 0,
+    best_pct: 0,
+    best_stars: 0,
     matchup_stats: computeMatchupStats(initialHistory),
     history: initialHistory,
   };
@@ -335,7 +234,6 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
         ?? sourceCode.match(/in_channels:\s*int\s*=\s*(\d+)/);
       const spatialDimMatch = sourceCode.match(/spatial_dim:\s*int\s*=\s*(\d+)/);
       const embedDimMatch = sourceCode.match(/embed_dim:\s*int\s*=\s*(\d+)/);
-      const armyCtxMatch = sourceCode.match(/army_context_dim:\s*int\s*=\s*(\d+)/);
       const fracBinsMatch = sourceCode.match(/num_fraction_bins:\s*int\s*=\s*(\d+)/);
       const s1ChMatch = sourceCode.match(/Conv2d\(\s*in_channels\s*,\s*(\d+)/);
       const g1ChMatch = sourceCode.match(/Conv2d\(\s*spatial_dim\s*,\s*(\d+)\s*,\s*kernel_size=3\s*,\s*stride=2/);
@@ -344,7 +242,6 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
       const inCh = inChMatch ? Number(inChMatch[1]) : 10;
       const spatialDim = spatialDimMatch ? Number(spatialDimMatch[1]) : 64;
       const embedDim = embedDimMatch ? Number(embedDimMatch[1]) : 256;
-      const armyCtxDim = armyCtxMatch ? Number(armyCtxMatch[1]) : 64;
       const numFracBins = fracBinsMatch ? Number(fracBinsMatch[1]) : 5;
       const s1Ch = s1ChMatch ? Number(s1ChMatch[1]) : 32;
       const g1Ch = g1ChMatch ? Number(g1ChMatch[1]) : 96;
@@ -357,7 +254,6 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
       const g1Params = spatialDim * g1Ch * 9 + g1Ch;
       const g2Params = g1Ch * g2Ch * 9 + g2Ch;
       const g5Params = g2Ch * 16 * embedDim + embedDim + embedDim * 2;
-      const armyCtxParams = armyCtxDim * embedDim + embedDim + embedDim * 2;
       const slotTypeParams = embedDim * 7 + 7;
       const slotIdxParams = (embedDim + 7) * 128 + 128 + 128 * 10 + 10;
       const deployFracParams = (embedDim + 17) * 128 + 128 + 128 * numFracBins + numFracBins;
@@ -503,21 +399,6 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           coneLabel: 'Dense',
         },
         {
-          id: 'head_army_ctx',
-          stage: 'global' as const,
-          type: 'army_context_proj (Fusion)',
-          short: 'ArmyCtx',
-          desc: `army_context(${armyCtxDim}) → Linear(${armyCtxDim} → ${embedDim}) + LayerNorm(${embedDim}) + SiLU ⊕ global_emb`,
-          inputShape: [armyCtxDim],
-          outputShape: [embedDim],
-          receptiveField: 50,
-          params: armyCtxParams,
-          macs: armyCtxDim * embedDim,
-          color: '#0891b2',
-          border: '#38bdf8',
-          coneLabel: '64→256 ⊕',
-        },
-        {
           id: 'head_slot_type',
           stage: 'heads' as const,
           type: 'slot_type_head',
@@ -608,7 +489,6 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           in_channels: inCh,
           spatial_dim: spatialDim,
           embed_dim: embedDim,
-          army_context_dim: armyCtxDim,
           num_fraction_bins: numFracBins,
           total_params: totalParams,
           total_macs: totalMacs,
@@ -675,8 +555,29 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
     }
 
     if (req.method === 'GET' && pathname === '/api/ai/models/history') {
-      const mf = urlObj.searchParams.get('model_file') ?? 'latest_attacker.pt';
+      const mf = urlObj.searchParams.get('model_file') ?? '';
       const found = savedModels.find((m) => m.filename === mf) ?? savedModels[0];
+      if (!found) {
+        sendJson(res, 200, {
+          filename: mf,
+          found: false,
+          episode: 0,
+          best_pct: 0,
+          best_stars: 0,
+          best_reward: 0,
+          compression: {
+            has_history: false,
+            history_episodes: 0,
+            compressed_kb: 0,
+            raw_kb: 0,
+            compression_ratio: 1,
+            session_boundaries: [],
+          },
+          matchup_stats: computeMatchupStats([]),
+          history: [],
+        });
+        return true;
+      }
       sendJson(res, 200, {
         filename: found.filename,
         found: true,
@@ -685,6 +586,9 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
         best_stars: found.best_stars,
         best_reward: found.best_reward,
         hyperparams: found.hyperparams,
+        army: found.army ?? found.armies?.[0],
+        army_name: found.army_name ?? found.army?.name,
+        army_slug: found.army_slug,
         armies: found.armies,
         villages: found.villages,
         army_names: found.army_names,
@@ -697,7 +601,10 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           compression_ratio: 20.0,
           session_boundaries: [],
         },
-        matchup_stats: computeMatchupStats(trainingState.history),
+        matchup_stats: computeMatchupStats(
+          trainingState.history,
+          found.army_name ?? found.army?.name
+        ),
         history: trainingState.history,
       });
       return true;
@@ -1002,10 +909,20 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
       }
 
       const targetEpisodes = Math.max(1, Number(body.episodes ?? 24));
+      let chosenArmy = FULL_CATALOG.preset_armies[0];
+      if (typeof body.army_json === 'string' && body.army_json) {
+        try {
+          chosenArmy = JSON.parse(body.army_json);
+        } catch {
+          // ignore
+        }
+      }
       trainingState.is_training = true;
       trainingState.stop_requested = false;
       trainingState.matchup_mode = (body.matchup_mode as MatchupMode) ?? 'random';
-      trainingState.resume_from = String(body.resume_from ?? 'latest_attacker.pt');
+      trainingState.resume_from = String(body.resume_from ?? 'scratch');
+      trainingState.army = chosenArmy;
+      trainingState.army_name = chosenArmy.name;
       trainingState.current_episode = 0;
       trainingState.total_episodes = targetEpisodes;
 
@@ -1019,6 +936,50 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           trainTimer = null;
           trainingState.is_training = false;
           trainingState.stop_requested = false;
+          const slug = armyNameToSlug(chosenArmy.name);
+          const cumEp = trainingState.cumulative_episode ?? trainingState.current_episode;
+          const saveNameRaw = typeof body.save_name === 'string' ? body.save_name.trim() : '';
+          const fname = saveNameRaw
+            ? saveNameRaw.endsWith('.pt')
+              ? saveNameRaw
+              : `${saveNameRaw}.pt`
+            : `${slug}_ep${cumEp}_${trainingState.best_pct}pct_${trainingState.best_stars}star.pt`;
+          trainingState.saved_filename = fname;
+          const existingIdx = savedModels.findIndex((m) => m.filename === fname);
+          const meta: SavedModelMeta = {
+            filename: fname,
+            size_kb: 3580.4,
+            updated_at: new Date().toISOString().slice(0, 19).replace('T', ' '),
+            mtime: Date.now() / 1000,
+            episode: cumEp,
+            best_pct: trainingState.best_pct,
+            best_stars: trainingState.best_stars,
+            best_reward: 74.2,
+            model_type: 'live_attacker',
+            army: chosenArmy,
+            army_name: chosenArmy.name,
+            army_slug: slug,
+            armies: [chosenArmy],
+            villages: FULL_CATALOG.preset_layouts,
+            army_names: [chosenArmy.name],
+            village_names: FULL_CATALOG.preset_layouts.map((v) => v.name),
+            hyperparams: {
+              lr: Number(body.lr ?? 0.0003),
+              batch_episodes: Number(body.batch_episodes ?? 12),
+              minibatch_size: Number(body.minibatch_size ?? 128),
+              ppo_epochs: Number(body.ppo_epochs ?? 4),
+              episodes: targetEpisodes,
+              ticks_per_step: 8,
+              matchup_mode: trainingState.matchup_mode,
+              army_name: chosenArmy.name,
+              army_slug: slug,
+            },
+          };
+          if (existingIdx >= 0) {
+            savedModels[existingIdx] = meta;
+          } else {
+            savedModels.unshift(meta);
+          }
           return;
         }
 
@@ -1027,12 +988,11 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           (trainingState.cumulative_episode ?? 0) + 1;
         const ep = trainingState.current_episode;
         const cumEp = trainingState.cumulative_episode;
-        const armyIdx = (cumEp - 1) % 3;
         const villageIdx = (cumEp - 1) % 5;
 
         const sess = new WasmBattleSession(
           JSON.stringify(FULL_CATALOG.preset_layouts[villageIdx]),
-          JSON.stringify(FULL_CATALOG.preset_armies[armyIdx])
+          JSON.stringify(chosenArmy)
         );
         const endState = JSON.parse(sess.run_heuristic_ai_ticks(900));
         const pct = Math.min(100, Math.max(45, endState.destruction_pct));
@@ -1059,8 +1019,8 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           episode: ep,
           cumulative_episode: cumEp,
           total_episodes: trainingState.total_episodes,
-          army_idx: armyIdx,
-          army_name: ARMY_SHORT_NAMES[armyIdx],
+          army_idx: 0,
+          army_name: chosenArmy.name,
           village_idx: villageIdx,
           village_name: VILLAGE_SHORT_NAMES[villageIdx],
           reward,

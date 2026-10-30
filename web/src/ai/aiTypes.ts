@@ -30,6 +30,9 @@ export interface SavedModelMeta {
   best_stars: number;
   best_reward: number;
   model_type: string;
+  army?: ArmyLoadout;
+  army_name?: string;
+  army_slug?: string;
   armies?: ArmyLoadout[];
   villages?: VillageLayout[];
   army_names?: string[];
@@ -49,6 +52,8 @@ export interface SavedModelMeta {
     ticks_per_step?: number;
     matchup_mode?: string;
     resumed_from?: string;
+    army_name?: string;
+    army_slug?: string;
   };
 }
 
@@ -99,6 +104,9 @@ export interface AIModelHistoryResponse {
   best_stars: number;
   best_reward: number;
   hyperparams?: SavedModelMeta['hyperparams'];
+  army?: ArmyLoadout;
+  army_name?: string;
+  army_slug?: string;
   armies?: ArmyLoadout[];
   villages?: VillageLayout[];
   army_names?: string[];
@@ -148,6 +156,8 @@ export interface AITrainingState {
   matchup_mode?: MatchupMode;
   resume_from?: string;
   saved_filename?: string;
+  army?: ArmyLoadout | null;
+  army_name?: string;
   current_episode: number;
   cumulative_episode?: number;
   total_episodes: number;
@@ -178,7 +188,6 @@ export interface AIArchitectureSpec {
   in_channels: number;
   spatial_dim: number;
   embed_dim: number;
-  army_context_dim: number;
   num_fraction_bins: number;
   total_params: number;
   total_macs: number;
@@ -247,6 +256,10 @@ export interface AIRolloutResponse {
   total_reward: number;
   noop_pct: number;
   actions_schedule: AIRolloutStep[];
+  army?: ArmyLoadout;
+  army_name?: string;
+  armies?: ArmyLoadout[];
+  villages?: VillageLayout[];
 }
 
 export const SPATIAL_CHANNELS = [

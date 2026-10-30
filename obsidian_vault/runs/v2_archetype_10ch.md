@@ -3,10 +3,10 @@ title: "v2.0 — 10-Channel Archetype & Batch-Deploy Fraction"
 model_id: "v2_archetype_10ch"
 arch_version: "2.0"
 status: "active"
-total_episodes: 120
-best_pct: 100
-best_stars: 3
-updated_at: "2026-10-29 00:23:43"
+total_episodes: 2
+best_pct: 84
+best_stars: 2
+updated_at: "2026-10-30 15:23:26"
 tags:
   - coc-rl
   - ppo
@@ -25,22 +25,21 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 - **Model Identifier**: `v2_archetype_10ch`
 - **Architecture Version**: `v2.0`
 - **Active Status**: **ACTIVE**
-- **Total Episodes Trained**: **`120`** (Cumulative across **2** training sessions)
-- **Peak Combat Performance**: **`100%` (3★)** (Best dense return: `+98.21449594687596`)
-- **Latest Checkpoint**: `trained_models/attacker_ep120_100pct_3star.pt`
+- **Total Episodes Trained**: **`2`** (Cumulative across **2** training sessions)
+- **Peak Combat Performance**: **`84%` (2★)** (Best dense return: `+76.49`)
+- **Latest Checkpoint**: `trained_models/thrower_healer_totem_smash_ep2_60pct_1star.pt`
 
 ### 🔄 Resumed Training Sessions History
 | Session # | Start Ep | End Ep | Episodes Added | Checkpoint File | Peak % | Stars | Notes |
 | :---: | :---: | :---: | :---: | :--- | :---: | :---: | :--- |
 | **#1** | `0` | `924` | `+924` | `latest_attacker.pt` | `84%` | `2★` | Initial training: fractional wave drops (0.25..1.0) and unit archetype perception (Ch 8 & 9) |
-| **#2** | `0` | `120` | `+120` | `attacker_ep120_100pct_3star.pt` | `100%` | `3★` | Initial training (120 ep) |
+| **#2** | `0` | `2` | `+2` | `thrower_healer_totem_smash_ep2_60pct_1star.pt` | `60%` | `1★` | Initial training (2 ep) |
 
 ---
 
 ## 1. Input Observation Space
 
-- **Spatial Observation Tensor**: `(B, 10, 50, 50)`
-- **Global Army Context Vector**: `(B, 64)` (remaining troops, heroes, abilities, sieges, spells)
+- **Spatial Observation Tensor**: `(B, 10, 50, 50)` (Dedicated Single-Army Policy)
 
 | Ch # | Name | Mathematical Normalization | Tactical Functional Role |
 | :---: | :--- | :--- | :--- |
@@ -93,10 +92,10 @@ $$R_t = 0.35 \cdot \Delta \%_{\text{destr}} + 15.0 \cdot \Delta \text{HP}_{\text
 
 | Attack Composition | **Central Box** | **Offset Diamond** | **Anti-Hydra Ring** | **Anti-Fireball** | **Compact Teaser** | **Avg Destruction** | **3★ Rate** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **TH18 Thrower + Healer + Totem Smash** | `28% (0★)` | `33% (1★)` | `40% (1★)` | `28% (0★)` | `39% (1★)` | **33.6%** | **0.0%** |
-| **TH18 Dragon Duke Charge Hydra** | `26% (0★)` | `18% (0★)` | `34% (0★)` | `36% (0★)` | `52% (2★)` | **33.2%** | **0.0%** |
-| **TH18 Fireball Super Bowler & Meteor Golem Smash** | `15% (0★)` | `16% (0★)` | `32% (0★)` | `29% (0★)` | `28% (1★)` | **24.0%** | **0.0%** |
-| **Base Defense Rate (Avg)** | **23.0% (0.0★)** | **22.3% (0.33★)** | **35.3% (0.33★)** | **31.0% (0.0★)** | **39.7% (1.33★)** | **Overall: 30.3%** | — |
+| **TH18 Thrower + Healer + Totem Smash** | `43% (0★)` | `23% (1★)` | `50% (1★)` | `36% (1★)` | `47% (1★)` | **39.8%** | **0.0%** |
+| **TH18 Dragon Duke Charge Hydra** | `43% (0★)` | `23% (1★)` | `50% (1★)` | `36% (1★)` | `47% (1★)` | **39.8%** | **0.0%** |
+| **TH18 Fireball Super Bowler & Meteor Golem Smash** | `43% (0★)` | `23% (1★)` | `50% (1★)` | `36% (1★)` | `47% (1★)` | **39.8%** | **0.0%** |
+| **Base Defense Rate (Avg)** | **43.0% (0.0★)** | **23.0% (1.0★)** | **50.0% (1.0★)** | **36.0% (1.0★)** | **47.0% (1.0★)** | **Overall: 39.8%** | — |
 
 ---
 
@@ -117,7 +116,7 @@ See [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Tel
 | Hyperparameter | Value | Description |
 | :--- | :--- | :--- |
 | **Learning Rate (`lr`)** | `0.0003` | Adam optimizer learning rate |
-| **Batch Episodes** | `12` | Trajectories collected per PPO update |
+| **Batch Episodes** | `2` | Trajectories collected per PPO update |
 | **Minibatch Size** | `128` | SGD transition batch size |
 | **PPO Epochs** | `4` | Optimization passes over collected rollout |
 | **Simulation Ticks / Step** | `8` | Simulated combat duration per RL decision ($0.64\text{s}$) |
@@ -125,4 +124,4 @@ See [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Tel
 | **GAE ($\lambda$)** | `0.95` | Generalized Advantage Estimation smoothing |
 | **Clip Coefficient** | `0.2` | PPO surrogate objective clipping range |
 | **Entropy Coefficient** | `0.015` | Exploration policy entropy bonus |
-| **Total Training Episodes** | **`120`** | **Cumulative episodes across all resumed sessions** |
+| **Total Training Episodes** | **`2`** | **Cumulative episodes across all resumed sessions** |

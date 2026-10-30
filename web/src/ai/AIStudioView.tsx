@@ -58,6 +58,7 @@ interface AIStudioViewProps {
   onResetAiBattle: () => void;
   onSelectLayout: (nextLayout: VillageLayout) => void;
   onSelectArmy: (nextArmy: ArmyLoadout) => void;
+  onGoToArmyBuilder?: () => void;
   onPlayTrainedRollout: (
     steps: AIRolloutStep[],
     ticksPerStep: number,
@@ -67,6 +68,18 @@ interface AIStudioViewProps {
 
 const ARMY_SHORT = ['Thrower Smash', 'Duke Hydra', 'Fireball Bowlers'];
 const ARMY_COLORS = ['#38bdf8', '#4ade80', '#facc15'];
+
+function armyNameToSlug(name: string): string {
+  const s = (name || 'army')
+    .trim()
+    .replace(/^th\d+\s*/i, '')
+    .replace(/\s*\(meta\)\s*$/i, '');
+  const slug = s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return slug || 'army';
+}
 
 const VILLAGE_SHORT = [
   'Central Box',
@@ -177,11 +190,11 @@ function computeLocalMatchupStats(
   layouts: VillageLayout[],
   armies: ArmyLoadout[]
 ): AIMatchupStats {
-  const armyNames = [
-    'Thrower + Healer Smash',
-    'Dragon Duke Hydra',
-    'Fireball Super Bowlers',
-  ];
+  const activeArmies = armies.length > 0 ? [armies[0]] : [];
+  const armyNames =
+    activeArmies.length > 0
+      ? activeArmies.map((a) => a.name)
+      : [history[0]?.army_name ?? 'Thrower + Healer Smash'];
   const villageNames = [
     'Central Box Legends',
     'Offset Diamond (Hot Candle)',
@@ -192,8 +205,8 @@ function computeLocalMatchupStats(
   const totalEps = history.length;
 
   const armyStats: AIArmyStat[] = armyNames.map((name, idx) => {
-    const full = armies[idx]?.name ?? name;
-    const recs = history.filter((r) => r.army_idx === idx);
+    const full = activeArmies[idx]?.name ?? name;
+    const recs = armyNames.length > 1 ? history.filter((r) => r.army_idx === idx) : history;
     const n = recs.length;
     const recentRecs = recs.slice(-50);
     const avgPct =
@@ -222,11 +235,11 @@ function computeLocalMatchupStats(
     const usagePct =
       totalEps > 0
         ? Number(((n / totalEps) * 100).toFixed(1))
-        : Number((100 / Math.max(1, armyNames.length)).toFixed(1));
+        : 100.0;
 
     return {
       army_idx: idx,
-      name: ARMY_SHORT[idx] ?? name,
+      name: full,
       full_name: full,
       episodes: n,
       usage_pct: usagePct,
@@ -310,6 +323,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   onResetAiBattle,
   onSelectLayout,
   onSelectArmy,
+  onGoToArmyBuilder,
   onPlayTrainedRollout,
 }) => {
   const [serverStatus, setServerStatus] = useState<AIServerStatus | null>(null);
@@ -318,14 +332,14 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
 
   // Trainer setup state
   const [matchupMode, setMatchupMode] = useState<MatchupMode>('random');
-  const [resumeFrom, setResumeFrom] = useState<string>('latest_attacker.pt');
+  const [resumeFrom, setResumeFrom] = useState<string>('scratch');
   const [saveName, setSaveName] = useState<string>('');
   const [episodes, setEpisodes] = useState<number>(60);
   const [batchEpisodes, setBatchEpisodes] = useState<number>(12);
   const [minibatchSize, setMinibatchSize] = useState<number>(128);
   const [ppoEpochs, setPpoEpochs] = useState<number>(4);
   const [lr, setLr] = useState<number>(0.0003);
-  const [trainerTab, setTrainerTab] = useState<'configs' | 'stats'>('stats');
+  const [trainerTab, setTrainerTab] = useState<'configs' | 'stats'>('configs');
 
   // TensorBoard Telemetry Workbench state
   const [inspectedModelFile, setInspectedModelFile] = useState<string>('__live__');
@@ -370,16 +384,21 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
     useState<AITrainingFeedbackResponse | null>(null);
   const [isAnalyzingFeedback, setIsAnalyzingFeedback] = useState<boolean>(false);
 
-  // Army and Village Presets selection for Training
+  // Army and Village Presets selection for Training (1 Army per Model)
   const [allArmies, setAllArmies] = useState<ArmyLoadout[]>(
     () => catalog.preset_armies
-  );
-  const [selectedArmyNames, setSelectedArmyNames] = useState<string[]>(() =>
-    catalog.preset_armies.slice(0, 3).map((a) => a.name)
   );
   const [selectedVillageNames, setSelectedVillageNames] = useState<string[]>(() =>
     catalog.preset_layouts.slice(0, 5).map((v) => v.name)
   );
+
+  const availableArmies = useMemo(() => {
+    const exists = allArmies.some((a) => a.name === army.name);
+    if (exists) {
+      return allArmies.map((a) => (a.name === army.name ? army : a));
+    }
+    return [army, ...allArmies];
+  }, [allArmies, army]);
 
   // Checkpoint renaming state
   const [renamingModel, setRenamingModel] = useState<string | null>(null);
@@ -390,7 +409,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   } | null>(null);
 
   // Tester state
-  const [testModelFile, setTestModelFile] = useState<string>('latest_attacker.pt');
+  const [testModelFile, setTestModelFile] = useState<string>('');
   const [testSpeedMode, setTestSpeedMode] = useState<'watch' | 'fast' | 'instant'>(
     'watch'
   );
@@ -449,10 +468,13 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   const isLockedToResume = resumeFrom !== 'scratch';
 
   useEffect(() => {
+    const models = serverStatus?.saved_models ?? [];
+    if (resumeFrom !== 'scratch' && models.length > 0 && !models.some((m) => m.filename === resumeFrom)) {
+      setResumeFrom('scratch');
+      return;
+    }
     if (resumeFrom === 'scratch') return;
-    const found = (serverStatus?.saved_models ?? []).find(
-      (m) => m.filename === resumeFrom
-    );
+    const found = models.find((m) => m.filename === resumeFrom);
     if (!found) return;
 
     if (found.hyperparams) {
@@ -472,10 +494,9 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
       }
     }
 
-    if (found.armies && found.armies.length > 0) {
-      setSelectedArmyNames(found.armies.map((a) => a.name));
-    } else if (found.army_names && found.army_names.length > 0) {
-      setSelectedArmyNames(found.army_names);
+    const ckptArmy = found.army ?? found.armies?.[0];
+    if (ckptArmy && ckptArmy.name !== army.name) {
+      onSelectArmy(ckptArmy);
     }
 
     if (found.villages && found.villages.length > 0) {
@@ -483,14 +504,23 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
     } else if (found.village_names && found.village_names.length > 0) {
       setSelectedVillageNames(found.village_names);
     }
-  }, [resumeFrom, serverStatus?.saved_models]);
+  }, [resumeFrom, serverStatus?.saved_models, army.name, onSelectArmy]);
+
+  useEffect(() => {
+    const models = serverStatus?.saved_models ?? [];
+    if (models.length > 0 && (!testModelFile || !models.some((m) => m.filename === testModelFile))) {
+      setTestModelFile(models[0].filename);
+    } else if (models.length === 0 && testModelFile !== '') {
+      setTestModelFile('');
+    }
+  }, [serverStatus?.saved_models, testModelFile]);
 
   useEffect(() => {
     if (!serverStatus?.online) return;
     inspectAIPolicy(
       JSON.stringify(layout),
       JSON.stringify(army),
-      testModelFile
+      testModelFile || undefined
     ).then((res) => {
       if (res) setInspectData(res);
     });
@@ -554,16 +584,18 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
     ctx.globalAlpha = 1;
   }, [studioMode, selectedChannel, battleState, inspectData, extractLocalObservation]);
 
+  const currentResumeModel = (serverStatus?.saved_models ?? []).find(
+    (m) => m.filename === resumeFrom
+  );
+  const selectedTrainingArmy: ArmyLoadout =
+    isLockedToResume &&
+    (currentResumeModel?.army ||
+      (currentResumeModel?.armies && currentResumeModel.armies.length > 0))
+      ? (currentResumeModel.army ?? currentResumeModel.armies![0])
+      : army;
+  const selectedArmySlug = armyNameToSlug(selectedTrainingArmy.name);
+
   const handleStartTraining = async () => {
-    const currentResumeModel = (serverStatus?.saved_models ?? []).find(
-      (m) => m.filename === resumeFrom
-    );
-    const targetArmies =
-      isLockedToResume &&
-      currentResumeModel?.armies &&
-      currentResumeModel.armies.length > 0
-        ? currentResumeModel.armies
-        : allArmies.filter((a) => selectedArmyNames.includes(a.name));
     const targetVillages =
       isLockedToResume &&
       currentResumeModel?.villages &&
@@ -573,8 +605,6 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
             selectedVillageNames.includes(v.name)
           );
 
-    const finalArmies =
-      targetArmies.length > 0 ? targetArmies : catalog.preset_armies.slice(0, 3);
     const finalVillages =
       targetVillages.length > 0 ? targetVillages : catalog.preset_layouts.slice(0, 5);
 
@@ -590,8 +620,8 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
       resumeFrom,
       saveName: saveName.trim() || undefined,
       layoutJson: JSON.stringify(finalVillages[0] ?? layout),
-      armyJson: JSON.stringify(finalArmies[0] ?? army),
-      armiesJson: JSON.stringify(finalArmies),
+      armyJson: JSON.stringify(selectedTrainingArmy),
+      armiesJson: JSON.stringify([selectedTrainingArmy]),
       villagesJson: JSON.stringify(finalVillages),
     });
     const st = await fetchAIServerStatus();
@@ -934,7 +964,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
       spellSteps[i] = r.spell_steps ?? 8;
       abilitySteps[i] = r.ability_steps ?? 4;
 
-      const aIdx = (r.army_idx ?? i % 3) % 3;
+      const aIdx = (r.army_idx ?? 0) % 3;
       const vIdx = (r.village_idx ?? i % 5) % 5;
       armyLastWindow[aIdx].push(pct);
       if (armyLastWindow[aIdx].length > 20) armyLastWindow[aIdx].shift();
@@ -1118,20 +1148,47 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
 
   const activeTestModel = savedModels.find((m) => m.filename === testModelFile);
   const testArmies: ArmyLoadout[] = useMemo(() => {
+    if (activeTestModel?.army) {
+      return [activeTestModel.army];
+    }
     if (activeTestModel?.armies && activeTestModel.armies.length > 0) {
-      return activeTestModel.armies;
+      return [activeTestModel.armies[0]];
+    }
+    if (inspectData?.model_meta?.army) {
+      return [inspectData.model_meta.army];
     }
     if (
       inspectData?.model_meta?.armies &&
       inspectData.model_meta.armies.length > 0
     ) {
-      return inspectData.model_meta.armies;
+      return [inspectData.model_meta.armies[0]];
     }
-    return catalog.preset_armies.slice(0, 3);
+    return [army];
   }, [
     activeTestModel,
+    inspectData?.model_meta?.army,
     inspectData?.model_meta?.armies,
-    catalog.preset_armies,
+    army,
+  ]);
+
+  // Automatically equip the selected test model's exported army composition in Tester mode
+  useEffect(() => {
+    if (studioMode !== 'tester') return;
+    const modelArmy =
+      activeTestModel?.army ??
+      activeTestModel?.armies?.[0] ??
+      inspectData?.model_meta?.army ??
+      inspectData?.model_meta?.armies?.[0];
+    if (modelArmy && modelArmy.name !== army.name) {
+      onSelectArmy(modelArmy);
+    }
+  }, [
+    studioMode,
+    activeTestModel,
+    inspectData?.model_meta?.army,
+    inspectData?.model_meta?.armies,
+    army.name,
+    onSelectArmy,
   ]);
 
   const testVillages: VillageLayout[] = useMemo(() => {
@@ -1309,7 +1366,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                     <option value="scratch">🆕 Start Fresh (Untrained Weights)</option>
                     {savedModels.map((m) => (
                       <option key={m.filename} value={m.filename}>
-                        💾 {m.filename} (Ep {m.episode} • Best {m.best_pct}% {m.best_stars}★)
+                        💾 {m.filename} ({m.army_name ?? m.army?.name ?? 'Army'} • Ep {m.episode} • Best {m.best_pct}% {m.best_stars}★)
                       </option>
                     ))}
                   </select>
@@ -1318,7 +1375,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   <span>Save Checkpoint Name</span>
                   <input
                     type="text"
-                    placeholder="Auto: attacker_ep...pt"
+                    placeholder={`Auto: ${selectedArmySlug}_ep...pt`}
                     value={saveName}
                     disabled={isTraining}
                     onChange={(e) => setSaveName(e.target.value)}
@@ -1336,16 +1393,16 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   color: '#cbd5e1',
                 }}
               >
-                <span>Matchup Sampling</span>
+                <span>Village Sampling</span>
                 <select
                   className="clash-select"
                   value={matchupMode}
                   disabled={isTraining}
                   onChange={(e) => setMatchupMode(e.target.value as MatchupMode)}
                 >
-                  <option value="random">🎲 Stratified Random (Armies × Bases)</option>
-                  <option value="round_robin">🔁 Round-Robin (5V × 3A)</option>
-                  <option value="fixed_current">📌 Single Fixed Matchup</option>
+                  <option value="random">🎲 Stratified Random Villages</option>
+                  <option value="round_robin">🔁 Round-Robin Villages</option>
+                  <option value="fixed_current">📌 Single Fixed Village</option>
                 </select>
               </label>
 
@@ -1451,22 +1508,111 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
               </div>
             </div>
 
-            {/* VILLAGES & ARMY COMPOSITIONS TRAINING BUNDLE */}
+            {/* SINGLE TRAINING ARMY COMPOSITION & VILLAGE LAYOUTS */}
             <div className="ai-preset-bundle-strip">
               <div className="ai-bundle-card">
                 <div className="ai-bundle-header">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <h4>
-                      ⚔️ Attack Compositions ({selectedArmyNames.length} selected)
-                    </h4>
-                    {isLockedToResume && (
-                      <span className="badge-gold">🔒 Locked to Checkpoint</span>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      width: '100%',
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <h4>⚔️ Training Army Composition (1 Army per Model)</h4>
+                      {isLockedToResume && (
+                        <span className="badge-gold">🔒 Locked to Checkpoint</span>
+                      )}
+                    </div>
+                    {onGoToArmyBuilder && !isLockedToResume && !isTraining && (
+                      <button
+                        type="button"
+                        className="speed-pill-btn"
+                        onClick={onGoToArmyBuilder}
+                      >
+                        ✏️ Customize in Army Recipe
+                      </button>
                     )}
                   </div>
                 </div>
+
+                <div
+                  style={{
+                    background: 'rgba(250, 204, 21, 0.08)',
+                    border: '1px solid rgba(250, 204, 21, 0.35)',
+                    borderRadius: 8,
+                    padding: '8px 12px',
+                    marginBottom: 8,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: 6,
+                    }}
+                  >
+                    <strong style={{ color: '#facc15', fontSize: '0.88rem' }}>
+                      Active Training Army: {selectedTrainingArmy.name}
+                    </strong>
+                    <code
+                      style={{
+                        fontSize: '0.72rem',
+                        color: '#38bdf8',
+                        background: '#0f172a',
+                        padding: '2px 6px',
+                        borderRadius: 4,
+                        border: '1px solid #1e293b',
+                      }}
+                    >
+                      {saveName.trim() || `${selectedArmySlug}_ep{N}_{pct}pct_{stars}star.pt`}
+                    </code>
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: '#e2e8f0' }}>
+                    <strong>Troops:</strong>{' '}
+                    {selectedTrainingArmy.troops
+                      .map(([t, c]) => `${c}× ${t}`)
+                      .join(', ') || 'None'}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '0.73rem',
+                      color: '#cbd5e1',
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: '4px 12px',
+                    }}
+                  >
+                    <span>
+                      <strong>Heroes:</strong>{' '}
+                      {selectedTrainingArmy.heroes
+                        .map(([h, p]) => `${h} (${p})`)
+                        .join(', ') || 'None'}
+                    </span>
+                    <span>
+                      <strong>Spells:</strong>{' '}
+                      {selectedTrainingArmy.spells
+                        .map(([s, c]) => `${c}× ${s}`)
+                        .join(', ') || 'None'}
+                    </span>
+                    <span>
+                      <strong>Siege:</strong>{' '}
+                      {selectedTrainingArmy.siege_machine ?? 'None'}
+                    </span>
+                  </div>
+                </div>
+
                 <div className="ai-bundle-list">
-                  {allArmies.map((a) => {
-                    const isSelected = selectedArmyNames.includes(a.name);
+                  {availableArmies.map((a) => {
+                    const isSelected = selectedTrainingArmy.name === a.name;
                     const isCustom = !catalog.preset_armies.some(
                       (pa) => pa.name === a.name
                     );
@@ -1478,19 +1624,13 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                         }`}
                       >
                         <input
-                          type="checkbox"
+                          type="radio"
+                          name="training-army-composition"
                           checked={isSelected}
                           disabled={isLockedToResume || isTraining}
-                          onChange={(e) => {
+                          onChange={() => {
                             if (isLockedToResume || isTraining) return;
-                            if (e.target.checked) {
-                              setSelectedArmyNames((prev) => [...prev, a.name]);
-                            } else {
-                              if (selectedArmyNames.length <= 1) return;
-                              setSelectedArmyNames((prev) =>
-                                prev.filter((n) => n !== a.name)
-                              );
-                            }
+                            onSelectArmy(a);
                           }}
                         />
                         <div style={{ flex: 1, minWidth: 0 }}>
@@ -1618,6 +1758,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   <thead>
                     <tr>
                       <th>Checkpoint File</th>
+                      <th>Trained Army Composition</th>
                       <th>Episodes</th>
                       <th>Peak Destruction</th>
                       <th>Hyperparams</th>
@@ -1628,173 +1769,198 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {savedModels.map((m) => {
-                      const isEditing = renamingModel === m.filename;
-                      const isCurrentResume = resumeFrom === m.filename;
-
-                      return (
-                        <tr
-                          key={m.filename}
-                          style={
-                            isCurrentResume
-                              ? { background: 'rgba(250, 204, 21, 0.08)' }
-                              : undefined
-                          }
+                    {savedModels.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={9}
+                          style={{
+                            textAlign: 'center',
+                            padding: '18px 12px',
+                            color: '#94a3b8',
+                            fontSize: '0.82rem',
+                          }}
                         >
-                          <td>
-                            {isEditing ? (
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 4,
-                                }}
-                              >
-                                <input
-                                  type="text"
-                                  value={renameInput}
-                                  onChange={(e) => setRenameInput(e.target.value)}
-                                  className="clash-select"
+                          No trained models in <code>trained_models/</code> yet. Select a Training Army Composition above and click <strong>Train Fresh</strong>.
+                        </td>
+                      </tr>
+                    ) : (
+                      savedModels.map((m) => {
+                        const isEditing = renamingModel === m.filename;
+                        const isCurrentResume = resumeFrom === m.filename;
+                        const modelArmyName =
+                          m.army_name ??
+                          m.army?.name ??
+                          m.army_names?.[0] ??
+                          '—';
+
+                        return (
+                          <tr
+                            key={m.filename}
+                            style={
+                              isCurrentResume
+                                ? { background: 'rgba(250, 204, 21, 0.08)' }
+                                : undefined
+                            }
+                          >
+                            <td>
+                              {isEditing ? (
+                                <div
                                   style={{
-                                    padding: '2px 6px',
-                                    fontSize: '0.8rem',
-                                    minWidth: 160,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4,
                                   }}
-                                  autoFocus
-                                />
-                                <button
-                                  className="clash-btn gold"
-                                  style={{
-                                    padding: '2px 8px',
-                                    fontSize: '0.74rem',
-                                  }}
-                                  onClick={() => handleRenameModel(m.filename)}
                                 >
-                                  Save
-                                </button>
+                                  <input
+                                    type="text"
+                                    value={renameInput}
+                                    onChange={(e) => setRenameInput(e.target.value)}
+                                    className="clash-select"
+                                    style={{
+                                      padding: '2px 6px',
+                                      fontSize: '0.8rem',
+                                      minWidth: 160,
+                                    }}
+                                    autoFocus
+                                  />
+                                  <button
+                                    className="clash-btn gold"
+                                    style={{
+                                      padding: '2px 8px',
+                                      fontSize: '0.74rem',
+                                    }}
+                                    onClick={() => handleRenameModel(m.filename)}
+                                  >
+                                    Save
+                                  </button>
+                                  <button
+                                    className="clash-btn"
+                                    style={{
+                                      padding: '2px 6px',
+                                      fontSize: '0.74rem',
+                                    }}
+                                    onClick={() => setRenamingModel(null)}
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ) : (
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 6,
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      fontWeight: 700,
+                                      color: isCurrentResume ? '#facc15' : '#f8fafc',
+                                      cursor: 'pointer',
+                                    }}
+                                    onClick={() => {
+                                      setInspectedModelFile(m.filename);
+                                      setTrainerTab('stats');
+                                    }}
+                                    title="Click to inspect this model's training progression curves"
+                                  >
+                                    💾 {m.filename}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    title="Rename checkpoint"
+                                    style={{
+                                      background: 'transparent',
+                                      border: 'none',
+                                      color: '#38bdf8',
+                                      cursor: 'pointer',
+                                      fontSize: '0.78rem',
+                                      padding: 0,
+                                    }}
+                                    onClick={() => {
+                                      setRenamingModel(m.filename);
+                                      setRenameInput(m.filename);
+                                    }}
+                                  >
+                                    ✏️
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                            <td style={{ color: '#38bdf8', fontWeight: 700 }}>
+                              ⚔️ {modelArmyName}
+                            </td>
+                            <td>
+                              <strong>Ep {m.episode.toLocaleString()}</strong>
+                            </td>
+                            <td style={{ color: '#fde047', fontWeight: 700 }}>
+                              {m.best_pct}% ({m.best_stars}★)
+                            </td>
+                            <td style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                              LR {m.hyperparams?.lr ?? 0.0003} • B=
+                              {m.hyperparams?.batch_episodes ?? 12} • K=
+                              {m.hyperparams?.ppo_epochs ?? 4}
+                            </td>
+                            <td>
+                              {m.has_history ? (
+                                <span
+                                  className="tb-compression-badge"
+                                  title={`Raw JSON telemetry: ${m.raw_kb} KB → Compressed binary z85: ${m.compressed_kb} KB (${m.compression_ratio}× reduction)`}
+                                >
+                                  {m.compressed_kb} KB ({m.compression_ratio}× z85)
+                                </span>
+                              ) : (
+                                <span style={{ color: '#64748b' }}>—</span>
+                              )}
+                            </td>
+                            <td>{(m.size_kb / 1024).toFixed(1)} MB</td>
+                            <td style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                              {m.updated_at}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: 5 }}>
                                 <button
                                   className="clash-btn"
                                   style={{
-                                    padding: '2px 6px',
-                                    fontSize: '0.74rem',
-                                  }}
-                                  onClick={() => setRenamingModel(null)}
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                            ) : (
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 6,
-                                }}
-                              >
-                                <span
-                                  style={{
-                                    fontWeight: 700,
-                                    color: isCurrentResume ? '#facc15' : '#f8fafc',
-                                    cursor: 'pointer',
+                                    padding: '2px 8px',
+                                    fontSize: '0.72rem',
+                                    borderColor: '#38bdf8',
+                                    color: '#7dd3fc',
                                   }}
                                   onClick={() => {
                                     setInspectedModelFile(m.filename);
                                     setTrainerTab('stats');
                                   }}
-                                  title="Click to inspect this model's training progression curves"
+                                  title="View full training progression curves for this model"
                                 >
-                                  💾 {m.filename}
-                                </span>
+                                  📈 Curves
+                                </button>
                                 <button
-                                  type="button"
-                                  title="Rename checkpoint"
-                                  style={{
-                                    background: 'transparent',
-                                    border: 'none',
-                                    color: '#38bdf8',
-                                    cursor: 'pointer',
-                                    fontSize: '0.78rem',
-                                    padding: 0,
-                                  }}
+                                  className={`clash-btn ${
+                                    isCurrentResume ? 'gold' : ''
+                                  }`}
+                                  style={{ padding: '2px 8px', fontSize: '0.72rem' }}
+                                  onClick={() => setResumeFrom(m.filename)}
+                                >
+                                  {isCurrentResume ? '✓ Resume' : 'Resume'}
+                                </button>
+                                <button
+                                  className="clash-btn green"
+                                  style={{ padding: '2px 8px', fontSize: '0.72rem' }}
                                   onClick={() => {
-                                    setRenamingModel(m.filename);
-                                    setRenameInput(m.filename);
+                                    if (m.army) onSelectArmy(m.army);
+                                    setTestModelFile(m.filename);
+                                    onSwitchStudioMode('tester');
                                   }}
                                 >
-                                  ✏️
+                                  Test
                                 </button>
                               </div>
-                            )}
-                          </td>
-                          <td>
-                            <strong>Ep {m.episode.toLocaleString()}</strong>
-                          </td>
-                          <td style={{ color: '#fde047', fontWeight: 700 }}>
-                            {m.best_pct}% ({m.best_stars}★)
-                          </td>
-                          <td style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
-                            LR {m.hyperparams?.lr ?? 0.0003} • B=
-                            {m.hyperparams?.batch_episodes ?? 12} • K=
-                            {m.hyperparams?.ppo_epochs ?? 4}
-                          </td>
-                          <td>
-                            {m.has_history ? (
-                              <span
-                                className="tb-compression-badge"
-                                title={`Raw JSON telemetry: ${m.raw_kb} KB → Compressed binary z85: ${m.compressed_kb} KB (${m.compression_ratio}× reduction)`}
-                              >
-                                {m.compressed_kb} KB ({m.compression_ratio}× z85)
-                              </span>
-                            ) : (
-                              <span style={{ color: '#64748b' }}>—</span>
-                            )}
-                          </td>
-                          <td>{(m.size_kb / 1024).toFixed(1)} MB</td>
-                          <td style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                            {m.updated_at}
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', gap: 5 }}>
-                              <button
-                                className="clash-btn"
-                                style={{
-                                  padding: '2px 8px',
-                                  fontSize: '0.72rem',
-                                  borderColor: '#38bdf8',
-                                  color: '#7dd3fc',
-                                }}
-                                onClick={() => {
-                                  setInspectedModelFile(m.filename);
-                                  setTrainerTab('stats');
-                                }}
-                                title="View full training progression curves for this model"
-                              >
-                                📈 Curves
-                              </button>
-                              <button
-                                className={`clash-btn ${
-                                  isCurrentResume ? 'gold' : ''
-                                }`}
-                                style={{ padding: '2px 8px', fontSize: '0.72rem' }}
-                                onClick={() => setResumeFrom(m.filename)}
-                              >
-                                {isCurrentResume ? '✓ Resume' : 'Resume'}
-                              </button>
-                              <button
-                                className="clash-btn green"
-                                style={{ padding: '2px 8px', fontSize: '0.72rem' }}
-                                onClick={() => {
-                                  setTestModelFile(m.filename);
-                                  onSwitchStudioMode('tester');
-                                }}
-                              >
-                                Test
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -2710,24 +2876,38 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                 }
 
                 if (item.id === 'army_performance') {
+                  const armySeriesList =
+                    (matchupStats?.army_stats ?? []).length > 0
+                      ? matchupStats.army_stats.map((st, idx) => ({
+                          id: `army_${idx}`,
+                          label: st.full_name || st.name,
+                          shortLabel: st.name,
+                          color: ARMY_COLORS[idx % ARMY_COLORS.length],
+                          values: chartData.armyRolling[idx] ?? chartData.roll10Pct,
+                          unit: '%',
+                          decimals: 1,
+                        }))
+                      : [
+                          {
+                            id: 'army_0',
+                            label: selectedTrainingArmy.name,
+                            shortLabel: selectedTrainingArmy.name,
+                            color: ARMY_COLORS[0],
+                            values: chartData.armyRolling[0] ?? [],
+                            unit: '%',
+                            decimals: 1,
+                          },
+                        ];
                   return (
                     <TelemetryChart
                       key={item.id}
                       id={item.id}
-                      title="9. Army Mastery Progression (3 TH18 Meta Armies)"
-                      subtitle="Rolling Destruction % per attack composition"
+                      title="9. Trained Army Composition Mastery"
+                      subtitle="Rolling Destruction % for the model's dedicated army composition"
                       episodes={chartData.epAxis}
                       episodeMeta={chartData.epMeta}
                       defaultYDomain={[0, 100]}
-                      series={ARMY_SHORT.map((name, idx) => ({
-                        id: `army_${idx}`,
-                        label: matchupStats.armies?.[idx] ?? name,
-                        shortLabel: name,
-                        color: ARMY_COLORS[idx],
-                        values: chartData.armyRolling[idx] ?? [],
-                        unit: '%',
-                        decimals: 1,
-                      }))}
+                      series={armySeriesList}
                       smoothing={smoothing}
                       zoomRange={getZoomForChart(item.id)}
                       onZoomChange={(r) => setZoomForChart(item.id, r)}
@@ -2738,7 +2918,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                         <table className="ai-matrix-table">
                           <thead>
                             <tr>
-                              <th>TH18 Meta Army</th>
+                              <th>Trained Army Composition</th>
                               <th>Used %</th>
                               <th>Recent 50</th>
                               <th>All Avg</th>
@@ -3003,14 +3183,19 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
           <select
             className="clash-select"
             value={testModelFile}
+            disabled={savedModels.length === 0}
             onChange={(e) => setTestModelFile(e.target.value)}
           >
-            {savedModels.map((m) => (
-              <option key={m.filename} value={m.filename}>
-                💾 {m.filename} (Ep {m.episode} • Best {m.best_pct}%{' '}
-                {m.best_stars}★)
-              </option>
-            ))}
+            {savedModels.length === 0 ? (
+              <option value="">No trained models yet — train a model first</option>
+            ) : (
+              savedModels.map((m) => (
+                <option key={m.filename} value={m.filename}>
+                  💾 {m.filename} ({m.army_name ?? m.army?.name ?? 'Army'} • Ep {m.episode} • Best {m.best_pct}%{' '}
+                  {m.best_stars}★)
+                </option>
+              ))
+            )}
           </select>
 
           <div
@@ -3027,6 +3212,12 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
             }}
           >
             <span>
+              <strong style={{ color: '#e2e8f0' }}>Army:</strong>{' '}
+              <span style={{ color: '#38bdf8' }}>
+                {activeTestModel?.army_name ?? activeTestModel?.army?.name ?? army.name}
+              </span>
+            </span>
+            <span>
               <strong style={{ color: '#e2e8f0' }}>Ep:</strong>{' '}
               {activeTestModel?.episode ?? 0}
             </span>
@@ -3041,7 +3232,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
             </span>
             <span>
               <strong style={{ color: '#e2e8f0' }}>Batch:</strong>{' '}
-              {testHp?.batch_episodes ?? 4} eps
+              {testHp?.batch_episodes ?? 12} eps
             </span>
             <span>
               <strong style={{ color: '#e2e8f0' }}>Epochs:</strong>{' '}
@@ -3086,15 +3277,18 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
             <button
               className="clash-btn gold"
               style={{ flex: 1 }}
-              disabled={!serverStatus?.online || isRunningRollout}
+              disabled={!serverStatus?.online || isRunningRollout || !testModelFile}
               onClick={handleRunTrainedModelTest}
             >
               {isRunningRollout
                 ? '⏳ Running...'
-                : `▶️ Attack with ${testModelFile}`}
+                : testModelFile
+                ? `▶️ Attack with ${testModelFile}`
+                : 'Train a Model First'}
             </button>
             <button
               className="clash-btn"
+              disabled={!testModelFile}
               onClick={() => {
                 setInspectedModelFile(testModelFile);
                 setTrainerTab('stats');
@@ -3110,15 +3304,15 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
         <section className="ai-card">
           <div className="ai-card-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <h3>⚔️ Model Attack Compositions ({testArmies.length})</h3>
+              <h3>⚔️ Model Army Composition</h3>
               <span className="badge-gold" style={{ fontSize: '0.66rem' }}>
-                🔒 Immutable
+                🔒 Exported with Model
               </span>
             </div>
           </div>
 
           <div className="ai-prob-list">
-            {testArmies.map((arm, idx) => {
+            {testArmies.map((arm) => {
               const isSelected = arm.name === army.name;
               return (
                 <div
@@ -3130,10 +3324,20 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   <div style={{ minWidth: 0 }}>
                     <span
                       className="ai-prob-label"
-                      style={{ fontWeight: isSelected ? 700 : 500 }}
+                      style={{ fontWeight: 700, color: '#facc15' }}
                     >
-                      A{idx + 1}: {arm.name}
+                      {arm.name}
                     </span>
+                    <div
+                      style={{
+                        fontSize: '0.72rem',
+                        color: '#e2e8f0',
+                        marginTop: 3,
+                      }}
+                    >
+                      <strong>Troops:</strong>{' '}
+                      {arm.troops.map(([t, c]) => `${c}× ${t}`).join(', ')}
+                    </div>
                     <div
                       style={{
                         fontSize: '0.7rem',
@@ -3141,13 +3345,11 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                         marginTop: 2,
                       }}
                     >
-                      {arm.troops
-                        .slice(0, 3)
-                        .map(([t, c]) => `${c}× ${t}`)
-                        .join(', ')}
-                      {arm.troops.length > 3
-                        ? ` +${arm.troops.length - 3} more`
-                        : ''}
+                      <strong>Heroes:</strong>{' '}
+                      {arm.heroes.map(([h]) => h).join(', ')} •{' '}
+                      <strong>Spells:</strong>{' '}
+                      {arm.spells.map(([s, c]) => `${c}× ${s}`).join(', ')} •{' '}
+                      <strong>Siege:</strong> {arm.siege_machine ?? 'None'}
                     </div>
                   </div>
                   <span
