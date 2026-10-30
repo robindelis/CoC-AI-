@@ -36,7 +36,7 @@ class CoCSpatialEncoder(nn.Module):
 
     def __init__(
         self,
-        in_channels: int = 31,
+        in_channels: int = 50,
         subspatial_dim: int = 64,
         spatial_dim: int = 128,
         embed_dim: int = 256,
@@ -112,6 +112,23 @@ class CoCSpatialEncoder(nn.Module):
         )
 
     def forward(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        if obs.shape[1] == 50 and self.in_channels == 31:
+            # Backward compatibility adapter for legacy 31-channel checkpoints
+            adapted = torch.zeros(
+                (obs.shape[0], 31, obs.shape[2], obs.shape[3]),
+                dtype=obs.dtype,
+                device=obs.device,
+            )
+            adapted[:, 0:5] = obs[:, 0:5]
+            ground_idx = [5, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 20]
+            adapted[:, 5] = torch.clamp(obs[:, ground_idx].sum(dim=1), max=1.0)
+            air_idx = [6, 12, 19]
+            adapted[:, 6] = torch.clamp(obs[:, air_idx].sum(dim=1), max=1.0)
+            adapted[:, 7] = torch.clamp(obs[:, 21:25].max(dim=1).values, max=1.0)
+            adapted[:, 8] = torch.clamp(obs[:, 5:21].max(dim=1).values, max=1.0)
+            adapted[:, 9] = torch.clamp(obs[:, 25:29].max(dim=1).values, max=1.0)
+            adapted[:, 10:31] = obs[:, 29:50]
+            obs = adapted
         h = self.spatial_stem(obs)
         spatial_features = F.silu(h + self.context_res(h))
         global_embedding = self.global_tower(spatial_features)
@@ -153,7 +170,7 @@ class CoCActorCritic(nn.Module):
 
     def __init__(
         self,
-        in_channels: int = 31,
+        in_channels: int = 50,
         army_context_dim: int = 64,
         num_fraction_bins: int = 5,
     ):

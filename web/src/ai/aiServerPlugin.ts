@@ -699,7 +699,8 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
       const sess = new WasmBattleSession(layoutJson, armyJson);
       const flatObs = sess.extract_spatial_observation();
       const channels: number[][][] = [];
-      for (let ch = 0; ch < 31; ch++) {
+      const totalChannels = Math.max(1, Math.floor(flatObs.length / 2500));
+      for (let ch = 0; ch < totalChannels; ch++) {
         const grid: number[][] = [];
         for (let y = 0; y < 50; y++) {
           const row: number[] = [];

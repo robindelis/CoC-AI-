@@ -59,10 +59,10 @@
 <title>0</title>
 <polygon fill="lightyellow" stroke="none" points="303.75,-3826.75 135.25,-3826.75 135.25,-3788.25 303.75,-3788.25 303.75,-3826.75"/>
 <polygon fill="none" stroke="black" points="135.25,-3788.25 135.25,-3826.75 230,-3826.75 230,-3788.25 135.25,-3788.25"/>
-<text xml:space="preserve" text-anchor="start" x="140.25" y="-3810.5" font-family="Linux libertine" font-size="10.00">obs (1×31×50×50)</text>
+<text xml:space="preserve" text-anchor="start" x="140.25" y="-3810.5" font-family="Linux libertine" font-size="10.00">obs (1×50×50×50)</text>
 <text xml:space="preserve" text-anchor="start" x="164.25" y="-3796.25" font-family="Linux libertine" font-size="10.00">depth:0</text>
 <polygon fill="none" stroke="black" points="230,-3788.25 230,-3826.75 303.75,-3826.75 303.75,-3788.25 230,-3788.25"/>
-<text xml:space="preserve" text-anchor="start" x="235" y="-3803.38" font-family="Linux libertine" font-size="10.00">(1, 31, 50, 50)</text>
+<text xml:space="preserve" text-anchor="start" x="235" y="-3803.38" font-family="Linux libertine" font-size="10.00">(1, 50, 50, 50)</text>
 </g>
 <!-- 2 -->
 <g id="node3" class="node">
@@ -74,7 +74,7 @@
 <polygon fill="none" stroke="black" points="181.5,-3695.5 181.5,-3719.75 228.25,-3719.75 228.25,-3695.5 181.5,-3695.5"/>
 <text xml:space="preserve" text-anchor="start" x="191.38" y="-3703.5" font-family="Linux libertine" font-size="10.00">input:</text>
 <polygon fill="none" stroke="black" points="228.25,-3695.5 228.25,-3719.75 304.25,-3719.75 304.25,-3695.5 228.25,-3695.5"/>
-<text xml:space="preserve" text-anchor="start" x="233.25" y="-3703.5" font-family="Linux libertine" font-size="10.00">(1, 31, 50, 50) </text>
+<text xml:space="preserve" text-anchor="start" x="233.25" y="-3703.5" font-family="Linux libertine" font-size="10.00">(1, 50, 50, 50) </text>
 <polygon fill="none" stroke="black" points="181.5,-3671.25 181.5,-3695.5 228.25,-3695.5 228.25,-3671.25 181.5,-3671.25"/>
 <text xml:space="preserve" text-anchor="start" x="186.5" y="-3679.25" font-family="Linux libertine" font-size="10.00">output: </text>
 <polygon fill="none" stroke="black" points="228.25,-3671.25 228.25,-3695.5 304.25,-3695.5 304.25,-3671.25 228.25,-3671.25"/>

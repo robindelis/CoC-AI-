@@ -557,31 +557,31 @@ export class WasmBattleSession {
   }
 
   public extract_spatial_observation(): number[] {
-    const obs = new Array<number>(31 * 50 * 50).fill(0);
+    const obs = new Array<number>(50 * 50 * 50).fill(0);
     const idx = (ch: number, y: number, x: number) => ch * 2500 + y * 50 + x;
 
     const defChannelMap: Record<string, number> = {
-      ArcherTower: 10,
-      MultiArcherTower: 11,
-      RicochetCannon: 12,
-      Cannon: 13,
-      Mortar: 14,
-      AirDefense: 15,
-      WizardTower: 16,
-      SuperWizardTower: 17,
-      AirSweeper: 18,
-      HiddenTesla: 19,
-      BombTower: 20,
-      XBow: 21,
-      InfernoTower: 22,
-      Scattershot: 23,
-      BuildersHut: 24,
-      SpellTower: 25,
-      Monolith: 26,
-      MultiGearTower: 27,
-      Firespitter: 28,
-      RevengeTower: 29,
-      CraftingStation: 30,
+      ArcherTower: 29,
+      MultiArcherTower: 30,
+      RicochetCannon: 31,
+      Cannon: 32,
+      Mortar: 33,
+      AirDefense: 34,
+      WizardTower: 35,
+      SuperWizardTower: 36,
+      AirSweeper: 37,
+      HiddenTesla: 38,
+      BombTower: 39,
+      XBow: 40,
+      InfernoTower: 41,
+      Scattershot: 42,
+      BuildersHut: 43,
+      SpellTower: 44,
+      Monolith: 45,
+      MultiGearTower: 46,
+      Firespitter: 47,
+      RevengeTower: 48,
+      CraftingStation: 49,
     };
 
     for (const b of this.internalBuildings) {
@@ -626,24 +626,88 @@ export class WasmBattleSession {
       if (!u.alive) continue;
       const x = Math.max(0, Math.min(49, Math.floor(u.x)));
       const y = Math.max(0, Math.min(49, Math.floor(u.y)));
-      const sig = unitTypeSignature(u);
+
       if (u.team === 'Attacker') {
-        const ch = u.is_air ? 6 : 5;
-        obs[idx(ch, y, x)] = Math.min(1.0, obs[idx(ch, y, x)] + u.hp / 5000.0);
-        if (sig > obs[idx(8, y, x)]) {
-          obs[idx(8, y, x)] = sig;
+        if (u.unit_id === 'Totem') {
+          const hpRatio = Math.max(0, Math.min(1, u.hp / Math.max(1, u.max_hp)));
+          if (hpRatio > obs[idx(21, y, x)]) {
+            obs[idx(21, y, x)] = hpRatio;
+          }
+        } else if (u.is_hero) {
+          const heroChMap: Record<string, number> = {
+            BarbarianKing: 17,
+            ArcherQueen: 18,
+            GrandWarden: 19,
+            RoyalChampion: 20,
+          };
+          const ch = heroChMap[u.unit_id] ?? 17;
+          obs[idx(ch, y, x)] = 1.0;
+        } else {
+          // Attacker Troops
+          const troopSpecMap: Record<string, [number, number]> = {
+            Thrower: [5, 12.0],
+            Healer: [6, 5.0],
+            Furnace: [7, 2.0],
+            Druid: [8, 1.0],
+            DruidBear: [8, 1.0],
+            IceGolem: [9, 1.0],
+            SuperWallBreaker: [10, 1.0],
+            Headhunter: [11, 1.0],
+            Balloon: [12, 1.0],
+            Archer: [13, 4.0],
+            LogLauncher: [14, 1.0],
+            SuperYeti: [15, 1.0],
+            SuperValkyrie: [16, 1.0],
+          };
+          const entry = troopSpecMap[u.unit_id];
+          if (entry) {
+            const [ch, maxCnt] = entry;
+            obs[idx(ch, y, x)] = Math.min(1.0, obs[idx(ch, y, x)] + 1.0 / maxCnt);
+          }
         }
       } else {
-        if (sig > obs[idx(9, y, x)]) {
-          obs[idx(9, y, x)] = sig;
+        // Defender team
+        if (u.is_hero) {
+          obs[idx(26, y, x)] = 1.0;
+        } else if (u.unit_id === 'Skeleton') {
+          const ch = u.is_air ? 28 : 27;
+          obs[idx(ch, y, x)] = Math.min(1.0, obs[idx(ch, y, x)] + 0.1);
+        } else {
+          obs[idx(25, y, x)] = Math.min(1.0, obs[idx(25, y, x)] + 0.2);
         }
       }
     }
 
     for (const z of this.state.spells) {
-      const x = Math.max(0, Math.min(49, Math.floor(z.x)));
-      const y = Math.max(0, Math.min(49, Math.floor(z.y)));
-      obs[idx(7, y, x)] = 1.0;
+      const spellChMap: Record<string, number> = {
+        Rage: 22,
+        Poison: 23,
+        SkeletonSpell: 24,
+      };
+      const ch = spellChMap[z.spell_id];
+      if (ch !== undefined) {
+        const total = Math.max(0.1, z.total_duration_sec ?? 20.0);
+        const fade = Math.max(0, Math.min(1, z.remaining_sec / total));
+        const r = z.radius;
+        const rSq = r * r;
+        const minX = Math.max(0, Math.min(49, Math.floor(z.x - r)));
+        const maxX = Math.max(0, Math.min(49, Math.ceil(z.x + r)));
+        const minY = Math.max(0, Math.min(49, Math.floor(z.y - r)));
+        const maxY = Math.max(0, Math.min(49, Math.ceil(z.y + r)));
+
+        for (let y = minY; y <= maxY; y++) {
+          for (let x = minX; x <= maxX; x++) {
+            const dx = x + 0.5 - z.x;
+            const dy = y + 0.5 - z.y;
+            if (dx * dx + dy * dy <= rSq) {
+              const cur = obs[idx(ch, y, x)];
+              if (fade > cur) {
+                obs[idx(ch, y, x)] = fade;
+              }
+            }
+          }
+        }
+      }
     }
 
     return obs;
@@ -1083,6 +1147,7 @@ export class WasmBattleSession {
       y,
       radius: spec.radius,
       remaining_sec: Math.max(0.5, spec.duration_sec),
+      total_duration_sec: Math.max(0.5, spec.duration_sec),
     };
     this.state.spells.push(zone);
   }

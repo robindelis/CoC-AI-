@@ -177,6 +177,10 @@ impl SimUnit {
     }
 }
 
+fn default_duration() -> f32 {
+    20.0
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActiveSpellZone {
     pub spell_id: SpellId,
@@ -185,6 +189,8 @@ pub struct ActiveSpellZone {
     pub y: f32,
     pub radius: f32,
     pub remaining_sec: f32,
+    #[serde(default = "default_duration")]
+    pub total_duration_sec: f32,
     pub clone_budget_remaining: u16,
     #[serde(default, skip_serializing)]
     pub processed_unit_ids: Vec<u32>,
@@ -1316,6 +1322,7 @@ impl BattleEngine {
                     y: hy,
                     radius: 9.0,
                     remaining_sec: 20.0,
+                    total_duration_sec: 20.0,
                     clone_budget_remaining: 0,
                     processed_unit_ids: Vec::new(),
                     spawn_remaining: 0,
@@ -1914,6 +1921,7 @@ impl BattleEngine {
                         y,
                         radius: spec.radius,
                         remaining_sec: spec.duration_sec,
+                        total_duration_sec: spec.duration_sec,
                         clone_budget_remaining: 0,
                         processed_unit_ids: Vec::new(),
                         spawn_remaining: rem,
@@ -1949,6 +1957,7 @@ impl BattleEngine {
                         y,
                         radius: spec.radius,
                         remaining_sec: spec.duration_sec,
+                        total_duration_sec: spec.duration_sec,
                         clone_budget_remaining: 0,
                         processed_unit_ids: Vec::new(),
                         spawn_remaining: rem,
@@ -1971,6 +1980,7 @@ impl BattleEngine {
                     y,
                     radius: spec.radius,
                     remaining_sec: spec.duration_sec,
+                    total_duration_sec: spec.duration_sec,
                     clone_budget_remaining: *max_housing,
                     processed_unit_ids: Vec::new(),
                     spawn_remaining: 0,
@@ -1996,6 +2006,7 @@ impl BattleEngine {
                     y,
                     radius: eff_radius,
                     remaining_sec: eff_duration,
+                    total_duration_sec: eff_duration,
                     clone_budget_remaining: 0,
                     processed_unit_ids: Vec::new(),
                     spawn_remaining: 0,
@@ -5473,6 +5484,7 @@ impl BattleEngine {
                     y: iy,
                     radius,
                     remaining_sec: duration_sec,
+                    total_duration_sec: duration_sec,
                     clone_budget_remaining: 0,
                     processed_unit_ids: Vec::new(),
                     spawn_remaining: 0,
@@ -6415,25 +6427,59 @@ impl BattleEngine {
     /// Extracts a 31-channel 50x50 spatial tensor flattened `[31 * 50 * 50]` for RL agents:
     /// Ch 0: Building HP normalized (0..1)
     /// Ch 1: Defense DPS normalized (0..1)
-    /// Ch 2: Town Hall indicator (0 or 1)
-    /// Ch 3: Wall HP normalized (0..1)
-    /// Ch 4: No-Deploy Red Zone mask (0 or 1)
-    /// Ch 5: Attacking Ground unit HP density
-    /// Ch 6: Attacking Air unit HP density
-    /// Ch 7: Active Spell zone indicator
-    /// Ch 8: Allied Unit Type Signature `max_{u in Attacker(x,y)} phi(u) in [0, 1]`
-    /// Ch 9: Enemy Unit Type Signature `max_{u in Defender(x,y)} phi(u) in [0, 1]`
-    ///       (Defending CC troops, defending Heroes, TH18 Guardians, and Ground [0.10] vs Air [0.28] Skeletons)
-    /// Ch 10..30: 21 Dedicated Defense Type Channels (1 channel per defense type with mode/direction encoding):
-    ///   - Ch 10: Archer Tower          - Ch 17: Super Wizard Tower    - Ch 24: Builder's Hut
-    ///   - Ch 11: Multi-Archer Tower    - Ch 18: Air Sweeper (dir)     - Ch 25: Spell Tower (mode)
-    ///   - Ch 12: Ricochet Cannon       - Ch 19: Hidden Tesla (rev)    - Ch 26: Monolith
-    ///   - Ch 13: Cannon                - Ch 20: Bomb Tower            - Ch 27: Multi-Gear Tower (mode)
-    ///   - Ch 14: Mortar                - Ch 21: X-Bow (mode)          - Ch 28: Firespitter (dir)
-    ///   - Ch 15: Air Defense           - Ch 22: Inferno Tower (mode)  - Ch 29: Revenge Tower
-    ///   - Ch 16: Wizard Tower          - Ch 23: Scattershot           - Ch 30: Hot Candle (CraftingStation)
+    /// Extracts a 50-channel 50x50 spatial tensor flattened `[50 * 50 * 50]` for RL agents:
+    ///
+    /// Group 1: Base & Environment (Ch 0..4)
+    ///   - Ch 0: Building HP normalized `hp / 11000.0`
+    ///   - Ch 1: Defense DPS threat `min(spec.dps / 750.0, 1.0)`
+    ///   - Ch 2: Town Hall 18 Core Mask (1.0 on 4x4 footprint)
+    ///   - Ch 3: Wall durability `w.hp / w.max_hp`
+    ///   - Ch 4: No-Deploy Red Zone mask (1.0 = forbidden, 0.0 = legal)
+    ///
+    /// Group 2: Friendly Army Troops, Siege & CC (Ch 5..16)
+    ///   (Normalized w.r.t max available in army composition on each tile)
+    ///   - Ch 5: Thrower (max 12)
+    ///   - Ch 6: Healer (max 5)
+    ///   - Ch 7: Furnace (max 2)
+    ///   - Ch 8: Druid & DruidBear (max 1)
+    ///   - Ch 9: Ice Golem (max 1)
+    ///   - Ch 10: Super Wall Breaker (max 1)
+    ///   - Ch 11: Headhunter (max 1)
+    ///   - Ch 12: Balloon (max 1)
+    ///   - Ch 13: Archer (max 4)
+    ///   - Ch 14: Log Launcher (Siege Machine, max 1)
+    ///   - Ch 15: CC Super Yeti (max 1)
+    ///   - Ch 16: CC Super Valkyrie (max 1)
+    ///
+    /// Group 3: Friendly Heroes (Ch 17..20)
+    ///   (1.0 if hero is alive on tile, else 0.0)
+    ///   - Ch 17: Barbarian King
+    ///   - Ch 18: Archer Queen
+    ///   - Ch 19: Grand Warden
+    ///   - Ch 20: Royal Champion
+    ///
+    /// Group 4: Friendly Spells (Ch 21..24)
+    ///   - Ch 21: Totem Spell (summoned 1x1 unit HP ratio `u.hp / u.max_hp`)
+    ///   - Ch 22: Rage Spell (full AoE circle, fading `remaining_sec / total_duration`)
+    ///   - Ch 23: Poison Spell (full AoE circle, fading `remaining_sec / total_duration`)
+    ///   - Ch 24: Skeleton Spell (full AoE circle, fading `remaining_sec / total_duration`)
+    ///
+    /// Group 5: Enemy Defending Units (Ch 25..28)
+    ///   - Ch 25: Enemy Clan Castle Troops & TH18 Guardian (`min(count / 5.0, 1.0)`)
+    ///   - Ch 26: Enemy Heroes (`1.0` if alive on tile, else `0.0`)
+    ///   - Ch 27: Enemy Ground Skeletons (`min(count / 10.0, 1.0)`)
+    ///   - Ch 28: Enemy Air Skeletons (`min(count / 10.0, 1.0)`)
+    ///
+    /// Group 6: Dedicated Defense Types (Ch 29..49)
+    ///   - Ch 29: Archer Tower          - Ch 36: Super Wizard Tower    - Ch 43: Builder's Hut
+    ///   - Ch 30: Multi-Archer Tower    - Ch 37: Air Sweeper (dir)     - Ch 44: Spell Tower (mode)
+    ///   - Ch 31: Ricochet Cannon       - Ch 38: Hidden Tesla (rev)    - Ch 45: Monolith
+    ///   - Ch 32: Cannon                - Ch 39: Bomb Tower            - Ch 46: Multi-Gear Tower (mode)
+    ///   - Ch 33: Mortar                - Ch 40: X-Bow (mode)          - Ch 47: Firespitter (dir)
+    ///   - Ch 34: Air Defense           - Ch 41: Inferno Tower (mode)  - Ch 48: Revenge Tower
+    ///   - Ch 35: Wizard Tower          - Ch 42: Scattershot           - Ch 49: Hot Candle (CraftingStation)
     pub fn extract_spatial_observation(&self) -> Vec<f32> {
-        let mut obs = vec![0.0f32; 31 * 50 * 50];
+        let mut obs = vec![0.0f32; 50 * 50 * 50];
         let idx = |ch: usize, y: usize, x: usize| ch * 2500 + y * 50 + x;
 
         for b in &self.buildings {
@@ -6452,22 +6498,22 @@ impl BattleEngine {
                 0.0
             };
             let def_ch_val: Option<(usize, f32)> = match b.building_id {
-                BuildingId::ArcherTower => Some((10, 1.0)),
-                BuildingId::MultiArcherTower => Some((11, 1.0)),
-                BuildingId::RicochetCannon => Some((12, 1.0)),
-                BuildingId::Cannon => Some((13, 1.0)),
-                BuildingId::Mortar => Some((14, 1.0)),
-                BuildingId::AirDefense => Some((15, 1.0)),
-                BuildingId::WizardTower => Some((16, 1.0)),
-                BuildingId::SuperWizardTower => Some((17, 1.0)),
+                BuildingId::ArcherTower => Some((29, 1.0)),
+                BuildingId::MultiArcherTower => Some((30, 1.0)),
+                BuildingId::RicochetCannon => Some((31, 1.0)),
+                BuildingId::Cannon => Some((32, 1.0)),
+                BuildingId::Mortar => Some((33, 1.0)),
+                BuildingId::AirDefense => Some((34, 1.0)),
+                BuildingId::WizardTower => Some((35, 1.0)),
+                BuildingId::SuperWizardTower => Some((36, 1.0)),
                 BuildingId::AirSweeper => Some((
-                    18,
+                    37,
                     0.25 + 0.75 * (b.direction_deg.rem_euclid(360.0) / 360.0),
                 )),
-                BuildingId::HiddenTesla => Some((19, 1.0)),
-                BuildingId::BombTower => Some((20, 1.0)),
+                BuildingId::HiddenTesla => Some((38, 1.0)),
+                BuildingId::BombTower => Some((39, 1.0)),
                 BuildingId::XBow => Some((
-                    21,
+                    40,
                     if b.mode == DefenseMode::XBowGround {
                         0.5
                     } else {
@@ -6475,17 +6521,17 @@ impl BattleEngine {
                     },
                 )),
                 BuildingId::InfernoTower => Some((
-                    22,
+                    41,
                     if b.mode == DefenseMode::InfernoMulti {
                         0.5
                     } else {
                         1.0
                     },
                 )),
-                BuildingId::Scattershot => Some((23, 1.0)),
-                BuildingId::BuildersHut => Some((24, 1.0)),
+                BuildingId::Scattershot => Some((42, 1.0)),
+                BuildingId::BuildersHut => Some((43, 1.0)),
                 BuildingId::SpellTower => Some((
-                    25,
+                    44,
                     match b.mode {
                         DefenseMode::SpellTowerRage => 0.25,
                         DefenseMode::SpellTowerPoison => 0.50,
@@ -6494,9 +6540,9 @@ impl BattleEngine {
                         _ => 0.25,
                     },
                 )),
-                BuildingId::Monolith => Some((26, 1.0)),
+                BuildingId::Monolith => Some((45, 1.0)),
                 BuildingId::MultiGearTower => Some((
-                    27,
+                    46,
                     if b.mode == DefenseMode::MultiGearFastAttack {
                         0.5
                     } else {
@@ -6504,11 +6550,11 @@ impl BattleEngine {
                     },
                 )),
                 BuildingId::Firespitter => Some((
-                    28,
+                    47,
                     0.25 + 0.75 * (b.direction_deg.rem_euclid(360.0) / 360.0),
                 )),
-                BuildingId::RevengeTower => Some((29, 1.0)),
-                BuildingId::CraftingStation => Some((30, 1.0)),
+                BuildingId::RevengeTower => Some((48, 1.0)),
+                BuildingId::CraftingStation => Some((49, 1.0)),
                 _ => None,
             };
             for dy in 0..b.footprint {
@@ -6545,24 +6591,95 @@ impl BattleEngine {
             }
             let x = (u.x.floor() as i32).clamp(0, 49) as usize;
             let y = (u.y.floor() as i32).clamp(0, 49) as usize;
-            let sig = Self::unit_type_signature(u);
+
             if u.team == Team::Attacker {
-                let ch = if u.is_air { 6 } else { 5 };
-                obs[idx(ch, y, x)] = (obs[idx(ch, y, x)] + u.hp / 5000.0).min(1.0);
-                if sig > obs[idx(8, y, x)] {
-                    obs[idx(8, y, x)] = sig;
+                match u.kind {
+                    UnitKind::Troop(tid) => {
+                        let (ch, max_cnt) = match tid {
+                            TroopId::Thrower => (5, 12.0),
+                            TroopId::Healer => (6, 5.0),
+                            TroopId::Furnace => (7, 2.0),
+                            TroopId::Druid | TroopId::DruidBear => (8, 1.0),
+                            TroopId::IceGolem => (9, 1.0),
+                            TroopId::SuperWallBreaker => (10, 1.0),
+                            TroopId::Headhunter => (11, 1.0),
+                            TroopId::Balloon => (12, 1.0),
+                            TroopId::Archer => (13, 4.0),
+                            TroopId::LogLauncher => (14, 1.0),
+                            TroopId::SuperYeti => (15, 1.0),
+                            TroopId::SuperValkyrie => (16, 1.0),
+                            _ => (5, 12.0),
+                        };
+                        obs[idx(ch, y, x)] = (obs[idx(ch, y, x)] + 1.0 / max_cnt).min(1.0);
+                    }
+                    UnitKind::Hero(hid) => {
+                        let ch = match hid {
+                            HeroId::BarbarianKing => 17,
+                            HeroId::ArcherQueen => 18,
+                            HeroId::GrandWarden => 19,
+                            HeroId::RoyalChampion => 20,
+                            _ => 17,
+                        };
+                        obs[idx(ch, y, x)] = 1.0;
+                    }
+                    UnitKind::Totem => {
+                        let hp_ratio = (u.hp / u.max_hp.max(1.0)).clamp(0.0, 1.0);
+                        if hp_ratio > obs[idx(21, y, x)] {
+                            obs[idx(21, y, x)] = hp_ratio;
+                        }
+                    }
+                    UnitKind::Pet(_) => {}
                 }
             } else {
-                if sig > obs[idx(9, y, x)] {
-                    obs[idx(9, y, x)] = sig;
+                match u.kind {
+                    UnitKind::Hero(_) => {
+                        obs[idx(26, y, x)] = 1.0;
+                    }
+                    UnitKind::Troop(TroopId::Skeleton) => {
+                        if u.is_air {
+                            obs[idx(28, y, x)] = (obs[idx(28, y, x)] + 0.1).min(1.0);
+                        } else {
+                            obs[idx(27, y, x)] = (obs[idx(27, y, x)] + 0.1).min(1.0);
+                        }
+                    }
+                    UnitKind::Troop(_) => {
+                        obs[idx(25, y, x)] = (obs[idx(25, y, x)] + 0.2).min(1.0);
+                    }
+                    _ => {}
                 }
             }
         }
 
         for z in &self.spells {
-            let x = (z.x.floor() as i32).clamp(0, 49) as usize;
-            let y = (z.y.floor() as i32).clamp(0, 49) as usize;
-            obs[idx(7, y, x)] = 1.0;
+            let spell_ch = match z.spell_id {
+                SpellId::Rage => Some(22),
+                SpellId::Poison => Some(23),
+                SpellId::SkeletonSpell => Some(24),
+                _ => None,
+            };
+            if let Some(ch) = spell_ch {
+                let total = z.total_duration_sec.max(0.1);
+                let fade = (z.remaining_sec / total).clamp(0.0, 1.0);
+                let r = z.radius;
+                let r_sq = r * r;
+                let min_x = ((z.x - r).floor() as i32).clamp(0, 49) as usize;
+                let max_x = ((z.x + r).ceil() as i32).clamp(0, 49) as usize;
+                let min_y = ((z.y - r).floor() as i32).clamp(0, 49) as usize;
+                let max_y = ((z.y + r).ceil() as i32).clamp(0, 49) as usize;
+
+                for y in min_y..=max_y {
+                    for x in min_x..=max_x {
+                        let dx = (x as f32 + 0.5) - z.x;
+                        let dy = (y as f32 + 0.5) - z.y;
+                        if dx * dx + dy * dy <= r_sq {
+                            let cur = obs[idx(ch, y, x)];
+                            if fade > cur {
+                                obs[idx(ch, y, x)] = fade;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         obs

@@ -63,7 +63,7 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
     so the 3D CNN Feature Map diagram, Layer-by-Layer table, KPI pills, and PyTorch code
     in the Web UI always reflect any edits made to `python/coc_rl/networks.py` on every refresh.
     """
-    in_ch = int(getattr(model, "in_channels", 31))
+    in_ch = int(getattr(model, "in_channels", 50))
     army_ctx_dim = int(getattr(model, "army_context_dim", 64))
     num_frac_bins = int(getattr(model, "num_fraction_bins", 5))
     spatial_dim = int(getattr(model.encoder, "spatial_dim", 128))
@@ -484,10 +484,10 @@ def ensure_architecture_diagrams(
     """
     os.makedirs(ARCH_DIR, exist_ok=True)
     if model is None:
-        in_ch = input_size[1] if input_size is not None else 31
+        in_ch = input_size[1] if input_size is not None else 50
         model = CoCActorCritic(in_channels=in_ch)
     else:
-        in_ch = int(getattr(model, "in_channels", 31))
+        in_ch = int(getattr(model, "in_channels", 50))
 
     if input_size is None:
         input_size = (1, in_ch, 50, 50)

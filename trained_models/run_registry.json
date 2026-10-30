@@ -4,10 +4,10 @@
   "models": {
     "v3_per_defense_31ch": {
       "id": "v3_per_defense_31ch",
-      "name": "v3.0 \u2014 31-Channel Per-Defense CNN & Single-Army Specialist Actor-Critic",
+      "name": "v3.0 — 50-Channel Dedicated CNN & Single-Army Specialist Actor-Critic",
       "arch_version": "3.0",
       "status": "active",
-      "in_channels": 31,
+      "in_channels": 50,
       "army_name": "TH18 Thrower + Healer + Totem Smash (Meta)",
       "army_slug": "thrower_healer_totem_smash",
       "action_heads": [

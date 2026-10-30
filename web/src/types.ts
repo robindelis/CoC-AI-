@@ -241,6 +241,7 @@ export interface ActiveSpellZone {
   y: number;
   radius: number;
   remaining_sec: number;
+  total_duration_sec?: number;
 }
 
 export type ProjectileKind =

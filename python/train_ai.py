@@ -313,7 +313,13 @@ def load_attacker_model(
         except Exception:
             attacker_ckpt_meta = {}
 
-    live_attacker = CoCActorCritic(in_channels=31, army_context_dim=64).to(device)
+    in_channels = 50
+    if "model_state_dict" in attacker_ckpt_meta and isinstance(attacker_ckpt_meta["model_state_dict"], dict):
+        stem_w = attacker_ckpt_meta["model_state_dict"].get("encoder.spatial_stem.0.weight")
+        if stem_w is not None and hasattr(stem_w, "shape"):
+            in_channels = int(stem_w.shape[1])
+
+    live_attacker = CoCActorCritic(in_channels=in_channels, army_context_dim=64).to(device)
 
     if "model_state_dict" in attacker_ckpt_meta and isinstance(attacker_ckpt_meta["model_state_dict"], dict):
         try:

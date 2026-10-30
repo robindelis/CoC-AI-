@@ -1120,4 +1120,67 @@ mod tests {
             engine.tick
         );
     }
+
+    #[test]
+    fn test_50_channel_spatial_observation() {
+        let layouts = get_preset_layouts();
+        let armies = get_preset_armies();
+        let layout = &layouts[0];
+        let army = &armies[0];
+        let mut engine = BattleEngine::new(layout, army);
+
+        let obs0 = engine.extract_spatial_observation();
+        assert_eq!(obs0.len(), 50 * 50 * 50);
+
+        let idx = |ch: usize, y: usize, x: usize| ch * 2500 + y * 50 + x;
+
+        // Base channels: TH18 core at (23, 23)
+        assert_eq!(obs0[idx(2, 23, 23)], 1.0);
+
+        // Deploy 3 Throwers at (10.5, 10.5)
+        for _ in 0..3 {
+            engine.spawn_troop_unit(TroopId::Thrower, Team::Attacker, 10.5, 10.5, None);
+        }
+        // Deploy Barbarian King at (12.5, 12.5)
+        engine.spawn_hero_unit(HeroId::BarbarianKing, Team::Attacker, 12.5, 12.5);
+
+        // Spawn Totem at (14.5, 14.5)
+        engine.cast_spell(SpellId::Totem, Team::Attacker, 14.5, 14.5);
+
+        // Cast Rage spell at (20.0, 20.0)
+        engine.cast_spell(SpellId::Rage, Team::Attacker, 20.0, 20.0);
+
+        let obs1 = engine.extract_spatial_observation();
+        assert_eq!(obs1.len(), 125_000);
+
+        // Ch 5: Thrower count 3 / 12 = 0.25 on tile (10, 10)
+        let thrower_val = obs1[idx(5, 10, 10)];
+        assert!((thrower_val - 0.25).abs() < 1e-4, "Thrower Ch 5 should be 0.25, got {}", thrower_val);
+
+        // Ch 17: Barbarian King on tile (12, 12) is 1.0
+        assert_eq!(obs1[idx(17, 12, 12)], 1.0);
+
+        // Ch 21: Totem HP ratio on tile (14, 14) is 1.0
+        let totem_val = obs1[idx(21, 14, 14)];
+        assert!((totem_val - 1.0).abs() < 1e-4, "Totem Ch 21 should be 1.0, got {}", totem_val);
+
+        // Ch 22: Rage spell at center (20, 20) is 1.0 (freshly cast)
+        let rage_center = obs1[idx(22, 20, 20)];
+        assert!((rage_center - 1.0).abs() < 1e-4, "Rage center Ch 22 should be 1.0, got {}", rage_center);
+
+        // Rage spell within radius (23, 20) is dist 3.0 <= radius 6.0
+        let rage_near = obs1[idx(22, 20, 23)];
+        assert!((rage_near - 1.0).abs() < 1e-4, "Rage near Ch 22 should be 1.0, got {}", rage_near);
+
+        // Rage spell far outside radius (40, 40) is 0.0
+        assert_eq!(obs1[idx(22, 40, 40)], 0.0);
+
+        // Check step decay of Rage spell
+        for _ in 0..10 {
+            engine.step(BattleAction::NoOp);
+        }
+        let obs2 = engine.extract_spatial_observation();
+        let rage_decayed = obs2[idx(22, 20, 20)];
+        assert!(rage_decayed < 1.0 && rage_decayed > 0.0, "Rage should fade over time, got {}", rage_decayed);
+    }
 }

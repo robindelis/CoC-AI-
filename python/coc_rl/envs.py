@@ -14,20 +14,13 @@ class CoCAttackerEnv(gym.Env):
     Gymnasium RL Environment for training an AI to attack a max-level Town Hall 18 village.
 
     Observation Space:
-        Box(0.0, 1.0, shape=(31, 50, 50), dtype=np.float32)
-        - Channel 0: Live Building HP normalized (0..1)
-        - Channel 1: Defense DPS threat normalized (0..1)
-        - Channel 2: Town Hall 18 mask (0 or 1)
-        - Channel 3: Live Wall HP normalized (0..1)
-        - Channel 4: No-Deploy Red Zone mask (1 = red zone, 0 = valid troop deployment)
-        - Channel 5: Attacking Ground unit HP density
-        - Channel 6: Attacking Air unit HP density
-        - Channel 7: Active Spell zone indicator
-        - Channel 8: Allied Unit Type Signature phi(u) in [0, 1]
-        - Channel 9: Enemy Unit Type Signature phi(u) in [0, 1] (CC, Heroes, Guardians, Ground vs Air Skeletons)
-        - Channels 10..30: 21 Dedicated Defense Type Channels (ArcherTower, MultiArcherTower, RicochetCannon,
-          Cannon, Mortar, AirDefense, WizardTower, SuperWizardTower, AirSweeper, HiddenTesla, BombTower, XBow,
-          InfernoTower, Scattershot, BuildersHut, SpellTower, Monolith, MultiGearTower, Firespitter, RevengeTower,
+        Box(0.0, 1.0, shape=(50, 50, 50), dtype=np.float32)
+        - Group 1: Base & Environment (Ch 0..4: Building HP, Defense DPS, TH18 Mask, Wall Integrity, Red Zone)
+        - Group 2: Friendly Army Troops, Siege & CC (Ch 5..16: Thrower, Healer, Furnace, Druid, Ice Golem, SWB, HH, Loon, Archer, Log Launcher, Super Yeti, Super Valkyrie)
+        - Group 3: Friendly Heroes (Ch 17..20: Barbarian King, Archer Queen, Grand Warden, Royal Champion)
+        - Group 4: Friendly Spells (Ch 21..24: Totem HP, Rage Fade AoE, Poison Fade AoE, Skeleton Fade AoE)
+        - Group 5: Enemy Defending Units (Ch 25..28: Enemy CC & Guardian, Enemy Heroes, Enemy Ground Skeletons, Enemy Air Skeletons)
+        - Group 6: Dedicated Defense Types (Ch 29..49: 21 defense types)
           CraftingStation / Hot Candle)
 
     Action Space:
@@ -68,7 +61,7 @@ class CoCAttackerEnv(gym.Env):
         self._last_ability_tick = -999
         self._deploy_coords: List[Tuple[float, float]] = []
         self.observation_space = spaces.Box(
-            low=0.0, high=1.0, shape=(31, 50, 50), dtype=np.float32
+            low=0.0, high=1.0, shape=(50, 50, 50), dtype=np.float32
         )
         self.action_space = spaces.MultiDiscrete([7, 10, 50, 50, 5])
         self.fraction_bins = (0.0, 0.25, 0.50, 0.75, 1.00)
@@ -176,7 +169,7 @@ class CoCAttackerEnv(gym.Env):
         self._last_spell_tick = -999
         self._last_ability_tick = -999
         self._deploy_coords = []
-        obs = np.asarray(raw_obs, dtype=np.float32).reshape((31, 50, 50))
+        obs = np.asarray(raw_obs, dtype=np.float32).reshape((-1, 50, 50))
         masks_now = self.get_action_masks()
         return obs, {
             "destruction_pct": 0,
@@ -262,7 +255,7 @@ class CoCAttackerEnv(gym.Env):
         self._prev_dmg = float(dmg_total)
         self._prev_th_destroyed = bool(th_destroyed)
 
-        obs = np.asarray(raw_obs, dtype=np.float32).reshape((31, 50, 50))
+        obs = np.asarray(raw_obs, dtype=np.float32).reshape((-1, 50, 50))
         masks_now = self.get_action_masks()
         info = {
             "destruction_pct": int(destruction_pct),
@@ -300,7 +293,7 @@ class CoCAttackerEnv(gym.Env):
         self._prev_dmg = float(dmg_total)
         self._prev_th_destroyed = bool(th_destroyed)
 
-        obs = np.asarray(raw_obs, dtype=np.float32).reshape((31, 50, 50))
+        obs = np.asarray(raw_obs, dtype=np.float32).reshape((-1, 50, 50))
         masks_now = self.get_action_masks()
         info = {
             "destruction_pct": int(destruction_pct),

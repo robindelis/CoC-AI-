@@ -9,9 +9,14 @@ tags:
 updated: 2026-10-28
 ---
 
-# 🧠 Why Not Raw Integers? — Hierarchical Tactical-Archetype Encoding for Channels 8 & 9
+# 🧠 Hierarchical Tactical-Archetype Unit Encoding (Offline Signature Spec & ADR-007 Transition)
 
-Back to [[00_Index_MOC|Vault Index (MOC)]] • Used in [[architectures/v3.0_31Ch_PerDefense_SingleArmy_ActorCritic|v3.0 Architecture]] • Defense Channels: [[encodings/Defense_And_Unit_Spatial_Encoding|Ch 10..30 Per-Defense Spatial Encoding]]
+Back to [[00_Index_MOC|Vault Index (MOC)]] • Used in [[architectures/v3.0_31Ch_PerDefense_SingleArmy_ActorCritic|v3.0 Architecture]] • Active Spatial Tensor: [[encodings/Defense_And_Unit_Spatial_Encoding|50-Channel Dedicated Spatial Encoding]] • Decisions: [[decisions/Architecture_Decisions_And_System_Memory|System Memory & ADR-007]]
+
+> [!NOTE] Architectural Evolution & ADR-007 Status
+> In `v3.0` under **[[decisions/Architecture_Decisions_And_System_Memory#ADR-007-50-Channel-Dedicated-Composition-Heroes-Spells--Defenses-Spatial-Observation-Tensor|ADR-007]]**, the live PPO spatial observation tensor was expanded from 31 to **50 channels**. Channels 5..28 now allocate dedicated, non-overlapping channels for each loadout troop (Ch 5..16), friendly hero (Ch 17..20), active spell AoE (Ch 21..24), and defending entity (Ch 25..28).
+>
+> The hierarchical archetype signature $\phi(u) \in [0, 1]$ documented below is **preserved in the simulation engine** (`BattleEngine::unit_type_signature()` in `crates/coc-engine/src/sim.rs`) for offline diagnostics, entity telemetry, and evaluation heatmaps.
 
 ---
 
