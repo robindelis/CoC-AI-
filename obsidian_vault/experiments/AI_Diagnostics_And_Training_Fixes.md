@@ -12,7 +12,7 @@ updated: 2026-10-28
 
 # 🩺 AI Training Diagnostics, Telemetry Architecture & PPO Pathology Fixes
 
-Back to [[00_Index_MOC|Vault Index (MOC)]] • View [[01_Model_Architecture_and_Training_Tracker.canvas|Interactive Model Architecture & Training Canvas]] • Related: [[runs/v2_archetype_10ch|v2.0 Run Dossier]] • [[experiments/Experiment_Log_And_Benchmarks|Master Experiment Log]]
+Back to [[00_Index_MOC|Vault Index (MOC)]] • View [[01_Model_Architecture_and_Training_Tracker.canvas|Interactive Model Architecture & Training Canvas]] • Related: [[runs/v3_per_defense_31ch|v3.0 Run Dossier]] • [[experiments/Experiment_Log_And_Benchmarks|Master Experiment Log]]
 
 ---
 
@@ -35,7 +35,7 @@ Every diagnostic evaluation compiles six quantitative telemetry blocks and visua
 | **5. Tactical Combat Timing Spans (`tactical_rollout_behavior`)** | `troop_deploy_tick_span` $[t_{\min}, t_{\max}]$, `spell_cast_tick_span` $[t_{\min}, t_{\max}]$, `hero_ability_tick_span` $[t_{\min}, t_{\max}]$, `initial_step_probs` (`slot_type_probs`, `deploy_fraction_probs`) | Verifies whether spells and hero abilities are held for core engagements or dumped prematurely at the perimeter. |
 | **6. Critic Calibration & Module L2 Weight Norms (`critic_calibration`, `weight_norms_l2`)** | `predicted_v_s0`, `[pred_value_min, pred_value_max]`, `empirical_recent50_return`, `calibration_gap_v0_minus_return`, L2 weight norms across all 9 modules (`spatial_stem` .. `critic_head`), plus 3-Army $\times$ 5-Village matchup spread | Identifies value critic under/over-estimation, gradient variance, and cross-army policy interference. |
 
-![AI Diagnostic Telemetry Overview](../assets/charts/v2_ai_diagnostics_telemetry.png)
+![AI Diagnostic Telemetry Overview](../assets/charts/v3_ai_diagnostics_telemetry.png)
 
 ---
 

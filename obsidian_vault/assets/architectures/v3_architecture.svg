@@ -10,46 +10,46 @@
         <text x="492" y="22" fill="#34d399" font-size="10.5" font-weight="800" font-family="sans-serif">STAGE 2 • GLOBAL TOWER (Top) &amp; STAGE 3 • TILE POINTER + HEADS (Bottom)</text>
         <g>
             
-            <polygon points="55,127 69,119 88,119 74,127" fill="#0284c7" fill-opacity="0.88" stroke="#38bdf8" stroke-width="1.3"/>
-            <polygon points="74,127 88,119 88,215 74,223" fill="#0284c7" fill-opacity="0.55" stroke="#38bdf8" stroke-width="1.3"/>
-            <polygon points="55,127 74,127 74,223 55,223" fill="#0284c7" fill-opacity="0.74" stroke="#38bdf8" stroke-width="1.3"/>
-            <line x1="64" y1="127" x2="64" y2="223" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="64" y1="127" x2="78" y2="119" stroke="#0f172a" stroke-width="1" opacity="0.35"/>
-            <rect x="77" y="149" width="6" height="14" fill="rgba(255,255,255,0.22)" stroke="#f8fafc" stroke-width="0.7"/>
-            <text x="71" y="109" text-anchor="middle" fill="#f8fafc" font-size="10.5" font-weight="700">Input Grid</text>
-            <text x="71" y="237" text-anchor="middle" fill="#fde047" font-size="10" font-weight="700">10×50×50</text>
-            <text x="71" y="249" text-anchor="middle" fill="#94a3b8" font-size="9">Village + Archetypes</text>
-        </g><g><polygon points="78,166 78,184 162,178 162,172" fill="rgba(56, 189, 248, 0.25)" stroke="#38bdf8" stroke-width="0.9" stroke-opacity="0.65"/><text x="122" y="165" text-anchor="middle" fill="#93c5fd" font-size="8.8" font-weight="600">3×3</text></g><g>
+            <polygon points="50,127 71,115 100,115 79,127" fill="#0284c7" fill-opacity="0.88" stroke="#38bdf8" stroke-width="1.3"/>
+            <polygon points="79,127 100,115 100,211 79,223" fill="#0284c7" fill-opacity="0.55" stroke="#38bdf8" stroke-width="1.3"/>
+            <polygon points="50,127 79,127 79,223 50,223" fill="#0284c7" fill-opacity="0.74" stroke="#38bdf8" stroke-width="1.3"/>
+            <line x1="64" y1="127" x2="64" y2="223" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="64" y1="127" x2="85" y2="115" stroke="#0f172a" stroke-width="1" opacity="0.35"/>
+            <rect x="84" y="148" width="9" height="14" fill="rgba(255,255,255,0.22)" stroke="#f8fafc" stroke-width="0.7"/>
+            <text x="74" y="105" text-anchor="middle" fill="#f8fafc" font-size="10.5" font-weight="700">Input Grid</text>
+            <text x="74" y="237" text-anchor="middle" fill="#fde047" font-size="10" font-weight="700">31×50×50</text>
+            <text x="74" y="249" text-anchor="middle" fill="#94a3b8" font-size="9">Base + 21 Defenses</text>
+        </g><g><polygon points="78,166 78,184 162,178 162,172" fill="rgba(56, 189, 248, 0.25)" stroke="#38bdf8" stroke-width="0.9" stroke-opacity="0.65"/><text x="122" y="165" text-anchor="middle" fill="#93c5fd" font-size="8.8" font-weight="600">3×3 d=2</text></g><g>
             
-            <polygon points="162,127 183,115 212,115 191,127" fill="#2563eb" fill-opacity="0.88" stroke="#60a5fa" stroke-width="1.3"/>
-            <polygon points="191,127 212,115 212,211 191,223" fill="#2563eb" fill-opacity="0.55" stroke="#60a5fa" stroke-width="1.3"/>
-            <polygon points="162,127 191,127 191,223 162,223" fill="#2563eb" fill-opacity="0.74" stroke="#60a5fa" stroke-width="1.3"/>
-            <line x1="176" y1="127" x2="176" y2="223" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="176" y1="127" x2="197" y2="115" stroke="#0f172a" stroke-width="1" opacity="0.35"/>
-            <rect x="196" y="148" width="9" height="14" fill="rgba(255,255,255,0.22)" stroke="#f8fafc" stroke-width="0.7"/>
-            <text x="186" y="105" text-anchor="middle" fill="#f8fafc" font-size="10.5" font-weight="700">S1: Conv2d</text>
-            <text x="186" y="237" text-anchor="middle" fill="#fde047" font-size="10" font-weight="700">32×50×50</text>
-            <text x="186" y="249" text-anchor="middle" fill="#94a3b8" font-size="9">RF 3×3</text>
-        </g><g><polygon points="190,166 190,184 274,178 274,172" fill="rgba(56, 189, 248, 0.25)" stroke="#38bdf8" stroke-width="0.9" stroke-opacity="0.65"/><text x="234" y="165" text-anchor="middle" fill="#93c5fd" font-size="8.8" font-weight="600">3×3</text></g><g>
+            <polygon points="159,127 184,112 219,112 194,127" fill="#2563eb" fill-opacity="0.88" stroke="#60a5fa" stroke-width="1.3"/>
+            <polygon points="194,127 219,112 219,208 194,223" fill="#2563eb" fill-opacity="0.55" stroke="#60a5fa" stroke-width="1.3"/>
+            <polygon points="159,127 194,127 194,223 159,223" fill="#2563eb" fill-opacity="0.74" stroke="#60a5fa" stroke-width="1.3"/>
+            <line x1="176" y1="127" x2="176" y2="223" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="176" y1="127" x2="201" y2="112" stroke="#0f172a" stroke-width="1" opacity="0.35"/>
+            <rect x="200" y="148" width="11" height="14" fill="rgba(255,255,255,0.22)" stroke="#f8fafc" stroke-width="0.7"/>
+            <text x="188" y="102" text-anchor="middle" fill="#f8fafc" font-size="10.5" font-weight="700">S1: Conv2d</text>
+            <text x="188" y="237" text-anchor="middle" fill="#fde047" font-size="10" font-weight="700">64×50×50</text>
+            <text x="188" y="249" text-anchor="middle" fill="#94a3b8" font-size="9">RF 5×5</text>
+        </g><g><polygon points="190,166 190,184 274,178 274,172" fill="rgba(56, 189, 248, 0.25)" stroke="#38bdf8" stroke-width="0.9" stroke-opacity="0.65"/><text x="234" y="165" text-anchor="middle" fill="#93c5fd" font-size="8.8" font-weight="600">3×3 d=2</text></g><g>
             
-            <polygon points="271,127 296,112 331,112 306,127" fill="#2563eb" fill-opacity="0.88" stroke="#60a5fa" stroke-width="1.3"/>
-            <polygon points="306,127 331,112 331,208 306,223" fill="#2563eb" fill-opacity="0.55" stroke="#60a5fa" stroke-width="1.3"/>
-            <polygon points="271,127 306,127 306,223 271,223" fill="#2563eb" fill-opacity="0.74" stroke="#60a5fa" stroke-width="1.3"/>
-            <line x1="288" y1="127" x2="288" y2="223" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="288" y1="127" x2="313" y2="112" stroke="#0f172a" stroke-width="1" opacity="0.35"/>
-            <rect x="312" y="148" width="11" height="14" fill="rgba(255,255,255,0.22)" stroke="#f8fafc" stroke-width="0.7"/>
-            <text x="300" y="102" text-anchor="middle" fill="#f8fafc" font-size="10.5" font-weight="700">S2: Conv2d</text>
-            <text x="300" y="237" text-anchor="middle" fill="#fde047" font-size="10" font-weight="700">64×50×50</text>
-            <text x="300" y="249" text-anchor="middle" fill="#94a3b8" font-size="9">RF 5×5</text>
-        </g><g><polygon points="302,166 302,184 386,178 386,172" fill="rgba(56, 189, 248, 0.25)" stroke="#38bdf8" stroke-width="0.9" stroke-opacity="0.65"/><text x="346" y="165" text-anchor="middle" fill="#93c5fd" font-size="8.8" font-weight="600">3×3 d=2</text></g><g>
-            <path d="M 355 123 Q 412 80 451 123" fill="none" stroke="#facc15" stroke-width="2" stroke-dasharray="4 2"/>
-            <circle cx="451" cy="123" r="7" fill="#0f172a" stroke="#facc15" stroke-width="1.5"/>
-            <text x="451" y="126" text-anchor="middle" fill="#facc15" font-size="10" font-weight="800">+</text>
-            <polygon points="383,127 408,112 443,112 418,127" fill="#7c3aed" fill-opacity="0.88" stroke="#a78bfa" stroke-width="1.3"/>
-            <polygon points="418,127 443,112 443,208 418,223" fill="#7c3aed" fill-opacity="0.55" stroke="#a78bfa" stroke-width="1.3"/>
-            <polygon points="383,127 418,127 418,223 383,223" fill="#7c3aed" fill-opacity="0.74" stroke="#a78bfa" stroke-width="1.3"/>
-            <line x1="400" y1="127" x2="400" y2="223" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="400" y1="127" x2="425" y2="112" stroke="#0f172a" stroke-width="1" opacity="0.35"/>
-            <rect x="424" y="148" width="11" height="14" fill="rgba(255,255,255,0.22)" stroke="#f8fafc" stroke-width="0.7"/>
-            <text x="412" y="102" text-anchor="middle" fill="#f8fafc" font-size="10.5" font-weight="700">S3: ResBlock</text>
-            <text x="412" y="237" text-anchor="middle" fill="#fde047" font-size="10" font-weight="700">64×50×50</text>
-            <text x="412" y="249" text-anchor="middle" fill="#94a3b8" font-size="9">RF 11×11</text>
+            <polygon points="268,127 298,110 339,110 309,127" fill="#2563eb" fill-opacity="0.88" stroke="#60a5fa" stroke-width="1.3"/>
+            <polygon points="309,127 339,110 339,206 309,223" fill="#2563eb" fill-opacity="0.55" stroke="#60a5fa" stroke-width="1.3"/>
+            <polygon points="268,127 309,127 309,223 268,223" fill="#2563eb" fill-opacity="0.74" stroke="#60a5fa" stroke-width="1.3"/>
+            <line x1="276" y1="127" x2="276" y2="223" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="276" y1="127" x2="306" y2="110" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="284" y1="127" x2="284" y2="223" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="284" y1="127" x2="314" y2="110" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="292" y1="127" x2="292" y2="223" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="292" y1="127" x2="322" y2="110" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="300" y1="127" x2="300" y2="223" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="300" y1="127" x2="330" y2="110" stroke="#0f172a" stroke-width="1" opacity="0.35"/>
+            <rect x="316" y="147" width="13" height="14" fill="rgba(255,255,255,0.22)" stroke="#f8fafc" stroke-width="0.7"/>
+            <text x="303" y="100" text-anchor="middle" fill="#f8fafc" font-size="10.5" font-weight="700">S2: Conv2d</text>
+            <text x="303" y="237" text-anchor="middle" fill="#fde047" font-size="10" font-weight="700">128×50×50</text>
+            <text x="303" y="249" text-anchor="middle" fill="#94a3b8" font-size="9">RF 11×11</text>
+        </g><g><polygon points="302,166 302,184 386,178 386,172" fill="rgba(56, 189, 248, 0.25)" stroke="#38bdf8" stroke-width="0.9" stroke-opacity="0.65"/><text x="346" y="165" text-anchor="middle" fill="#93c5fd" font-size="8.8" font-weight="600">2×3×3 + Skip</text></g><g>
+            <path d="M 352 123 Q 415 78 459 123" fill="none" stroke="#facc15" stroke-width="2" stroke-dasharray="4 2"/>
+            <circle cx="459" cy="123" r="7" fill="#0f172a" stroke="#facc15" stroke-width="1.5"/>
+            <text x="459" y="126" text-anchor="middle" fill="#facc15" font-size="10" font-weight="800">+</text>
+            <polygon points="380,127 410,110 451,110 421,127" fill="#7c3aed" fill-opacity="0.88" stroke="#a78bfa" stroke-width="1.3"/>
+            <polygon points="421,127 451,110 451,206 421,223" fill="#7c3aed" fill-opacity="0.55" stroke="#a78bfa" stroke-width="1.3"/>
+            <polygon points="380,127 421,127 421,223 380,223" fill="#7c3aed" fill-opacity="0.74" stroke="#a78bfa" stroke-width="1.3"/>
+            <line x1="388" y1="127" x2="388" y2="223" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="388" y1="127" x2="418" y2="110" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="396" y1="127" x2="396" y2="223" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="396" y1="127" x2="426" y2="110" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="404" y1="127" x2="404" y2="223" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="404" y1="127" x2="434" y2="110" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="412" y1="127" x2="412" y2="223" stroke="#0f172a" stroke-width="1" opacity="0.35"/><line x1="412" y1="127" x2="442" y2="110" stroke="#0f172a" stroke-width="1" opacity="0.35"/>
+            <rect x="428" y="147" width="13" height="14" fill="rgba(255,255,255,0.22)" stroke="#f8fafc" stroke-width="0.7"/>
+            <text x="415" y="100" text-anchor="middle" fill="#f8fafc" font-size="10.5" font-weight="700">S3: ResBlock</text>
+            <text x="415" y="237" text-anchor="middle" fill="#fde047" font-size="10" font-weight="700">128×50×50</text>
+            <text x="415" y="249" text-anchor="middle" fill="#94a3b8" font-size="9">RF 15×15</text>
         </g><g><polygon points="414,166 414,184 498,115 498,109" fill="rgba(16, 185, 129, 0.2)" stroke="#34d399" stroke-width="0.9" stroke-opacity="0.65"/><text x="458" y="133" text-anchor="middle" fill="#93c5fd" font-size="8.8" font-weight="600">3×3 s=2</text></g><g>
             
             <polygon points="493,83 520,67 558,67 531,83" fill="#2563eb" fill-opacity="0.88" stroke="#60a5fa" stroke-width="1.3"/>

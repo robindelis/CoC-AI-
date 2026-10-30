@@ -1,0 +1,41 @@
+{
+  "version": "3.0",
+  "updated_at": "2026-10-30 17:02:13",
+  "models": {
+    "v3_per_defense_31ch": {
+      "id": "v3_per_defense_31ch",
+      "name": "v3.0 \u2014 31-Channel Per-Defense CNN & Single-Army Specialist Actor-Critic",
+      "arch_version": "3.0",
+      "status": "active",
+      "in_channels": 31,
+      "army_name": "TH18 Thrower + Healer + Totem Smash (Meta)",
+      "army_slug": "thrower_healer_totem_smash",
+      "action_heads": [
+        "slot_type (7)",
+        "slot_idx (10)",
+        "deploy_fraction (5)",
+        "tile_xy (2500)",
+        "critic_value (1)"
+      ],
+      "total_episodes": 0,
+      "latest_checkpoint": "thrower_healer_totem_smash_ep0_0pct_0star.pt",
+      "best_pct": 0,
+      "best_stars": 0,
+      "best_reward": 0.0,
+      "hyperparams": {
+        "lr": 0.0003,
+        "batch_episodes": 12,
+        "minibatch_size": 128,
+        "ppo_epochs": 4,
+        "ticks_per_step": 8,
+        "gamma": 0.99,
+        "gae_lambda": 0.95,
+        "clip_coef": 0.2,
+        "ent_coef": 0.015,
+        "matchup_mode": "random"
+      },
+      "sessions": [],
+      "history_points": []
+    }
+  }
+}

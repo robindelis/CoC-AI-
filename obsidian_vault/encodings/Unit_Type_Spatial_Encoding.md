@@ -11,7 +11,7 @@ updated: 2026-10-28
 
 # 🧠 Why Not Raw Integers? — Hierarchical Tactical-Archetype Encoding for Channels 8 & 9
 
-Back to [[00_Index_MOC|Vault Index (MOC)]] • Used in [[v2.0_10Ch_Archetype_And_DeployFraction]]
+Back to [[00_Index_MOC|Vault Index (MOC)]] • Used in [[architectures/v3.0_31Ch_PerDefense_SingleArmy_ActorCritic|v3.0 Architecture]] • Defense Channels: [[encodings/Defense_And_Unit_Spatial_Encoding|Ch 10..30 Per-Defense Spatial Encoding]]
 
 ---
 

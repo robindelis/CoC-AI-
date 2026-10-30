@@ -40,19 +40,40 @@ TRAINED_MODELS_DIR = os.path.join(REPO_ROOT, "trained_models")
 # ---------------------------------------------------------------------------
 
 CHANNELS = [
-    ("0", "Building HP Ratio", "hp / max_hp across footprint", "Base destruction tracking & target durability"),
-    ("1", "Defense DPS Threat", "min(DPS / 1000, 1.0)", "Identifies lethal zones (Monolith, Eagle, Inferno)"),
-    ("2", "Town Hall 18 Mask", "1.0 on TH18 tiles, 0.0 elsewhere", "Pinpoints Town Hall for the crucial 2nd Star"),
+    ("0", "Building HP Ratio", "hp / 11000.0 across footprint", "Base destruction tracking & target durability (Hidden Tesla masked until revealed)"),
+    ("1", "Defense DPS Threat", "min(DPS / 750, 1.0)", "Identifies lethal zones (Monolith, Inferno, Scattershot, Hot Candle)"),
+    ("2", "Town Hall 18 Mask", "1.0 on TH18 tiles, 0.0 elsewhere", "Pinpoints Town Hall 18 footprint for the 2nd Star"),
     ("3", "Wall Integrity", "wall_hp / max_wall_hp", "Detects closed compartments vs breached walls"),
     ("4", "No-Deploy Red Zone", "1.0 = forbidden, 0.0 = legal deploy", "Dynamic perimeter enforcing legal unit drops"),
     ("5", "Friendly Ground HP", "min(sum(HP_ground) / 5000, 1.0)", "Allied ground troop mass and density"),
     ("6", "Friendly Air HP", "min(sum(HP_air) / 5000, 1.0)", "Allied air troop mass and density"),
-    ("7", "Active Spell Field", "min(remaining_ticks / 300, 1.0)", "Active Rage, Heal, Freeze, Overgrowth aura"),
+    ("7", "Active Spell Field", "1.0 at active spell centers", "Active Rage, Heal, Freeze, Overgrowth, Poison, Totem zones"),
     ("8", "Allied Tactical Archetype", "max phi(u) in [0, 1]", "Unit identity: Swarm (0.1) vs Ranged Core (0.6) vs Tank (0.7) vs Healer (0.81) vs Hero (0.98)"),
     ("9", "Enemy Tactical Archetype", "max phi(u) in [0, 1]", "Defending CC, Heroes, Guardians, Ground Skeletons (0.10) vs Air Skeletons (0.28)"),
+    ("10", "Archer Tower", "1.0 on alive 3×3 footprint", "Point ground+air defense (10.0t range, 145 DPS)"),
+    ("11", "Multi-Archer Tower", "1.0 on alive 3×3 footprint", "3-target merged point defense (10.0t range, 363 DPS)"),
+    ("12", "Ricochet Cannon", "1.0 on alive 3×3 footprint", "2-target bounce ground defense (9.0t range, 396 DPS)"),
+    ("13", "Cannon", "1.0 on alive 3×3 footprint", "Ground point defense (9.0t range, 235 DPS)"),
+    ("14", "Mortar", "1.0 on alive 3×3 footprint", "Long-range ground splash (4–11t deadzone, 56 DPS)"),
+    ("15", "Air Defense", "1.0 on alive 3×3 footprint", "Anti-air high single-target rocket defense (10.0t range, 650 DPS)"),
+    ("16", "Wizard Tower", "1.0 on alive 3×3 footprint", "Ground+air splash defense (7.0t range, 110 DPS)"),
+    ("17", "Super Wizard Tower", "1.0 on alive 3×3 footprint", "Chain-lightning multi-target defense (8.0t range, 265 DPS)"),
+    ("18", "Air Sweeper", "0.25 + 0.75 * (dir_deg / 360.0)", "Directional 105° cone air pushback (encodes both presence & facing angle)"),
+    ("19", "Hidden Tesla", "1.0 only when revealed, 0.0 hidden", "Revealed when enemy enters trigger range or destruction >= 51%"),
+    ("20", "Bomb Tower", "1.0 on alive 3×3 footprint", "Ground splash + lethal death bomb explosion on destruction"),
+    ("21", "X-Bow", "1.0 = Air & Ground, 0.5 = Ground Only", "Rapid-fire defense with mode-dependent range (11.5t A+G vs 14.0t Ground)"),
+    ("22", "Inferno Tower", "1.0 = Single-Target, 0.5 = Multi-Target", "3-stage exponential ramp beam (Single) vs 6-target scorch (Multi)"),
+    ("23", "Scattershot", "1.0 on alive 3×3 footprint", "Heavy 90° cone splash behind primary target (3–10t range)"),
+    ("24", "Builder's Hut", "1.0 on alive 2×2 footprint", "Weaponized turret + spawns repair builder healing nearby structures"),
+    ("25", "Spell Tower", "0.25=Rage, 0.50=Poison, 0.75=Invis, 1.0=EQ", "Encodes exact equipped defensive spell tower mode"),
+    ("26", "Monolith", "1.0 on alive 3×3 footprint", "Anti-tank % max-HP + flat damage priority core threat"),
+    ("27", "Multi-Gear Tower", "1.0 = Long Range, 0.5 = Fast Attack", "TH18 geared defense switching between long range and fast burst"),
+    ("28", "Firespitter", "0.25 + 0.75 * (dir_deg / 360.0)", "Directional 150° cone rapid piercing fireballs (encodes presence & facing angle)"),
+    ("29", "Revenge Tower", "1.0 on alive 3×3 footprint", "Escalates power as 5 / 25 / 50 village buildings are destroyed"),
+    ("30", "Hot Candle (Crafted)", "1.0 on alive 3×3 footprint", "Season 4 Crafted Defense firing 6 → 4 → 3 multi-target flames as it melts"),
 ]
 
-REWARD_FUNCTION_DESC = """### 🎯 Reward Formulation & Two-Phase Pacing (TH18 Combat v2.1)
+REWARD_FUNCTION_DESC = """### 🎯 Reward Formulation & Two-Phase Pacing (TH18 Combat v3.0)
 
 Calibrated 100-point dense & milestone reward shaping balancing **Destruction + Core HP Damage** ($50\\text{ pts}$) and **Victory Stars + Town Hall 18 Takedown** ($50\\text{ pts}$):
 
@@ -105,27 +126,35 @@ def save_eval_cache(cache: Dict[str, Any]) -> None:
 
 
 def init_default_registry() -> Dict[str, Any]:
-    """Initializes standard model registry from existing workspace checkpoints."""
+    """Initializes standard v3.0 model registry."""
     reg = {
-        "version": "1.0",
+        "version": "3.0",
         "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "models": {
-            "v2_archetype_10ch": {
-                "id": "v2_archetype_10ch",
-                "name": "v2.0 — 10-Channel Archetype & Batch-Deploy Fraction",
-                "arch_version": "2.0",
+            "v3_per_defense_31ch": {
+                "id": "v3_per_defense_31ch",
+                "name": "v3.0 — 31-Channel Per-Defense CNN & Single-Army Specialist Actor-Critic",
+                "arch_version": "3.0",
                 "status": "active",
-                "in_channels": 10,
-                "action_heads": ["slot_type (7)", "slot_idx (10)", "deploy_fraction (5)", "tile_xy (2500)", "critic_value (1)"],
-                "total_episodes": 924,
-                "latest_checkpoint": "latest_attacker.pt",
-                "best_pct": 84,
-                "best_stars": 2,
-                "best_reward": 76.49,
+                "in_channels": 31,
+                "army_name": "TH18 Thrower + Healer + Totem Smash (Meta)",
+                "army_slug": "thrower_healer_totem_smash",
+                "action_heads": [
+                    "slot_type (7)",
+                    "slot_idx (10)",
+                    "deploy_fraction (5)",
+                    "tile_xy (2500)",
+                    "critic_value (1)",
+                ],
+                "total_episodes": 0,
+                "latest_checkpoint": "thrower_healer_totem_smash_ep0_0pct_0star.pt",
+                "best_pct": 0,
+                "best_stars": 0,
+                "best_reward": 0.0,
                 "hyperparams": {
                     "lr": 0.0003,
-                    "batch_episodes": 4,
-                    "minibatch_size": 64,
+                    "batch_episodes": 12,
+                    "minibatch_size": 128,
                     "ppo_epochs": 4,
                     "ticks_per_step": 8,
                     "gamma": 0.99,
@@ -134,9 +163,7 @@ def init_default_registry() -> Dict[str, Any]:
                     "ent_coef": 0.015,
                     "matchup_mode": "random",
                 },
-                "sessions": [
-                    {"session_id": 1, "start_ep": 0, "end_ep": 924, "episodes": 924, "checkpoint": "latest_attacker.pt", "best_pct": 84, "best_stars": 2, "notes": "Initial training: fractional wave drops (0.25..1.0) and unit archetype perception (Ch 8 & 9)"},
-                ],
+                "sessions": [],
                 "history_points": [],
             },
         },
@@ -146,7 +173,7 @@ def init_default_registry() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Model Evaluation (Comps vs Villages Matrix)
+# Model Evaluation (Single-Army Specialist vs 5 Reference Villages)
 # ---------------------------------------------------------------------------
 
 def evaluate_model_matchups(
@@ -155,10 +182,10 @@ def evaluate_model_matchups(
     force: bool = False,
 ) -> Dict[str, Any]:
     """
-    Evaluates a model across all 3 Meta Compositions vs all 5 Reference Villages.
-    Returns the full 2D performance matrix and averages.
+    Evaluates a single-army specialist model on its exported Army Composition
+    across all 5 Reference Villages.
     """
-    from train_ai import get_meta_presets, simulate_model_rollout
+    from train_ai import get_meta_presets, load_attacker_model, simulate_model_rollout
 
     model_path = os.path.join(TRAINED_MODELS_DIR, os.path.basename(model_file))
     if not os.path.exists(model_path):
@@ -172,7 +199,15 @@ def evaluate_model_matchups(
         if cache_key in cached:
             return cached[cache_key]
 
-    layouts, armies = get_meta_presets()
+    layouts, default_armies = get_meta_presets()
+    _, ckpt_meta = load_attacker_model(torch.device("cpu"), attacker_model_file=model_file)
+    if isinstance(ckpt_meta.get("army"), dict):
+        armies = [ckpt_meta["army"]]
+    elif isinstance(ckpt_meta.get("armies"), list) and len(ckpt_meta["armies"]) > 0:
+        armies = [ckpt_meta["armies"][0]]
+    else:
+        armies = [default_armies[0]]
+
     matrix = []
     comp_totals = [{"pct_sum": 0, "stars_sum": 0, "count": 0, "3stars": 0} for _ in armies]
     village_totals = [{"pct_sum": 0, "stars_sum": 0, "count": 0} for _ in layouts]
@@ -320,8 +355,9 @@ def generate_training_curves_chart(
     else:
         # Generate faithful anchored trajectory from session milestones
         np.random.seed(42)
-        n_pts = min(600, max(150, total_episodes))
-        ep_axis = np.linspace(1, total_episodes, n_pts)
+        eff_eps = max(1, total_episodes)
+        n_pts = min(600, max(150, eff_eps))
+        ep_axis = np.linspace(1, eff_eps, n_pts)
 
         # Baseline milestone anchors
         milestones = [(0, 31.0)]
@@ -339,9 +375,9 @@ def generate_training_curves_chart(
 
         # Reward correlates with destruction
         rew_axis = (pct_axis * 0.50) + (np.clip((pct_axis - 50) / 25, 0, 3) * 16.6667) + np.random.normal(0, 1.5, n_pts)
-        val_loss = 0.5 * np.exp(-ep_axis / (total_episodes * 0.35)) + np.random.normal(0.05, 0.01, n_pts)
+        val_loss = 0.5 * np.exp(-ep_axis / (eff_eps * 0.35)) + np.random.normal(0.05, 0.01, n_pts)
         pol_loss = -0.02 + 0.015 * np.sin(ep_axis / 20) + np.random.normal(0, 0.005, n_pts)
-        entropy = 1.8 * np.exp(-ep_axis / (total_episodes * 0.55)) + 0.15
+        entropy = 1.8 * np.exp(-ep_axis / (eff_eps * 0.55)) + 0.15
 
     # Rolling averages
     window = max(5, int(len(pct_axis) * 0.05))
@@ -584,7 +620,7 @@ def generate_ai_diagnostics_chart(out_png_path: str) -> str:
 # ---------------------------------------------------------------------------
 
 def generate_stacked_cnn_svg(
-    in_channels: int = 10,
+    in_channels: int = 31,
     out_svg_path: Optional[str] = None,
     out_png_path: Optional[str] = None,
 ) -> Dict[str, str]:
@@ -680,17 +716,17 @@ def generate_stacked_cnn_svg(
         return f'<g><polygon points="{pts}" fill="{color}" stroke="{stroke}" stroke-width="0.9" stroke-opacity="0.65"/>{lbl}</g>'
 
     # 0. Input Grid
-    elements.append(cuboid(start_x, stem_y, in_channels, 50, 50, "#0284c7", "#38bdf8", "Input Grid", f"{in_channels}×50×50", "Village + Archetypes"))
+    elements.append(cuboid(start_x, stem_y, in_channels, 50, 50, "#0284c7", "#38bdf8", "Input Grid", f"{in_channels}×50×50", "Base + 21 Defenses"))
 
     # 1. Spatial Stem (S1, S2, S3)
-    elements.append(filter_cone(start_x, stem_y, start_x + step_x, stem_y, "3×3"))
-    elements.append(cuboid(start_x + step_x, stem_y, 32, 50, 50, "#2563eb", "#60a5fa", "S1: Conv2d", "32×50×50", "RF 3×3"))
+    elements.append(filter_cone(start_x, stem_y, start_x + step_x, stem_y, "3×3 d=2"))
+    elements.append(cuboid(start_x + step_x, stem_y, 64, 50, 50, "#2563eb", "#60a5fa", "S1: Conv2d", "64×50×50", "RF 5×5"))
 
-    elements.append(filter_cone(start_x + step_x, stem_y, start_x + 2*step_x, stem_y, "3×3"))
-    elements.append(cuboid(start_x + 2*step_x, stem_y, 64, 50, 50, "#2563eb", "#60a5fa", "S2: Conv2d", "64×50×50", "RF 5×5"))
+    elements.append(filter_cone(start_x + step_x, stem_y, start_x + 2*step_x, stem_y, "3×3 d=2"))
+    elements.append(cuboid(start_x + 2*step_x, stem_y, 128, 50, 50, "#2563eb", "#60a5fa", "S2: Conv2d", "128×50×50", "RF 11×11"))
 
-    elements.append(filter_cone(start_x + 2*step_x, stem_y, start_x + 3*step_x, stem_y, "3×3 d=2"))
-    elements.append(cuboid(start_x + 3*step_x, stem_y, 64, 50, 50, "#7c3aed", "#a78bfa", "S3: ResBlock", "64×50×50", "RF 11×11", has_skip=True))
+    elements.append(filter_cone(start_x + 2*step_x, stem_y, start_x + 3*step_x, stem_y, "2×3×3 + Skip"))
+    elements.append(cuboid(start_x + 3*step_x, stem_y, 128, 50, 50, "#7c3aed", "#a78bfa", "S3: ResBlock", "128×50×50", "RF 15×15", has_skip=True))
 
     # 2. Upper Branch: Global Tower (G1, G2, G3, G4, G5)
     elements.append(filter_cone(start_x + 3*step_x, stem_y, split_x, top_branch_y, "3×3 s=2", "rgba(16, 185, 129, 0.2)", "#34d399"))
@@ -778,16 +814,16 @@ def generate_stacked_cnn_svg(
 
 
 def ensure_all_architecture_diagrams() -> Dict[str, str]:
-    """Ensures the 10-channel 3D stacked CNN image exists in the vault."""
+    """Ensures the 31-channel 3D stacked CNN image exists in the vault."""
     ensure_dirs()
-    v2_svg = os.path.join(ARCH_ASSETS_DIR, "v2_architecture.svg")
-    v2_png = os.path.join(ARCH_ASSETS_DIR, "v2_architecture.png")
+    v3_svg = os.path.join(ARCH_ASSETS_DIR, "v3_architecture.svg")
+    v3_png = os.path.join(ARCH_ASSETS_DIR, "v3_architecture.png")
 
-    generate_stacked_cnn_svg(in_channels=10, out_svg_path=v2_svg, out_png_path=v2_png)
+    generate_stacked_cnn_svg(in_channels=31, out_svg_path=v3_svg, out_png_path=v3_png)
 
     return {
-        "v2_png": os.path.relpath(v2_png, VAULT_DIR),
-        "v2_svg": os.path.relpath(v2_svg, VAULT_DIR),
+        "v3_png": os.path.relpath(v3_png, VAULT_DIR),
+        "v3_svg": os.path.relpath(v3_svg, VAULT_DIR),
     }
 
 
@@ -801,7 +837,7 @@ def generate_model_markdown_note(
     eval_data: Dict[str, Any],
 ) -> str:
     """Generates a complete standalone Markdown document for an architecture run."""
-    in_channels = model_info.get("in_channels", 10)
+    in_channels = model_info.get("in_channels", 31)
     channels_table = CHANNELS
     matrix_md = format_matrix_markdown(eval_data)
     total_episodes = model_info.get("total_episodes", 0)
@@ -812,10 +848,13 @@ def generate_model_markdown_note(
         "| Session # | Start Ep | End Ep | Episodes Added | Checkpoint File | Peak % | Stars | Notes |",
         "| :---: | :---: | :---: | :---: | :--- | :---: | :---: | :--- |",
     ]
-    for s in sessions:
-        sess_lines.append(
-            f"| **#{s['session_id']}** | `{s['start_ep']:,}` | `{s['end_ep']:,}` | `+{s['episodes']:,}` | `{s['checkpoint']}` | `{s.get('best_pct', 'N/A')}%` | `{s.get('best_stars', 'N/A')}★` | {s.get('notes', '')} |"
-        )
+    if sessions:
+        for s in sessions:
+            sess_lines.append(
+                f"| **#{s['session_id']}** | `{s['start_ep']:,}` | `{s['end_ep']:,}` | `+{s['episodes']:,}` | `{s['checkpoint']}` | `{s.get('best_pct', 'N/A')}%` | `{s.get('best_stars', 'N/A')}★` | {s.get('notes', '')} |"
+            )
+    else:
+        sess_lines.append("| *No sessions recorded yet* | `0` | `0` | `+0` | `—` | `0%` | `0★` | Ready for single-army training |")
     sess_table = "\n".join(sess_lines)
 
     # Channels table
@@ -836,26 +875,28 @@ def generate_model_markdown_note(
     hp_lines = [
         "| Hyperparameter | Value | Description |",
         "| :--- | :--- | :--- |",
-        f"| **Learning Rate (`lr`)** | `{hp.get('lr', 3e-4)}` | Adam optimizer learning rate |",
-        f"| **Batch Episodes** | `{hp.get('batch_episodes', 4)}` | Trajectories collected per PPO update |",
-        f"| **Minibatch Size** | `{hp.get('minibatch_size', 64)}` | SGD transition batch size |",
+        f"| **Trained Army Composition** | `{model_info.get('army_name', 'TH18 Thrower + Healer + Totem Smash (Meta)')}` | Single dedicated army composition per model |",
+        f"| **Default Checkpoint Pattern** | `{model_info.get('army_slug', 'thrower_healer_totem_smash')}_ep{{N}}_{{pct}}pct_{{stars}}star.pt` | Army-prefixed checkpoint naming convention |",
+        f"| **Learning Rate (`lr`)** | `{hp.get('lr', 3e-4)}` | Adam optimizer learning rate (Critic `2.5x`) |",
+        f"| **Batch Episodes** | `{hp.get('batch_episodes', 12)}` | Trajectories collected per PPO update |",
+        f"| **Minibatch Size** | `{hp.get('minibatch_size', 128)}` | SGD transition batch size |",
         f"| **PPO Epochs** | `{hp.get('ppo_epochs', 4)}` | Optimization passes over collected rollout |",
-        f"| **Simulation Ticks / Step** | `{hp.get('ticks_per_step', 8)}` | Simulated combat duration per RL decision ($0.64\\text{{s}}$) |",
+        f"| **Simulation Ticks / Step** | `{hp.get('ticks_per_step', 8)}` | Simulated combat duration per RL decision ($0.8\\text{{s}}$) |",
         f"| **Discount ($\\gamma$)** | `{hp.get('gamma', 0.99)}` | Reward discount factor |",
         f"| **GAE ($\\lambda$)** | `{hp.get('gae_lambda', 0.95)}` | Generalized Advantage Estimation smoothing |",
         f"| **Clip Coefficient** | `{hp.get('clip_coef', 0.20)}` | PPO surrogate objective clipping range |",
-        f"| **Entropy Coefficient** | `{hp.get('ent_coef', 0.015)}` | Exploration policy entropy bonus |",
+        f"| **Entropy Coefficient** | `{hp.get('ent_coef', 0.015)}` | Normalized per-head exploration policy entropy bonus |",
         f"| **Total Training Episodes** | **`{total_episodes:,}`** | **Cumulative episodes across all resumed sessions** |",
     ]
     hp_table = "\n".join(hp_lines)
 
-    arch_img = "v2_architecture.png"
+    arch_img = "v3_architecture.png"
     chart_img = f"{model_id}_training_curves.png"
 
     note_content = f"""---
 title: "{model_info.get('name', model_id)}"
 model_id: "{model_id}"
-arch_version: "{model_info.get('arch_version', '2.0')}"
+arch_version: "{model_info.get('arch_version', '3.0')}"
 status: "{model_info.get('status', 'active')}"
 total_episodes: {total_episodes}
 best_pct: {model_info.get('best_pct', 0)}
@@ -865,7 +906,7 @@ tags:
   - coc-rl
   - ppo
   - model-run
-  - architecture-{model_info.get('arch_version', '2.0').replace('.', '-')}
+  - architecture-3-0
 ---
 
 # 🤖 {model_info.get('name', model_id)}
@@ -874,24 +915,25 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 
 ---
 
-## 📌 Executive Summary & Lineage
+## 📌 Executive Summary & Single-Army Lineage
 
 - **Model Identifier**: `{model_id}`
-- **Architecture Version**: `v{model_info.get('arch_version', '2.0')}`
+- **Architecture Version**: `v{model_info.get('arch_version', '3.0')}` (`1,364,344` Trainable Parameters)
+- **Dedicated Army Composition**: **`{model_info.get('army_name', 'TH18 Thrower + Healer + Totem Smash (Meta)')}`** (Exported in `.pt` checkpoint metadata for testing)
 - **Active Status**: **{model_info.get('status', 'active').upper()}**
 - **Total Episodes Trained**: **`{total_episodes:,}`** (Cumulative across **{len(sessions)}** training sessions)
 - **Peak Combat Performance**: **`{model_info.get('best_pct', 0)}%` ({model_info.get('best_stars', 0)}★)** (Best dense return: `+{model_info.get('best_reward', 0.0)}`)
-- **Latest Checkpoint**: `trained_models/{model_info.get('latest_checkpoint', 'latest_attacker.pt')}`
+- **Latest Checkpoint**: `trained_models/{model_info.get('latest_checkpoint', 'thrower_healer_totem_smash_ep0_0pct_0star.pt')}`
 
 ### 🔄 Resumed Training Sessions History
 {sess_table}
 
 ---
 
-## 1. Input Observation Space
+## 1. Input Observation Space (`31 × 50 × 50` Spatial Grid + `64-D` Live Available Inventory)
 
-- **Spatial Observation Tensor**: `(B, {in_channels}, 50, 50)`
-- **Live Available Inventory Vector (`army_context`)**: `(B, 64)` (available troops, spells, heroes, abilities, sieges and their remaining quantities)
+- **Spatial Observation Tensor**: `(B, {in_channels}, 50, 50)` (`Ch 0..9` Base & Unit Archetypes + `Ch 10..30` One Channel per Defense Type)
+- **Live Available Inventory Vector (`army_context`)**: `(B, 64)` (what troops, spells, heroes, equipment abilities, and siege machine are still available and in what remaining quantity; depleted slots zeroed out)
 
 {ch_table}
 
@@ -917,7 +959,7 @@ The network parameterizes a factorized multi-discrete policy:
 
 ---
 
-## 5. Main Results: Army Composition vs Reference Village Matrix
+## 5. Main Results: Dedicated Army Composition vs. 5 Reference Villages
 
 {matrix_md}
 
@@ -929,9 +971,9 @@ The network parameterizes a factorized multi-discrete policy:
 
 ### 🩺 AI Diagnostic Telemetry Suite (Head Entropy, Tactical Pacing & Critic Calibration)
 
-See [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Telemetry Architecture & PPO Pathology Fixes]] for the full Dual-LLM (`OpenCode Gemini 4 Argon` & `AGY Gemini 3.8 Flash`) root-cause analysis.
+See [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Telemetry Architecture & PPO Pathology Fixes]] for the full Dual-LLM (`OpenCode Gemini 4 Argon` & `AGY Gemini 3.8 Flash`) diagnostic architecture.
 
-![AI Diagnostic Telemetry Overview](../assets/charts/v2_ai_diagnostics_telemetry.png)
+![AI Diagnostic Telemetry Overview](../assets/charts/v3_ai_diagnostics_telemetry.png)
 
 ---
 
@@ -954,8 +996,9 @@ def update_index_moc(registry: Dict[str, Any]) -> None:
     rows = []
     for mid, m in models.items():
         sess_count = len(m.get("sessions", []))
+        army_lbl = m.get("army_name", "TH18 Thrower + Healer + Totem Smash (Meta)")
         rows.append(
-            f"| [[runs/{mid}\\|{m.get('name', mid)}]] | `v{m.get('arch_version', '2.0')}` | `({m.get('in_channels', 10)}, 50, 50)` | **`{m.get('total_episodes', 0):,}`** ({sess_count} sessions) | **`{m.get('best_pct', 0)}%` ({m.get('best_stars', 0)}★)** | **{m.get('status', 'active').upper()}** |"
+            f"| [[runs/{mid}\\|{m.get('name', mid)}]] | `v{m.get('arch_version', '3.0')}` | `({m.get('in_channels', 31)}, 50, 50)` + `64D` | **{army_lbl}** | **`{m.get('total_episodes', 0):,}`** ({sess_count} sessions) | **`{m.get('best_pct', 0)}%` ({m.get('best_stars', 0)}★)** | **{m.get('status', 'active').upper()}** |"
         )
     model_table = "\n".join(rows)
 
@@ -971,36 +1014,36 @@ updated: {time.strftime('%Y-%m-%d')}
 
 # 🏰 CoC TH18 Deep RL — Architecture & Training Vault
 
-Welcome to the central research vault tracking every neural network architecture revision, input/output tensor specification, spatial archetype encoding, and empirical training benchmark for the Clash of Clans Town Hall 18 Deep RL agent.
+Welcome to the central research vault tracking our **v3.0 31-Channel Per-Defense Spatial CNN & Single-Army Specialist Actor-Critic** architecture, input/output tensor specifications, per-defense and unit archetype spatial encodings, and empirical training benchmarks for Clash of Clans Town Hall 18.
 
 ---
 
 ## 🧭 Primary Navigation
 
 ### 🎨 [[01_Model_Architecture_and_Training_Tracker.canvas|Interactive Model Architecture & Training Canvas]]
-Open the interactive 2D whiteboard visualizer presenting side-by-side architecture comparisons, stacked CNN computation graphs, comp-vs-village benchmark matrices, training curves, and resumed training session timelines.
+Open the interactive 2D whiteboard visualizer presenting the 31-channel stacked CNN computation graph, live available inventory (`army_context`) fusion, single-army vs. 5-village benchmark matrices, training curves, and resumed training session timelines.
 
 ---
 
-## 📊 Model Architecture Runs
+## 📊 Single-Army Specialist Model Runs
 
-| Model Run | Arch | Spatial Input | Total Episodes | Peak Combat Record | Status |
-| :--- | :---: | :---: | :---: | :---: | :---: |
+| Model Run | Arch | Inputs (`obs` + `army_context`) | Dedicated Army Composition | Total Episodes | Peak Combat Record | Status |
+| :--- | :---: | :---: | :--- | :---: | :---: | :---: |
 {model_table}
 
 ---
 
 ## 📚 Technical Reference Sections
 
-### 1. Neural Architectures (`architectures/`)
-- [[architectures/v1.0_Baseline_8Ch_SingleDeploy|v1.0 — Baseline 8-Channel Spatial CNN & 3-Head Single-Unit Actor-Critic]]
-- [[architectures/v2.0_10Ch_Archetype_And_DeployFraction|v2.0 — 10-Channel Unit-Archetype CNN & 4-Head Batch-Fraction Actor-Critic]]
+### 1. Neural Architecture (`architectures/`)
+- [[architectures/v3.0_31Ch_PerDefense_SingleArmy_ActorCritic|v3.0 — 31-Channel Per-Defense Spatial CNN & Single-Army Specialist Actor-Critic (1.36M Params)]]
 
-### 2. Spatial & Tensor Encodings (`encodings/`)
-- [[encodings/Unit_Type_Spatial_Encoding|Hierarchical Tactical-Archetype Spatial Encoding (Ch 8 & Ch 9)]]
+### 2. Spatial & Inventory Tensor Encodings (`encodings/`)
+- [[encodings/Defense_And_Unit_Spatial_Encoding|31-Channel Per-Defense Spatial Grid (Ch 10..30), Unit Archetypes (Ch 8..9) & Live Available Inventory (64-D)]]
+- [[encodings/Unit_Type_Spatial_Encoding|Hierarchical Tactical-Archetype Unit Encoding (Ch 8 & Ch 9 Deep Dive)]]
 
 ### 3. Empirical Benchmark Logs & AI Training Diagnostics (`experiments/`)
-- [[experiments/Experiment_Log_And_Benchmarks|Master Experiment Log & Model Checkpoint Comparison]]
+- [[experiments/Experiment_Log_And_Benchmarks|Master Experiment Log & Single-Army Specialist Benchmarks]]
 - [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Telemetry Architecture & PPO Pathology Fixes]]
 """
     with open(os.path.join(VAULT_DIR, "00_Index_MOC.md"), "w", encoding="utf-8") as f:
@@ -1033,20 +1076,19 @@ def generate_obsidian_canvas(
         "width": 3100,
         "height": 320,
         "color": "5",
-        "text": """# 🏰 Clash of Clans TH18 Deep RL — Model Architecture & Training Tracker
+        "text": """# 🏰 Clash of Clans TH18 Deep RL — v3.0 Single-Army Specialist & 31-Channel Per-Defense Tracker
 
-This canvas dynamically tracks our neural network architectures, spatial observation tensors, action spaces, reward formulations, and empirical training performance across Town Hall 18 meta compositions and reference villages.
+This canvas dynamically tracks our **v3.0 (`1,364,344` params)** neural network architecture, `31 × 50 × 50` per-defense spatial observation tensor, `64-D` live available inventory input (`army_context`), factorized 5-head action space, and single-army specialist performance across all 5 TH18 reference villages.
 
-- **Primary Evolution**: Transition from **v1.0 (8-Channel, 1x Single-Deploy)** to **v2.0 (10-Channel Tactical Archetypes & Batch-Deploy Fractions)**.
-- **Resumed Training Recognition**: Automatically merges subsequent training sessions (e.g. $10{,}000\\text{ ep} + 5{,}000\\text{ ep} = 15{,}000\\text{ total ep}$), tracking cumulative experience and updating performance matrices in real time.
-- **Main Performance Metric**: Complete $3 \\times 5$ deterministic evaluation matrix of each TH18 Meta Composition vs each Reference Village.
-- **Vault Documentation**: [[00_Index_MOC|Vault Map of Content]] • [[encodings/Unit_Type_Spatial_Encoding|Tactical Archetype Encoding Spec]]""",
+- **Single-Army Specialist Paradigm**: Each model is trained exclusively for **1 dedicated Army Composition**, reflected in its default filename (`{army_slug}_ep{N}_{pct}pct_{stars}star.pt`) and exported inside the `.pt` checkpoint for automatic loading in the AI Model Tester.
+- **31-Channel Per-Defense Spatial Grid + 64-D Live Available Inventory**: Channels `0..9` encode base state & unit archetypes; Channels `10..30` dedicate **1 channel per TH18 defense type** (encoding mode & facing angle, with Hidden Tesla masked until revealed); `army_context (64-D)` encodes what troops, spells, heroes, abilities, and siege are still available and in what remaining quantity.
+- **Vault Documentation**: [[00_Index_MOC|Vault Map of Content]] • [[architectures/v3.0_31Ch_PerDefense_SingleArmy_ActorCritic|v3.0 Architecture Spec]] • [[encodings/Defense_And_Unit_Spatial_Encoding|31-Channel Defense & Unit Encoding Spec]]""",
     })
 
     group_width = 1500
-    group_height = 3480
+    group_height = 3850
     gap = 100
-    model_keys = ["v2_archetype_10ch"]
+    model_keys = ["v3_per_defense_31ch"]
 
     # Also include any newly registered models
     for k in models.keys():
@@ -1060,13 +1102,13 @@ This canvas dynamically tracks our neural network architectures, spatial observa
 
         base_x = col_idx * (group_width + gap)
         base_y = 0
-        in_ch = m.get("in_channels", 10)
-        arch_ver = m.get("arch_version", "2.0")
+        in_ch = m.get("in_channels", 31)
+        arch_ver = m.get("arch_version", "3.0")
         total_eps = m.get("total_episodes", 0)
         status_color = "1" if m.get("status") == "superseded" else "4"
 
         # Find eval data
-        ckpt = m.get("latest_checkpoint", "latest_attacker.pt")
+        ckpt = m.get("latest_checkpoint", "thrower_healer_totem_smash_ep0_0pct_0star.pt")
         eval_data = None
         for k_eval, val_eval in eval_cache.items():
             if k_eval.startswith(os.path.basename(ckpt).split(".")[0]):
@@ -1090,13 +1132,16 @@ This canvas dynamically tracks our neural network architectures, spatial observa
             "label": f"Model Section: {m.get('name', mid)} ({total_eps:,} Cumulative Episodes — {m.get('status', 'active').upper()})",
         })
 
-        # 2. Overview & Resumed Session Lineage Card (Generously sized to prevent any scrolling)
+        # 2. Overview & Resumed Session Lineage Card
         sessions = m.get("sessions", [])
         sess_rows = []
-        for s in sessions:
-            sess_rows.append(
-                f"| **Session #{s['session_id']}** | `{s['start_ep']:,} -> {s['end_ep']:,}` | `+{s['episodes']:,} ep` | `{s.get('best_pct', 'N/A')}% ({s.get('best_stars', 'N/A')}★)` |"
-            )
+        if sessions:
+            for s in sessions:
+                sess_rows.append(
+                    f"| **Session #{s['session_id']}** | `{s['start_ep']:,} -> {s['end_ep']:,}` | `+{s['episodes']:,} ep` | `{s.get('best_pct', 'N/A')}% ({s.get('best_stars', 'N/A')}★)` |"
+                )
+        else:
+            sess_rows.append("| *Ready to Train* | `0 -> 0` | `+0 ep` | `—` |")
         sess_table = "\n".join(sess_rows)
 
         nodes.append({
@@ -1105,11 +1150,13 @@ This canvas dynamically tracks our neural network architectures, spatial observa
             "x": base_x + 30,
             "y": base_y + 40,
             "width": 700,
-            "height": 620,
+            "height": 980,
             "color": status_color,
-            "text": f"""### 🏷️ Run Overview & Resumption Lineage
+            "text": f"""### 🏷️ Single-Army Specialist Overview & Lineage
 - **Model Name**: **{m.get('name', mid)}**
-- **Architecture**: `v{arch_ver}` ({in_ch} Spatial Channels)
+- **Architecture**: `v{arch_ver}` (`{in_ch}` Spatial Channels + `64-D` Live Inventory • `1,364,344` Params)
+- **Dedicated Army Composition**: **`{m.get('army_name', 'TH18 Thrower + Healer + Totem Smash (Meta)')}`**
+- **Default Checkpoint Naming**: `{m.get('army_slug', 'thrower_healer_totem_smash')}_ep{{N}}_{{pct}}pct_{{stars}}star.pt`
 - **Status**: **{m.get('status', 'active').upper()}**
 - **Total Training Episodes**: **`{total_eps:,}`** (Cumulative)
 - **Peak Record**: **`{m.get('best_pct', 0)}%` ({m.get('best_stars', 0)}★)** (Return: `+{m.get('best_reward', 0.0)}`)
@@ -1120,10 +1167,10 @@ This canvas dynamically tracks our neural network architectures, spatial observa
 | :---: | :---: | :---: | :---: |
 {sess_table}
 
-> **Resumption Rule**: When training resumes from this model, its card automatically updates with cumulative episodes (**{total_eps:,}**) and re-evaluates the latest weights across all matchups.""",
+> **Exported Army Metadata**: Every `.pt` checkpoint stores the full `army` loadout dict (`troops`, `spells`, `heroes`, `hero_equipment`, `siege_machine`, `cc_troops`, `cc_spells`) so the AI Model Tester automatically equips the exact composition the model was trained on.""",
         })
 
-        # 3. Input Observation Space Card (Generously sized to fit all 10 channels without scrolling)
+        # 3. Input Observation Space Card (All 31 Channels + 64D Live Inventory)
         ch_rows = [f"| `{ch}` | **{name}** | `{norm}` |" for ch, name, norm, _ in CHANNELS]
         nodes.append({
             "id": f"{mid}-inputs",
@@ -1131,74 +1178,72 @@ This canvas dynamically tracks our neural network architectures, spatial observa
             "x": base_x + 760,
             "y": base_y + 40,
             "width": 710,
-            "height": 620,
+            "height": 980,
             "color": "5",
-            "text": f"""### 📥 Input Observation Space
-- **Spatial Grid Tensor**: **`(B, {in_ch}, 50, 50)`**
-- **Live Available Inventory (`army_context`)**: **`(B, 64)`** (what troops, spells, heroes, abilities, sieges and quantities are still available)
+            "text": f"""### 📥 Dual Input Observation Space
+- **Input 1 — Spatial Grid (`obs`)**: **`(B, {in_ch}, 50, 50)`** (`Ch 0..9` Base/Units + `Ch 10..30` 1 Channel per Defense Type)
+- **Input 2 — Live Available Inventory (`army_context`)**: **`(B, 64)`** (what troops, spells, heroes, abilities, and siege are still available and in what remaining quantity)
 
 | Ch | Feature Name | Normalization |
 | :-: | :--- | :--- |
-{chr(10).join(ch_rows)}
-
-*Preserves exact 1-to-1 tile spatial resolution without destructive downsampling.*""",
+{chr(10).join(ch_rows)}""",
         })
 
-        # 4. Output Action Space Card (Generously sized to prevent scrolling)
+        # 4. Output Action Space Card
         heads = m.get("action_heads", [])
         nodes.append({
             "id": f"{mid}-outputs",
             "type": "text",
             "x": base_x + 30,
-            "y": base_y + 690,
+            "y": base_y + 1050,
             "width": 700,
             "height": 420,
             "color": "6",
             "text": f"""### 📤 Output Policy & Critic Heads
 Factorized Multi-Discrete Action Space:
 """ + "\n".join([f"- **Head {i+1}**: `{h}`" for i, h in enumerate(heads)]) + f"""
-- **Critic Head**: `Linear(256 -> 1)` scalar state-value estimate $V(s) \\in \\mathbb{{R}}$.
+- **Critic Head**: `Linear(256 -> 128 -> 1)` scalar state-value estimate $V(s) \\in \\mathbb{{R}}$.
 
 #### Deployment Dynamics:
-- Multi-unit wave drop via `deploy_fraction_head` ($\\alpha \\in \\{{0.0, 0.25, 0.50, 0.75, 1.00\\}}$), dropping full squads in a single $0.64\\text{{s}}$ step!""",
+- Multi-unit wave drop via `deploy_fraction_head` ($\\alpha \\in \\{{0.0, 0.25, 0.50, 0.75, 1.00\\}}$), dropping full squads in a single $0.8\\text{{s}}$ step!""",
         })
 
-        # 5. Reward Function Card (Generously sized to prevent scrolling)
+        # 5. Reward Function Card
         nodes.append({
             "id": f"{mid}-reward",
             "type": "text",
             "x": base_x + 760,
-            "y": base_y + 690,
+            "y": base_y + 1050,
             "width": 710,
             "height": 420,
             "color": "3",
             "text": REWARD_FUNCTION_DESC,
         })
 
-        # 6. Stacked CNN Architecture Image Card (Full Width 3D Volumetric Neural Block Diagram)
-        arch_img_file = "assets/architectures/v2_architecture.png"
+        # 6. Stacked CNN Architecture Image Card
+        arch_img_file = "assets/architectures/v3_architecture.png"
         nodes.append({
             "id": f"{mid}-arch-img",
             "type": "file",
             "file": arch_img_file,
             "x": base_x + 30,
-            "y": base_y + 1140,
+            "y": base_y + 1500,
             "width": 1440,
             "height": 480,
         })
 
-        # 7. Main Results: Comp vs. Village Matrix Card (Full Width, Zero Scrolling)
+        # 7. Main Results: Dedicated Army vs. 5 Reference Villages Card
         nodes.append({
             "id": f"{mid}-results-matrix",
             "type": "text",
             "x": base_x + 30,
-            "y": base_y + 1650,
+            "y": base_y + 2010,
             "width": 1440,
             "height": 460,
             "color": "4",
-            "text": f"""### ⚔️ Main Performance Metric: Army Compositions vs. Reference Villages
+            "text": f"""### ⚔️ Main Performance Metric: Dedicated Army Composition vs. 5 Reference Villages
 
-Deterministic rollout benchmarks evaluated across all 3 Meta Compositions against all 5 Reference TH18 Base Layouts:
+Deterministic rollout benchmarks evaluated for the model's exported army composition against all 5 Reference TH18 Base Layouts:
 
 {matrix_md}
 
@@ -1206,46 +1251,47 @@ Deterministic rollout benchmarks evaluated across all 3 Meta Compositions agains
 - **Model Checkpoint Tested**: `trained_models/{ckpt}`.""",
         })
 
-        # 8. Training Progression & Resumption Curves Card (Full Width 3-Panel Chart)
+        # 8. Training Progression & Resumption Curves Card
         chart_file = f"assets/charts/{mid}_training_curves.png"
         nodes.append({
             "id": f"{mid}-curves-img",
             "type": "file",
             "file": chart_file,
             "x": base_x + 30,
-            "y": base_y + 2140,
+            "y": base_y + 2500,
             "width": 1440,
             "height": 700,
         })
 
-        # 9. Hyperparameters & PPO Training Diagnostics Card (Full Width, Zero Scrolling)
+        # 9. Hyperparameters & PPO Training Diagnostics Card
         hp = m.get("hyperparams", {})
         nodes.append({
             "id": f"{mid}-hyperparams",
             "type": "text",
             "x": base_x + 30,
-            "y": base_y + 2870,
+            "y": base_y + 3230,
             "width": 1440,
             "height": 560,
             "color": "2",
-            "text": f"""### ⚙️ Hyperparameters & Training Configuration
+            "text": f"""### ⚙️ Hyperparameters & Single-Army Training Configuration
 
 | Parameter | Configured Value | Tactical Function in PPO |
 | :--- | :---: | :--- |
+| **Dedicated Army Composition** | **`{m.get('army_name', 'TH18 Thrower + Healer + Totem Smash (Meta)')}`** | Fixed single army composition trained and exported with the model |
 | **Total Cumulative Episodes** | **`{total_eps:,}`** | Total combat experience across **{len(sessions)}** resumed sessions |
-| **Learning Rate (`lr`)** | `{hp.get('lr', 3e-4)}` | Adam optimizer step size with linear/cosine warmup |
-| **Batch Episodes** | `{hp.get('batch_episodes', 4)}` | Number of combat episodes accumulated per PPO policy update |
-| **Minibatch Size** | `{hp.get('minibatch_size', 64)}` | Mini-batch sample size for SGD gradient steps |
+| **Learning Rate (`lr`)** | `{hp.get('lr', 3e-4)}` | Adam optimizer step size (Critic `2.5x` Actor LR) |
+| **Batch Episodes** | `{hp.get('batch_episodes', 12)}` | Number of combat episodes accumulated per PPO policy update |
+| **Minibatch Size** | `{hp.get('minibatch_size', 128)}` | Mini-batch sample size for SGD gradient steps |
 | **PPO Epochs (`K`)** | `{hp.get('ppo_epochs', 4)}` | Number of optimization epochs over each rollout buffer |
-| **Simulation Ticks / Step** | `{hp.get('ticks_per_step', 8)}` | Combat granularity: `8 ticks` = `0.64s` per agent decision |
+| **Simulation Ticks / Step** | `{hp.get('ticks_per_step', 8)}` | Combat granularity: `8 ticks` = `0.8s` per agent decision |
 | **Discount Factor ($\\gamma$)** | `{hp.get('gamma', 0.99)}` | Long-term return horizon weighting |
 | **GAE Parameter ($\\lambda$)** | `{hp.get('gae_lambda', 0.95)}` | Bias-variance tradeoff in advantage estimation |
 | **PPO Clipping ($\\epsilon$)** | `{hp.get('clip_coef', 0.20)}` | Surrogate policy clipping threshold |
-| **Entropy Coefficient** | `{hp.get('ent_coef', 0.015)}` | Exploration incentive preventing early deployment collapse |
-| **Matchup Sampling Mode** | `{hp.get('matchup_mode', 'random')}` | Sampling distribution across reference compositions and base layouts |""",
+| **Entropy Coefficient** | `{hp.get('ent_coef', 0.015)}` | Normalized per-head exploration incentive |
+| **Village Sampling Mode** | `{hp.get('matchup_mode', 'random')}` | Sampling distribution across the 5 reference TH18 base layouts |""",
         })
 
-    # AI Training Diagnostics & Telemetry Suite Section (Below v2 Group)
+    # AI Training Diagnostics & Telemetry Suite Section
     diag_y = group_height + 80
     nodes.append({
         "id": "ai-diagnostics-summary",
@@ -1255,36 +1301,29 @@ Deterministic rollout benchmarks evaluated across all 3 Meta Compositions agains
         "width": 1500,
         "height": 760,
         "color": "4",
-        "text": """### 🩺 Dual-LLM AI Training Diagnostics & PPO Pathology Fixes (`v2.0 -> v2.1`)
+        "text": """### 🩺 Dual-LLM AI Training Diagnostics & v3.0 Architectural Upgrades
 
 Full Dossier: [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Telemetry Architecture & PPO Pathology Fixes]]
 
 - **Diagnostic Engines**: **Argon 4 • OpenCode** (`google-vertex/gemini-4-argon#medium`) & **Flash 3.8 • AGY** (`gemini-3.8-flash-medium`).
-- **4 Pathologies Diagnosed at Ep 8,770 (`44/100 Plateaued`) & Corrected (`84/100 Progressing`)**:
-  1. **Action Dumping & Zero-NoOp Collapse** (`NoOp 0.11%`, abilities popped at `t=4–6.4s`) $\to$ Fixed via Two-Phase Tactical Pacing (`NoOp 15–24%`, abilities at `t=6.4–23.2s`) & fast-forward discounting.
-  2. **Factorized Head Entropy Imbalance & Interior-Hole Scattering** (`H(tile) 101.6%`, $\\sigma=17.0\\text{t}$) $\to$ Fixed via normalized per-head `reg_entropy`, exterior cardinal perimeter funneling (`not_interior_hole`), and FiLM spatial conditioning (`Top-5 Tile Mass 2.8% -> 24.5%`, $\\sigma=4.3\\text{t}$).
-  3. **1-Star Perimeter Trash-Clearing Local Optimum** (`4.0%` 2★ TH takedowns, `0.0%` 3★ triples) $\to$ Fixed via calibrated 100-pt dense HP + `+14.0` TH18 milestone reward & Town Hall spell-halo protection (`Overgrowth`/`Invisibility` exclusion).
-  4. **Cross-Army Interference & Critic Lag** $\to$ Fixed via stratified `batch_episodes=12` sampling & `2.5x` Critic LR.
-
-| Metric | Pre-Fix (`Ep 8,770`) | Post-Fix Continuation (`Ep 8,938`) | Live `v2.1` Run (`Phase 1 -> 5`) |
-| :--- | :---: | :---: | :---: |
-| **Mean Destruction %** | `59.5%` | `63.8%` (Peak `100%`) | `64.2% -> 71.7%` (Peak `100%`) |
-| **2★+ TH18 Takedown Rate** | `4.0%` | **`51.7% – 54.0%`** | `53.9% -> 68.4%` |
-| **3★ Triple Rate** | `0.0%` | **`3.3% – 4.0%`** | `4.0% -> 15.0%` |
-| **Argon 4 Health Verdict** | `PLATEAUED (44/100)` | **`PROGRESSING (84/100)`** | **`PROGRESSING (78/100)`** |""",
+- **Key Architectural Pillars in `v3.0`**:
+  1. **Single-Army Specialist Training**: Eliminates cross-army gradient interference by training 1 dedicated model per army composition (`{army_slug}_ep{N}_{pct}pct_{stars}star.pt`) and exporting the full `army` recipe inside the `.pt` checkpoint.
+  2. **31-Channel Per-Defense Spatial Grid (`Ch 10..30`)**: Gives each of the 21 TH18 defense types its own dedicated `50×50` input channel (encoding mode for X-Bow/Inferno/SpellTower/MultiGear, facing direction for AirSweeper/Firespitter, and masking Hidden Teslas until revealed).
+  3. **Live Available Inventory (`army_context`, `64-D`)**: Explicitly informs the policy at every step what troops, spells, heroes, equipment abilities, and siege machine are still available and in what remaining quantity (zeroing out depleted slots).
+  4. **Two-Phase Tactical Pacing & Normalized Per-Head Entropy (`reg_entropy`)**: Coordinates frontline wave entry before Siege/Heroes, paces mid-battle Spells (`t >= 40`) and Hero Abilities (`t >= 64`), and balances discrete vs. spatial pointer exploration.""",
     })
     nodes.append({
         "id": "ai-diagnostics-chart",
         "type": "file",
-        "file": "assets/charts/v2_ai_diagnostics_telemetry.png",
+        "file": "assets/charts/v3_ai_diagnostics_telemetry.png",
         "x": 1560,
         "y": diag_y,
         "width": 1540,
         "height": 760,
     })
     edges.append({
-        "id": "edge-v2-to-diag",
-        "fromNode": "group-v2_archetype_10ch",
+        "id": "edge-v3-to-diag",
+        "fromNode": "group-v3_per_defense_31ch",
         "fromSide": "bottom",
         "toNode": "ai-diagnostics-chart",
         "toSide": "top",
@@ -1328,16 +1367,27 @@ def update_or_register_training_run(
     is_resuming = bool(resumed_from and resumed_from not in ("scratch", "none", "new"))
     total_cum_eps = base_episodes + new_episodes
 
-    target_model_id = "v2_archetype_10ch"
+    target_model_id = "v3_per_defense_31ch"
+    army_name = (hyperparams or {}).get("army_name", "TH18 Thrower + Healer + Totem Smash (Meta)")
+    army_slug = (hyperparams or {}).get("army_slug", "thrower_healer_totem_smash")
 
     models = registry.setdefault("models", {})
     if target_model_id not in models:
         models[target_model_id] = {
             "id": target_model_id,
-            "name": f"Model {target_model_id}",
-            "arch_version": "2.0",
+            "name": "v3.0 — 31-Channel Per-Defense CNN & Single-Army Specialist Actor-Critic",
+            "arch_version": "3.0",
             "status": "active",
-            "in_channels": 10,
+            "in_channels": 31,
+            "army_name": army_name,
+            "army_slug": army_slug,
+            "action_heads": [
+                "slot_type (7)",
+                "slot_idx (10)",
+                "deploy_fraction (5)",
+                "tile_xy (2500)",
+                "critic_value (1)",
+            ],
             "total_episodes": total_cum_eps,
             "latest_checkpoint": ckpt_name,
             "best_pct": best_pct,
@@ -1349,6 +1399,10 @@ def update_or_register_training_run(
         }
 
     m = models[target_model_id]
+    m["army_name"] = army_name
+    m["army_slug"] = army_slug
+    m["in_channels"] = 31
+    m["arch_version"] = "3.0"
     m["total_episodes"] = total_cum_eps
     m["latest_checkpoint"] = ckpt_name
     m["best_pct"] = max(m.get("best_pct", 0), best_pct)
@@ -1368,7 +1422,7 @@ def update_or_register_training_run(
         "best_pct": best_pct,
         "best_stars": best_stars,
         "best_reward": best_reward,
-        "notes": f"Resumed training (+{new_episodes:,} ep from {resumed_from})" if is_resuming else f"Initial training ({new_episodes:,} ep)",
+        "notes": f"Resumed training (+{new_episodes:,} ep from {resumed_from}) on {army_name}" if is_resuming else f"Initial training ({new_episodes:,} ep) on {army_name}",
     }
     m.setdefault("sessions", []).append(session_record)
 
@@ -1382,13 +1436,13 @@ def update_or_register_training_run(
 
     save_registry(registry)
 
-    # Evaluate model across the 15 matchups
+    # Evaluate model across the 5 reference villages
     eval_data = evaluate_model_matchups(checkpoint_path, cache=False, force=True)
 
     # Generate training curves chart
     chart_png = os.path.join(CHARTS_ASSETS_DIR, f"{target_model_id}_training_curves.png")
     generate_training_curves_chart(target_model_id, m, chart_png)
-    generate_ai_diagnostics_chart(os.path.join(CHARTS_ASSETS_DIR, "v2_ai_diagnostics_telemetry.png"))
+    generate_ai_diagnostics_chart(os.path.join(CHARTS_ASSETS_DIR, "v3_ai_diagnostics_telemetry.png"))
 
     # Ensure architecture diagrams
     ensure_all_architecture_diagrams()
@@ -1439,7 +1493,7 @@ def rebuild_entire_vault(force_eval: bool = False) -> Dict[str, Any]:
         chart_png = os.path.join(CHARTS_ASSETS_DIR, f"{mid}_training_curves.png")
         generate_training_curves_chart(mid, m, chart_png)
         print(f"       -> Chart saved: {chart_png}")
-    diag_png = os.path.join(CHARTS_ASSETS_DIR, "v2_ai_diagnostics_telemetry.png")
+    diag_png = os.path.join(CHARTS_ASSETS_DIR, "v3_ai_diagnostics_telemetry.png")
     generate_ai_diagnostics_chart(diag_png)
     print(f"       -> AI Diagnostics chart saved: {diag_png}")
 
