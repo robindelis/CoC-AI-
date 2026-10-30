@@ -1122,7 +1122,7 @@ mod tests {
     }
 
     #[test]
-    fn test_50_channel_spatial_observation() {
+    fn test_59_channel_spatial_observation() {
         let layouts = get_preset_layouts();
         let armies = get_preset_armies();
         let layout = &layouts[0];
@@ -1130,19 +1130,53 @@ mod tests {
         let mut engine = BattleEngine::new(layout, army);
 
         let obs0 = engine.extract_spatial_observation();
-        assert_eq!(obs0.len(), 50 * 50 * 50);
+        assert_eq!(obs0.len(), 59 * 50 * 50);
 
         let idx = |ch: usize, y: usize, x: usize| ch * 2500 + y * 50 + x;
 
         // Base channels: TH18 core at (23, 23)
         assert_eq!(obs0[idx(2, 23, 23)], 1.0);
 
+        // Check Clan Castle (Ch 55) in layout[0]
+        let cc_b = engine.buildings.iter().find(|b| b.building_id == BuildingId::ClanCastle).expect("CC must exist");
+        assert_eq!(obs0[idx(55, cc_b.tile_y as usize, cc_b.tile_x as usize)], 1.0, "Clan Castle must be 1.0 on Ch 55");
+
+        // Check Storage (Ch 56) in layout[0]
+        let storage_b = engine.buildings.iter().find(|b| {
+            matches!(b.building_id, BuildingId::GoldStorage | BuildingId::ElixirStorage | BuildingId::DarkElixirStorage | BuildingId::HeroHall)
+        }).expect("Storage must exist");
+        let storage_val = obs0[idx(56, storage_b.tile_y as usize, storage_b.tile_x as usize)];
+        assert!(storage_val > 0.0 && storage_val <= 1.0, "Storage must be in [0, 1] on Ch 56");
+
+        // Check Collector (Ch 57) in layout[0]
+        let collector_b = engine.buildings.iter().find(|b| {
+            matches!(b.building_id, BuildingId::GoldMine | BuildingId::ElixirCollector | BuildingId::DarkElixirDrill)
+        }).expect("Collector must exist");
+        let collector_val = obs0[idx(57, collector_b.tile_y as usize, collector_b.tile_x as usize)];
+        assert!(collector_val > 0.0 && collector_val <= 1.0, "Collector must be in [0, 1] on Ch 57");
+
+        // Check Utility / Other (Ch 58) in layout[0]
+        let utility_b = engine.buildings.iter().find(|b| {
+            matches!(b.building_id, BuildingId::ArmyCamp | BuildingId::Laboratory | BuildingId::SpellFactory)
+        }).expect("Utility building must exist");
+        let utility_val = obs0[idx(58, utility_b.tile_y as usize, utility_b.tile_x as usize)];
+        assert!(utility_val > 0.0 && utility_val <= 1.0, "Utility building must be in [0, 1] on Ch 58");
+
         // Deploy 3 Throwers at (10.5, 10.5)
         for _ in 0..3 {
             engine.spawn_troop_unit(TroopId::Thrower, Team::Attacker, 10.5, 10.5, None);
         }
-        // Deploy Barbarian King at (12.5, 12.5)
+        // Deploy friendly Barbarian King at (12.5, 12.5)
         engine.spawn_hero_unit(HeroId::BarbarianKing, Team::Attacker, 12.5, 12.5);
+
+        // Deploy Defending Heroes on Defender team to verify individual channels:
+        // Ch 26: Defending BK, Ch 27: Defending AQ, Ch 28: Defending GW, Ch 29: Defending RC
+        engine.spawn_hero_unit(HeroId::BarbarianKing, Team::Defender, 32.5, 32.5);
+        engine.spawn_hero_unit(HeroId::ArcherQueen, Team::Defender, 30.5, 30.5);
+        engine.spawn_hero_unit(HeroId::GrandWarden, Team::Defender, 34.5, 34.5);
+        engine.spawn_hero_unit(HeroId::RoyalChampion, Team::Defender, 36.5, 36.5);
+        engine.spawn_hero_unit(HeroId::MinionPrince, Team::Defender, 38.5, 38.5);
+        engine.spawn_hero_unit(HeroId::DragonDuke, Team::Defender, 40.5, 40.5);
 
         // Spawn Totem at (14.5, 14.5)
         engine.cast_spell(SpellId::Totem, Team::Attacker, 14.5, 14.5);
@@ -1151,14 +1185,22 @@ mod tests {
         engine.cast_spell(SpellId::Rage, Team::Attacker, 20.0, 20.0);
 
         let obs1 = engine.extract_spatial_observation();
-        assert_eq!(obs1.len(), 125_000);
+        assert_eq!(obs1.len(), 147_500);
 
         // Ch 5: Thrower count 3 / 12 = 0.25 on tile (10, 10)
         let thrower_val = obs1[idx(5, 10, 10)];
         assert!((thrower_val - 0.25).abs() < 1e-4, "Thrower Ch 5 should be 0.25, got {}", thrower_val);
 
-        // Ch 17: Barbarian King on tile (12, 12) is 1.0
+        // Ch 17: Friendly Barbarian King on tile (12, 12) is 1.0
         assert_eq!(obs1[idx(17, 12, 12)], 1.0);
+
+        // Defending Heroes individual channels (Ch 26..31)
+        assert_eq!(obs1[idx(26, 32, 32)], 1.0, "Defending BK should be 1.0 on Ch 26");
+        assert_eq!(obs1[idx(27, 30, 30)], 1.0, "Defending AQ should be 1.0 on Ch 27");
+        assert_eq!(obs1[idx(28, 34, 34)], 1.0, "Defending GW should be 1.0 on Ch 28");
+        assert_eq!(obs1[idx(29, 36, 36)], 1.0, "Defending RC should be 1.0 on Ch 29");
+        assert_eq!(obs1[idx(30, 38, 38)], 1.0, "Defending Minion Prince should be 1.0 on Ch 30");
+        assert_eq!(obs1[idx(31, 40, 40)], 1.0, "Defending Dragon Duke should be 1.0 on Ch 31");
 
         // Ch 21: Totem HP ratio on tile (14, 14) is 1.0
         let totem_val = obs1[idx(21, 14, 14)];

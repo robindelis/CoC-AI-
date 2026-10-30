@@ -3,10 +3,10 @@ title: "v3.0 — 50-Channel Dedicated CNN & Single-Army Specialist Actor-Critic"
 model_id: "v3_per_defense_31ch"
 arch_version: "3.0"
 status: "active"
-total_episodes: 1918
+total_episodes: 4
 best_pct: 100
 best_stars: 3
-updated_at: "2026-10-30 18:09:43"
+updated_at: "2026-10-30 19:58:14"
 tags:
   - coc-rl
   - ppo
@@ -26,15 +26,18 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 - **Architecture Version**: `v3.0` (`1,375,288` Trainable Parameters)
 - **Dedicated Army Composition**: **`TH18 Thrower + Healer + Totem Smash (Meta)`** (Exported in `.pt` checkpoint metadata for testing)
 - **Active Status**: **ACTIVE**
-- **Total Episodes Trained**: **`1,918`** (Cumulative across **2** training sessions)
+- **Total Episodes Trained**: **`4`** (Cumulative across **5** training sessions)
 - **Peak Combat Performance**: **`100%` (3★)** (Best dense return: `+101.01348554180662`)
-- **Latest Checkpoint**: `trained_models/thrower_healer_totem_smash_ep1918_100pct_3star.pt`
+- **Latest Checkpoint**: `trained_models/thrower_healer_totem_smash_ep4_78pct_2star.pt`
 
 ### 🔄 Resumed Training Sessions History
 | Session # | Start Ep | End Ep | Episodes Added | Checkpoint File | Peak % | Stars | Notes |
 | :---: | :---: | :---: | :---: | :--- | :---: | :---: | :--- |
 | **#1** | `0` | `1,689` | `+1,689` | `thrower_healer_totem_smash_ep1689_100pct_3star.pt` | `100%` | `3★` | Initial training (1,689 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
 | **#2** | `1,689` | `1,918` | `+229` | `thrower_healer_totem_smash_ep1918_100pct_3star.pt` | `100%` | `3★` | Resumed training (+229 ep from thrower_healer_totem_smash_ep1689_100pct_3star.pt) on TH18 Thrower + Healer + Totem Smash (Meta) |
+| **#3** | `0` | `60` | `+60` | `thrower_healer_totem_smash_ep60_100pct_3star.pt` | `100%` | `3★` | Initial training (60 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
+| **#4** | `0` | `1,000` | `+1,000` | `thrower_healer_totem_smash_ep1000_100pct_3star.pt` | `100%` | `3★` | Initial training (1,000 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
+| **#5** | `0` | `4` | `+4` | `thrower_healer_totem_smash_ep4_78pct_2star.pt` | `78%` | `2★` | Initial training (4 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
 
 ---
 
@@ -71,30 +74,39 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 | `23` | **Poison Spell (Fade AoE)** | `remaining / total across AoE` | Continuous 1.0 -> 0.0 fading defending CC deceleration & poison mist circle |
 | `24` | **Skeleton Spell (Fade AoE)** | `remaining / total across AoE` | Continuous 1.0 -> 0.0 fading friendly skeleton distraction summon circle |
 | `25` | **Enemy CC & Guardian** | `min(count / 5.0, 1.0)` | Defending Clan Castle troops (Lava Hound, Ice Golem, Headhunters) & TH18 Guardian |
-| `26` | **Enemy Heroes** | `1.0 on tile` | Defending King, Queen, Warden, and Dragon Duke on defensive banners |
-| `27` | **Enemy Ground Skeletons** | `min(count / 10.0, 1.0)` | Defending ground skeletons from skeleton traps & defending witch |
-| `28` | **Enemy Air Skeletons** | `min(count / 10.0, 1.0)` | Defending air skeletons from air skeleton traps targeting air units |
-| `29` | **Archer Tower** | `1.0 on alive 3×3 footprint` | Point ground+air defense (10.0t range, 145 DPS) |
-| `30` | **Multi-Archer Tower** | `1.0 on alive 3×3 footprint` | 3-target merged point defense (10.0t range, 363 DPS) |
-| `31` | **Ricochet Cannon** | `1.0 on alive 3×3 footprint` | 2-target bounce ground defense (9.0t range, 396 DPS) |
-| `32` | **Cannon** | `1.0 on alive 3×3 footprint` | Ground point defense (9.0t range, 235 DPS) |
-| `33` | **Mortar** | `1.0 on alive 3×3 footprint` | Long-range ground splash (4–11t deadzone, 56 DPS) |
-| `34` | **Air Defense** | `1.0 on alive 3×3 footprint` | Anti-air high single-target rocket defense (10.0t range, 650 DPS) |
-| `35` | **Wizard Tower** | `1.0 on alive 3×3 footprint` | Ground+air splash defense (7.0t range, 110 DPS) |
-| `36` | **Super Wizard Tower** | `1.0 on alive 3×3 footprint` | Chain-lightning multi-target defense (8.0t range, 265 DPS) |
-| `37` | **Air Sweeper** | `0.25 + 0.75 * (dir_deg / 360.0)` | Directional 105° cone air pushback (encodes presence & facing angle) |
-| `38` | **Hidden Tesla** | `1.0 only when revealed, 0.0 hidden` | Revealed when enemy enters trigger range or destruction >= 51% |
-| `39` | **Bomb Tower** | `1.0 on alive 3×3 footprint` | Ground splash + lethal death bomb explosion on destruction |
-| `40` | **X-Bow** | `1.0 = Air & Ground, 0.5 = Ground Only` | Rapid-fire defense with mode-dependent range (11.5t A+G vs 14.0t Ground) |
-| `41` | **Inferno Tower** | `1.0 = Single-Target, 0.5 = Multi-Target` | 3-stage exponential ramp beam (Single) vs 6-target scorch (Multi) |
-| `42` | **Scattershot** | `1.0 on alive 3×3 footprint` | Heavy 90° cone splash behind primary target (3–10t range) |
-| `43` | **Builder's Hut** | `1.0 on alive 2×2 footprint` | Weaponized turret + spawns repair builder healing nearby structures |
-| `44` | **Spell Tower** | `0.25=Rage, 0.50=Poison, 0.75=Invis, 1.0=EQ` | Encodes exact equipped defensive spell tower mode |
-| `45` | **Monolith** | `1.0 on alive 3×3 footprint` | Anti-tank % max-HP + flat damage priority core threat |
-| `46` | **Multi-Gear Tower** | `1.0 = Long Range, 0.5 = Fast Attack` | TH18 geared defense switching between long range and fast burst |
-| `47` | **Firespitter** | `0.25 + 0.75 * (dir_deg / 360.0)` | Directional 150° cone rapid piercing fireballs (encodes presence & facing angle) |
-| `48` | **Revenge Tower** | `1.0 on alive 3×3 footprint` | Escalates power as 5 / 25 / 50 village buildings are destroyed |
-| `49` | **Hot Candle (Crafted)** | `1.0 on alive 3×3 footprint` | Season 4 Crafted Defense firing 6 → 4 → 3 multi-target flames as it melts |
+| `26` | **Defending Barbarian King** | `1.0 on tile` | High-HP defending melee tank on pedestal; draws friendly melee target focus into compartment |
+| `27` | **Defending Archer Queen** | `1.0 on tile` | High-DPS defending ranged carry (700+ DPS); priority target for Headhunters and Poison |
+| `28` | **Defending Grand Warden** | `1.0 on tile` | Long-range defending support sniper (7.0t range) covering defense core |
+| `29` | **Defending Royal Champion** | `1.0 on tile` | High-mobility defending defense assassin leaping walls to intercept attackers |
+| `30` | **Defending Minion Prince** | `1.0 on tile` | Airborne defending hero sniping advancing ground troops |
+| `31` | **Defending Dragon Duke** | `1.0 on tile` | Heavy aerial defending tank dealing continuous splash flame damage |
+| `32` | **Enemy Ground Skeletons** | `min(count / 10.0, 1.0)` | Defending ground skeletons from skeleton traps & defending witch |
+| `33` | **Enemy Air Skeletons** | `min(count / 10.0, 1.0)` | Defending air skeletons from air skeleton traps targeting air units |
+| `34` | **Archer Tower** | `1.0 on alive 3×3 footprint` | Point ground+air defense (10.0t range, 145 DPS) |
+| `35` | **Multi-Archer Tower** | `1.0 on alive 3×3 footprint` | 3-target merged point defense (10.0t range, 363 DPS) |
+| `36` | **Ricochet Cannon** | `1.0 on alive 3×3 footprint` | 2-target bounce ground defense (9.0t range, 396 DPS) |
+| `37` | **Cannon** | `1.0 on alive 3×3 footprint` | Ground point defense (9.0t range, 235 DPS) |
+| `38` | **Mortar** | `1.0 on alive 3×3 footprint` | Long-range ground splash (4–11t deadzone, 56 DPS) |
+| `39` | **Air Defense** | `1.0 on alive 3×3 footprint` | Anti-air high single-target rocket defense (10.0t range, 650 DPS) |
+| `40` | **Wizard Tower** | `1.0 on alive 3×3 footprint` | Ground+air splash defense (7.0t range, 110 DPS) |
+| `41` | **Super Wizard Tower** | `1.0 on alive 3×3 footprint` | Chain-lightning multi-target defense (8.0t range, 265 DPS) |
+| `42` | **Air Sweeper** | `0.25 + 0.75 * (dir_deg / 360.0)` | Directional 105° cone air pushback (encodes presence & facing angle) |
+| `43` | **Hidden Tesla** | `1.0 only when revealed, 0.0 hidden` | Revealed when enemy enters trigger range or destruction >= 51% |
+| `44` | **Bomb Tower** | `1.0 on alive 3×3 footprint` | Ground splash + lethal death bomb explosion on destruction |
+| `45` | **X-Bow** | `1.0 = Air & Ground, 0.5 = Ground Only` | Rapid-fire defense with mode-dependent range (11.5t A+G vs 14.0t Ground) |
+| `46` | **Inferno Tower** | `1.0 = Single-Target, 0.5 = Multi-Target` | 3-stage exponential ramp beam (Single) vs 6-target scorch (Multi) |
+| `47` | **Scattershot** | `1.0 on alive 3×3 footprint` | Heavy 90° cone splash behind primary target (3–10t range) |
+| `48` | **Builder's Hut** | `1.0 on alive 2×2 footprint` | Weaponized turret + spawns repair builder healing nearby structures |
+| `49` | **Spell Tower** | `0.25=Rage, 0.50=Poison, 0.75=Invis, 1.0=EQ` | Encodes exact equipped defensive spell tower mode |
+| `50` | **Monolith** | `1.0 on alive 3×3 footprint` | Anti-tank % max-HP + flat damage priority core threat |
+| `51` | **Multi-Gear Tower** | `1.0 = Long Range, 0.5 = Fast Attack` | TH18 geared defense switching between long range and fast burst |
+| `52` | **Firespitter** | `0.25 + 0.75 * (dir_deg / 360.0)` | Directional 150° cone rapid piercing fireballs (encodes presence & facing angle) |
+| `53` | **Revenge Tower** | `1.0 on alive 3×3 footprint` | Escalates power as 5 / 25 / 50 village buildings are destroyed |
+| `54` | **Hot Candle (Crafted)** | `1.0 on alive 3×3 footprint` | Season 4 Crafted Defense firing 6 → 4 → 3 multi-target flames as it melts |
+| `55` | **Clan Castle (Defense)** | `1.0 on alive 3×3 footprint` | Defensive Clan Castle garrison structure housing defending CC reinforcements |
+| `56` | **Storages & Hero Hall** | `hp / max_hp across footprint` | High-HP non-offensive tanks (Gold, Elixir, Dark Elixir Storages, Hero Hall) |
+| `57` | **Resource Collectors** | `hp / max_hp across footprint` | Outer perimeter resource collection structures (Gold Mines, Collectors, Drills) |
+| `58` | **Utility & Other Buildings** | `hp / max_hp across footprint` | Remaining non-defensive village buildings (Army Camps, Barracks, Lab, Spell Factories, Blacksmith, etc.) |
 
 ---
 
@@ -134,8 +146,8 @@ $$R_t = 0.35 \cdot \Delta \%_{\text{destr}} + 15.0 \cdot \Delta \text{HP}_{\text
 
 | Attack Composition | **Central Box** | **Offset Diamond** | **Anti-Hydra Ring** | **Anti-Fireball** | **Compact Teaser** | **Avg Destruction** | **3★ Rate** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **TH18 Thrower + Healer + Totem Smash** | `100% (3★)` | `81% (2★)` | `77% (2★)` | `85% (2★)` | `67% (2★)` | **82.0%** | **20.0%** |
-| **Base Defense Rate (Avg)** | **100.0% (3.0★)** | **81.0% (2.0★)** | **77.0% (2.0★)** | **85.0% (2.0★)** | **67.0% (2.0★)** | **Overall: 82.0%** | — |
+| **TH18 Thrower + Healer + Totem Smash** | `56% (2★)` | `28% (1★)` | `33% (0★)` | `50% (2★)` | `61% (2★)` | **45.6%** | **0.0%** |
+| **Base Defense Rate (Avg)** | **56.0% (2.0★)** | **28.0% (1.0★)** | **33.0% (0.0★)** | **50.0% (2.0★)** | **61.0% (2.0★)** | **Overall: 45.6%** | — |
 
 ---
 
@@ -166,4 +178,4 @@ See [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Tel
 | **GAE ($\lambda$)** | `0.95` | Generalized Advantage Estimation smoothing |
 | **Clip Coefficient** | `0.2` | PPO surrogate objective clipping range |
 | **Entropy Coefficient** | `0.015` | Normalized per-head exploration policy entropy bonus |
-| **Total Training Episodes** | **`1,918`** | **Cumulative episodes across all resumed sessions** |
+| **Total Training Episodes** | **`4`** | **Cumulative episodes across all resumed sessions** |

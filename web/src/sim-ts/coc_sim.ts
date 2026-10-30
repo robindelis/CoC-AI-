@@ -557,32 +557,49 @@ export class WasmBattleSession {
   }
 
   public extract_spatial_observation(): number[] {
-    const obs = new Array<number>(50 * 50 * 50).fill(0);
+    const obs = new Array<number>(59 * 50 * 50).fill(0);
     const idx = (ch: number, y: number, x: number) => ch * 2500 + y * 50 + x;
 
     const defChannelMap: Record<string, number> = {
-      ArcherTower: 29,
-      MultiArcherTower: 30,
-      RicochetCannon: 31,
-      Cannon: 32,
-      Mortar: 33,
-      AirDefense: 34,
-      WizardTower: 35,
-      SuperWizardTower: 36,
-      AirSweeper: 37,
-      HiddenTesla: 38,
-      BombTower: 39,
-      XBow: 40,
-      InfernoTower: 41,
-      Scattershot: 42,
-      BuildersHut: 43,
-      SpellTower: 44,
-      Monolith: 45,
-      MultiGearTower: 46,
-      Firespitter: 47,
-      RevengeTower: 48,
-      CraftingStation: 49,
+      ArcherTower: 34,
+      MultiArcherTower: 35,
+      RicochetCannon: 36,
+      Cannon: 37,
+      Mortar: 38,
+      AirDefense: 39,
+      WizardTower: 40,
+      SuperWizardTower: 41,
+      AirSweeper: 42,
+      HiddenTesla: 43,
+      BombTower: 44,
+      XBow: 45,
+      InfernoTower: 46,
+      Scattershot: 47,
+      BuildersHut: 48,
+      SpellTower: 49,
+      Monolith: 50,
+      MultiGearTower: 51,
+      Firespitter: 52,
+      RevengeTower: 53,
+      CraftingStation: 54,
+      ClanCastle: 55,
     };
+
+    const storageBuildings = new Set(['GoldStorage', 'ElixirStorage', 'DarkElixirStorage', 'HeroHall']);
+    const collectorBuildings = new Set(['GoldMine', 'ElixirCollector', 'DarkElixirDrill']);
+    const utilityBuildings = new Set([
+      'ArmyCamp',
+      'Barracks',
+      'DarkBarracks',
+      'Laboratory',
+      'SpellFactory',
+      'DarkSpellFactory',
+      'Blacksmith',
+      'Workshop',
+      'PetHouse',
+      'HelperHut',
+      'BobsHut',
+    ]);
 
     for (const b of this.internalBuildings) {
       if (b.destroyed) continue;
@@ -591,6 +608,23 @@ export class WasmBattleSession {
       const dpsNorm = Math.max(0, Math.min(1, (spec?.dps ?? 0) / 750.0));
       const isTh = b.building_id === 'TownHall' ? 1.0 : 0.0;
       const defCh = defChannelMap[b.building_id];
+      const maxHp = Math.max(1, b.max_hp || (spec?.max_hp ?? 1));
+      const hpRatio = Math.max(0, Math.min(1, b.hp / maxHp));
+
+      let extraCh: number | undefined = defCh;
+      let extraVal = 1.0;
+
+      if (storageBuildings.has(b.building_id)) {
+        extraCh = 56;
+        extraVal = hpRatio;
+      } else if (collectorBuildings.has(b.building_id)) {
+        extraCh = 57;
+        extraVal = hpRatio;
+      } else if (utilityBuildings.has(b.building_id)) {
+        extraCh = 58;
+        extraVal = hpRatio;
+      }
+
       for (let dy = 0; dy < b.footprint; dy++) {
         for (let dx = 0; dx < b.footprint; dx++) {
           const x = Math.min(49, b.tile_x + dx);
@@ -598,8 +632,8 @@ export class WasmBattleSession {
           obs[idx(0, y, x)] = hpNorm;
           obs[idx(1, y, x)] = dpsNorm;
           obs[idx(2, y, x)] = isTh;
-          if (defCh !== undefined) {
-            obs[idx(defCh, y, x)] = 1.0;
+          if (extraCh !== undefined) {
+            obs[idx(extraCh, y, x)] = extraVal;
           }
         }
       }
@@ -668,9 +702,18 @@ export class WasmBattleSession {
       } else {
         // Defender team
         if (u.is_hero) {
-          obs[idx(26, y, x)] = 1.0;
+          const defHeroMap: Record<string, number> = {
+            BarbarianKing: 26,
+            ArcherQueen: 27,
+            GrandWarden: 28,
+            RoyalChampion: 29,
+            MinionPrince: 30,
+            DragonDuke: 31,
+          };
+          const heroCh = defHeroMap[u.unit_id] ?? 26;
+          obs[idx(heroCh, y, x)] = 1.0;
         } else if (u.unit_id === 'Skeleton') {
-          const ch = u.is_air ? 28 : 27;
+          const ch = u.is_air ? 33 : 32;
           obs[idx(ch, y, x)] = Math.min(1.0, obs[idx(ch, y, x)] + 0.1);
         } else {
           obs[idx(25, y, x)] = Math.min(1.0, obs[idx(25, y, x)] + 0.2);

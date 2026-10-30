@@ -378,7 +378,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
     liveSpec?.layers && liveSpec.layers.length >= 15
       ? liveSpec.layers
       : DEFAULT_LAYERS;
-  const inChannels = liveSpec?.in_channels ?? 31;
+  const inChannels = liveSpec?.in_channels ?? 59;
   const armyContextDim = liveSpec?.army_context_dim ?? 64;
   const spatialDim = liveSpec?.spatial_dim ?? 128;
   const embedDim = liveSpec?.embed_dim ?? 256;

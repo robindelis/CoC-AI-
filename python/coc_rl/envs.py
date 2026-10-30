@@ -14,14 +14,14 @@ class CoCAttackerEnv(gym.Env):
     Gymnasium RL Environment for training an AI to attack a max-level Town Hall 18 village.
 
     Observation Space:
-        Box(0.0, 1.0, shape=(50, 50, 50), dtype=np.float32)
+        Box(0.0, 1.0, shape=(59, 50, 50), dtype=np.float32)
         - Group 1: Base & Environment (Ch 0..4: Building HP, Defense DPS, TH18 Mask, Wall Integrity, Red Zone)
         - Group 2: Friendly Army Troops, Siege & CC (Ch 5..16: Thrower, Healer, Furnace, Druid, Ice Golem, SWB, HH, Loon, Archer, Log Launcher, Super Yeti, Super Valkyrie)
         - Group 3: Friendly Heroes (Ch 17..20: Barbarian King, Archer Queen, Grand Warden, Royal Champion)
         - Group 4: Friendly Spells (Ch 21..24: Totem HP, Rage Fade AoE, Poison Fade AoE, Skeleton Fade AoE)
-        - Group 5: Enemy Defending Units (Ch 25..28: Enemy CC & Guardian, Enemy Heroes, Enemy Ground Skeletons, Enemy Air Skeletons)
-        - Group 6: Dedicated Defense Types (Ch 29..49: 21 defense types)
-          CraftingStation / Hot Candle)
+        - Group 5: Enemy Defending Units (Ch 25..33: Enemy CC & Guardian, Defending BK, AQ, GW, RC, MP, DD, Ground & Air Skeletons)
+        - Group 6: Dedicated Defense Types & Clan Castle (Ch 34..55: 21 defense types + Clan Castle)
+        - Group 7: Non-Offensive Structures (Ch 56..58: Storages/HeroHall, Collectors, Utility/Other Buildings)
 
     Action Space:
         MultiDiscrete([7, 10, 50, 50, 5]):
@@ -61,7 +61,7 @@ class CoCAttackerEnv(gym.Env):
         self._last_ability_tick = -999
         self._deploy_coords: List[Tuple[float, float]] = []
         self.observation_space = spaces.Box(
-            low=0.0, high=1.0, shape=(50, 50, 50), dtype=np.float32
+            low=0.0, high=1.0, shape=(59, 50, 50), dtype=np.float32
         )
         self.action_space = spaces.MultiDiscrete([7, 10, 50, 50, 5])
         self.fraction_bins = (0.0, 0.25, 0.50, 0.75, 1.00)

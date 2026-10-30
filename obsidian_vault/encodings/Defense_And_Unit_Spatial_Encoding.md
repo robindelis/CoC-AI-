@@ -1,59 +1,53 @@
 ---
-title: "50-Channel Dedicated Per-Troop, Per-Hero, Per-Spell & Per-Defense Spatial Grid & Live Inventory Encoding"
+title: "59-Channel Dedicated Per-Troop, Per-Hero, Per-Spell, Per-Defense & Non-Offensive Spatial Grid & Live Inventory Encoding"
 tags:
   - encoding
   - spatial-tensor
   - defenses
+  - defending-heroes
+  - non-offensive-buildings
   - army-context
   - coc-rl
 updated: 2026-10-30
 ---
 
-# 🛡️ 50-Channel Dedicated Spatial Grid (`Ch 0..49`) & Live Available Inventory (`64-D`)
+# 🛡️ 59-Channel Dedicated Spatial Grid (`Ch 0..58`) & Live Available Inventory (`64-D`)
 
-Back to [[00_Index_MOC|Vault Index (MOC)]] • Used in [[architectures/v3.0_31Ch_PerDefense_SingleArmy_ActorCritic|v3.0 Architecture]] • Unit Details: [[encodings/Unit_Type_Spatial_Encoding|Unit Archetype Diagnostic Specification]] • Decisions: [[decisions/Architecture_Decisions_And_System_Memory|System Memory & ADRs]]
+Back to [[00_Index_MOC|Vault Index (MOC)]] • Used in [[architectures/v3.0_31Ch_PerDefense_SingleArmy_ActorCritic|v3.0 Architecture]] • Decisions: [[decisions/Architecture_Decisions_And_System_Memory|System Memory & ADR-008]]
 
 ---
 
-## 1. 50-Channel Fine-Grained Factorization (ADR-007)
+## 1. 59-Channel Fine-Grained Factorization (ADR-008)
 
-Under **ADR-007**, the spatial observation tensor is expanded from 31 to **50 channels** (`50 × 50 × 50`). Rather than compressing allied troops into coarse ground/air density maps and a 1D archetype signature $\phi(u)$, every individual troop type, hero, active spell, and defending entity in the meta army composition receives its own dedicated non-overlapping channel:
+Under **ADR-008**, the spatial observation tensor is expanded to **59 channels** (`59 × 50 × 50`). Rather than compressing allied troops or defending heroes into coarse aggregations, every individual troop type, friendly hero, active spell, defending enemy hero, defense structure, and non-offensive building category receives its own dedicated non-overlapping channel:
 
-### 1.1 The Six Functional Channel Groups:
+### 1.1 The Seven Functional Channel Groups:
 1. **Group 1: Base & Environment (`Ch 0..4`)**: Building HP ratio, Defense DPS threat field, 4×4 Town Hall 18 objective mask, 1×1 wall durability, and the dynamic No-Deploy Red Zone perimeter.
 2. **Group 2: Friendly Army Troops, Siege & CC (`Ch 5..16`)**: Dedicated channel per loadout unit (Thrower, Healer, Furnace, Druid/Bear, Ice Golem, Super Wall Breaker, Headhunter, Balloon, Archer, Log Launcher, CC Super Yeti, CC Super Valkyrie), normalized by `count / max_in_army` on tile.
 3. **Group 3: Friendly Heroes (`Ch 17..20`)**: Dedicated channel per hero (Barbarian King, Archer Queen, Grand Warden, Royal Champion), strictly `1.0` on tile if alive, `0.0` otherwise.
 4. **Group 4: Friendly Spells (`Ch 21..24`)**: Totem Spell (summoned 1×1 unit HP ratio `u.hp / u.max_hp`), plus Rage, Poison, and Skeleton Spell continuous `1.0 -> 0.0` fading values (`remaining_sec / total_duration`) covering the full circular Area of Effect.
-5. **Group 5: Enemy Defending Units (`Ch 25..28`)**: Defending CC troops & TH18 Guardians (`min(N / 5.0, 1.0)`), Defending Heroes (`1.0`), Defending Ground Skeletons (`min(N / 10.0, 1.0)`), and Defending Air Skeletons (`min(N / 10.0, 1.0)`).
-6. **Group 6: 21 Dedicated Defense Types (`Ch 29..49`)**: One channel per TH18 defense type with mode, angle, and concealment semantics preserved:
-   - **Mode-Switchable Defenses**:
-     - `Ch 40 (XBow)`: `1.0` = Air & Ground ($11.5\text{t}$), `0.5` = Ground Only ($14.0\text{t}$)
-     - `Ch 41 (InfernoTower)`: `1.0` = Single-Target exponential ramp, `0.5` = Multi-Target (6 beams)
-     - `Ch 44 (SpellTower)`: `0.25` = Rage, `0.50` = Poison, `0.75` = Invisibility, `1.00` = Earthquake
-     - `Ch 46 (MultiGearTower)`: `1.0` = Long Range, `0.5` = Fast Attack
-   - **Directional Cone Defenses**:
-     - `Ch 37 (AirSweeper)` & `Ch 47 (Firespitter)`: Encode $0.25 + 0.75 \cdot (\theta_{\text{deg}} \bmod 360^\circ) / 360^\circ \in [0.25, 1.0]$, so a single channel conveys both the building's footprint and the exact direction its cone is pointing.
-   - **Fair Hidden Tesla Masking (`Ch 38`)**:
-     - While `HiddenTesla` is unrevealed (`!b.is_hidden_tesla_revealed`), it writes `0.0` into `Ch 0` (Building HP), `Ch 1` (DPS), and `Ch 38` (`HiddenTesla`). Once triggered by proximity or $\ge 51\%$ destruction, it appears immediately.
-
-### 1.2 Mathematical Equivalence to Learned Spatial Embeddings:
-Feeding 50 channels into `Conv2d(in_channels=50, out_channels=64, kernel_size=3, dilation=2)` corresponds to a learned 64-D embedding lookup per feature plane convolved over the $50\times 50$ map, adding only $10{,}944$ parameters ($0.80\%$ increase) while completely resolving multi-unit tile overlap ambiguity.
+5. **Group 5: Enemy Defending Units (`Ch 25..33`)**:
+   - `Ch 25`: Defending CC troops & TH18 Guardians (`min(N / 5.0, 1.0)`)
+   - `Ch 26..31`: **Dedicated Individual Defending Hero Channels**:
+     - `Ch 26`: Defending Barbarian King (`1.0`)
+     - `Ch 27`: Defending Archer Queen (`1.0`)
+     - `Ch 28`: Defending Grand Warden (`1.0`)
+     - `Ch 29`: Defending Royal Champion (`1.0`)
+     - `Ch 30`: Defending Minion Prince (`1.0`)
+     - `Ch 31`: Defending Dragon Duke (`1.0`)
+   - `Ch 32`: Defending Ground Skeletons (`min(N / 10.0, 1.0)`)
+   - `Ch 33`: Defending Air Skeletons (`min(N / 10.0, 1.0)`)
+6. **Group 6: 22 Dedicated Defense Types & Clan Castle (`Ch 34..55`)**: One channel per TH18 defense type plus defensive Clan Castle:
+   - `Ch 34..54`: 21 TH18 Defenses (Archer Tower through Hot Candle)
+   - `Ch 55`: Clan Castle (`1.0` while active on defense)
+7. **Group 7: 3 Non-Offensive Building Groups (`Ch 56..58`)**:
+   - `Ch 56`: Storages & Reservoirs + Hero Hall (Gold, Elixir, Dark Elixir Storages + Hero Hall HP ratio $\text{HP}/\text{HP}_{\max} \in [0, 1]$)
+   - `Ch 57`: Resource Collectors (Gold Mines, Elixir Collectors, Dark Elixir Drills HP ratio $\in [0, 1]$)
+   - `Ch 58`: Utility & Other Buildings (Army Camps, Barracks, Laboratory, Spell Factories, Blacksmith, etc. HP ratio $\in [0, 1]$)
 
 ---
 
-## 2. Live Available Army Inventory Vector (`army_context`, `(B, 64)`)
-
-Even though each `v3.0` model is trained for **1 dedicated Army Composition**, the spatial grid `(50, 50, 50)` only shows units that have **already been deployed** onto the battlefield. To make optimal sequential decisions, the policy also receives the `64-D` live inventory vector `army_context`:
-
-| Slice | Dimensions | Encoded Live State |
-| :---: | :---: | :--- |
-| `[0..4]` | `4` | **Battle Progress**: Remaining clock ratio $(1800 - t)/1800$, destruction $\% / 100$, stars $/ 3$, active allied unit count $/ 50$. |
-| `[4..24]` | `20` (`10 × 2`) | **Troop Slots `0..9`**: If `rem > 0`, encodes `(troop_id / 60.0, rem / 20.0)`; once depleted (`rem == 0`), both entries become **`0.0`**. |
-| `[24..44]` | `20` (`10 × 2`) | **Spell Slots `0..9`**: If `rem > 0`, encodes `(spell_id / 20.0, rem / 8.0)`; once depleted (`rem == 0`), both entries become **`0.0`**. |
-| `[44..56]` | `12` (`4 × 3`) | **Hero Slots `0..3`**: `(hero_equip_pet_sig, deploy_or_hp_ratio, ability_ready_state)` where ability state is `0.5` undeployed, `1.0` deployed & ability ready, `0.0` ability used. |
----
-
-## 3. Complete 50-Channel Spatial Observation Reference Table
+## 2. Complete 59-Channel Spatial Observation Reference Table
 
 | Ch # | Channel Name | Value / Formula on Footprint | Tactical Role & Normalization |
 | :---: | :--- | :--- | :--- |
@@ -83,21 +77,39 @@ Even though each `v3.0` model is trained for **1 dedicated Army Composition**, t
 | `23` | **Poison Spell (Fade AoE)** | `rem / total` across AoE radius | Continuous 1.0 -> 0.0 fading defending CC deceleration & poison mist circle. |
 | `24` | **Skeleton Spell (Fade AoE)** | `rem / total` across AoE radius | Continuous 1.0 -> 0.0 fading friendly skeleton distraction summon circle. |
 | `25` | **Enemy CC & Guardian** | `min(N / 5.0, 1.0)` | Defending Clan Castle troops (Lava Hound, Ice Golem, Headhunters) & TH18 Guardian. |
-| `26` | **Enemy Heroes** | `1.0` on tile | Defending King, Queen, Warden, and Dragon Duke on defensive banners. |
-| `27` | **Enemy Ground Skeletons** | `min(N / 10.0, 1.0)` | Defending ground skeletons from skeleton traps & defending witch. |
-| `28` | **Enemy Air Skeletons** | `min(N / 10.0, 1.0)` | Defending air skeletons from air skeleton traps targeting air units. |
-| `29` | **Archer Tower** | `1.0` while alive (3×3) | Point defense targeting ground + air (10.0t range, 145 DPS). |
-| `30` | **Multi-Archer Tower** | `1.0` while alive (3×3) | Merged 3-target point defense (10.0t range, 363 DPS). |
-| `31` | **Ricochet Cannon** | `1.0` while alive (3×3) | Merged 2-target ground bounce defense (9.0t range, 396 DPS). |
-| `32` | **Cannon** | `1.0` while alive (3×3) | Standard ground point defense (9.0t range, 235 DPS). |
-| `33` | **Mortar** | `1.0` while alive (3×3) | Long-range ground splash with 4–11t blind deadzone (56 DPS). |
-| `34` | **Air Defense** | `1.0` while alive (3×3) | Lethal anti-air rocket battery (10.0t range, 650 DPS). |
-| `35` | **Wizard Tower** | `1.0` while alive (3×3) | Ground + air area splash defense (7.0t range, 110 DPS). |
-| `36` | **Super Wizard Tower** | `1.0` while alive (3×3) | Merged chain-lightning defense hitting up to 15 targets (8.0t range, 265 DPS). |
-| `37` | **Air Sweeper** | `0.25 + 0.75 * (theta_deg / 360.0)` | Encodes 2×2 footprint and continuous 105° pushback cone facing angle in `[0.25, 1.0]`. |
-| `38` | **Hidden Tesla** | `1.0` when revealed (2×2), `0.0` hidden | Hidden information invariant: strictly `0.0` until revealed by proximity or >=51% destruction. |
-| `39` | **Bomb Tower** | `1.0` while alive (3×3) | Ground splash defense + triggers high-damage death bomb upon destruction. |
-| `40` | **X-Bow** | `1.0` = Air+Ground, `0.5` = Ground-only | Distinguishes 11.5t Air+Ground mode from 14.0t Ground-only mode. |
+| `26` | **Defending Barbarian King** | `1.0` on tile | Defending melee tank; pulls friendly frontline melee targeting into compartment. |
+| `27` | **Defending Archer Queen** | `1.0` on tile | Defending ranged carry (700+ DPS); priority target for Headhunters and Poison. |
+| `28` | **Defending Grand Warden** | `1.0` on tile | Long-range defending sniper (7.0t range) covering defense core. |
+| `29` | **Defending Royal Champion** | `1.0` on tile | High-speed jumping defense assassin intercepting advancing squads. |
+| `30` | **Defending Minion Prince** | `1.0` on tile | Flying defending hero sniping ground units. |
+| `31` | **Defending Dragon Duke** | `1.0` on tile | Heavy aerial area-burn tank dealing continuous splash damage. |
+| `32` | **Enemy Ground Skeletons** | `min(N / 10.0, 1.0)` | Defending ground skeletons from skeleton traps & defending witch. |
+| `33` | **Enemy Air Skeletons** | `min(N / 10.0, 1.0)` | Defending air skeletons from air skeleton traps targeting air units. |
+| `34` | **Archer Tower** | `1.0` while alive (3×3) | Point defense targeting ground + air (10.0t range, 145 DPS). |
+| `35` | **Multi-Archer Tower** | `1.0` while alive (3×3) | Merged 3-target point defense (10.0t range, 363 DPS). |
+| `36` | **Ricochet Cannon** | `1.0` while alive (3×3) | Merged 2-target ground bounce defense (9.0t range, 396 DPS). |
+| `37` | **Cannon** | `1.0` while alive (3×3) | Standard ground point defense (9.0t range, 235 DPS). |
+| `38` | **Mortar** | `1.0` while alive (3×3) | Long-range ground splash with 4–11t blind deadzone (56 DPS). |
+| `39` | **Air Defense** | `1.0` while alive (3×3) | Lethal anti-air rocket battery (10.0t range, 650 DPS). |
+| `40` | **Wizard Tower** | `1.0` while alive (3×3) | Ground + air area splash defense (7.0t range, 110 DPS). |
+| `41` | **Super Wizard Tower** | `1.0` while alive (3×3) | Merged chain-lightning defense hitting up to 15 targets (8.0t range, 265 DPS). |
+| `42` | **Air Sweeper** | `0.25 + 0.75 * (theta_deg / 360.0)` | Encodes 2×2 footprint and continuous 105° pushback cone facing angle in `[0.25, 1.0]`. |
+| `43` | **Hidden Tesla** | `1.0` when revealed (2×2), `0.0` hidden | Hidden information invariant: strictly `0.0` until revealed by proximity or >=51% destruction. |
+| `44` | **Bomb Tower** | `1.0` while alive (3×3) | Ground splash defense + triggers high-damage death bomb upon destruction. |
+| `45` | **X-Bow** | `1.0` = Air+Ground, `0.5` = Ground-only | Distinguishes 11.5t Air+Ground mode from 14.0t Ground-only mode. |
+| `46` | **Inferno Tower** | `1.0` = Single-Target, `0.5` = Multi-Target | 3-stage exponential ramp beam (Single) vs 6-target scorch (Multi). |
+| `47` | **Scattershot** | `1.0` while alive (3×3) | Heavy 90° cone splash behind primary target (3–10t range). |
+| `48` | **Builder's Hut** | `1.0` while alive (2×2) | Weaponized turret + spawns repair builder healing nearby structures. |
+| `49` | **Spell Tower** | `0.25`=Rage, `0.50`=Poison, `0.75`=Invis, `1.00`=EQ | Encodes active defensive spell canister triggered on compartment breach. |
+| `50` | **Monolith** | `1.0` while alive (3×3) | Anti-tank % max-HP + flat damage priority core threat. |
+| `51` | **Multi-Gear Tower** | `1.0` = Long Range, `0.5` = Fast Attack | TH18 geared defense switching between long range and fast burst. |
+| `52` | **Firespitter** | `0.25 + 0.75 * (theta_deg / 360.0)` | Continuous 150° piercing fireball cone angle encoding in `[0.25, 1.0]`. |
+| `53` | **Revenge Tower** | `1.0` while alive (3×3) | Escalates power as 5 / 25 / 50 village buildings are destroyed. |
+| `54` | **Hot Candle (Crafted)** | `1.0` while alive (3×3) | Season 4 Crafted Defense firing 6 → 4 → 3 multi-target flames as it melts. |
+| `55` | **Clan Castle (Defense)** | `1.0` while alive (3×3) | Defensive fortification housing CC reinforcements. |
+| `56` | **Storages & Hero Hall** | `hp / max_hp` across footprint | High-HP non-defensive tanks (Gold, Elixir, Dark Elixir Storages, Hero Hall). |
+| `57` | **Resource Collectors** | `hp / max_hp` across footprint | Outer perimeter resource collectors (Gold Mines, Collectors, Drills). |
+| `58` | **Utility & Other Buildings** | `hp / max_hp` across footprint | Remaining non-defensive structures (Army Camps, Barracks, Lab, Spell Factories, etc.). |
 | `41` | **Inferno Tower** | `1.0` = Single-Target, `0.5` = Multi-Target | Distinguishes ramping single-target beam from 6-target multi mode. |
 | `42` | **Scattershot** | `1.0` while alive (3×3) | Heavy splash defense with 90° blast cone behind target (3–10t range). |
 | `43` | **Builder's Hut** | `1.0` while alive (2×2) | Weaponized turret that spawns an active repair builder healing damaged buildings. |

@@ -74,34 +74,45 @@ CHANNELS = [
     ("23", "Poison Spell (Fade AoE)", "remaining / total across AoE", "Continuous 1.0 -> 0.0 fading defending CC deceleration & poison mist circle"),
     ("24", "Skeleton Spell (Fade AoE)", "remaining / total across AoE", "Continuous 1.0 -> 0.0 fading friendly skeleton distraction summon circle"),
 
-    # Group 5: Enemy Defending Units (25..28)
+    # Group 5: Enemy Defending Units (25..33)
     ("25", "Enemy CC & Guardian", "min(count / 5.0, 1.0)", "Defending Clan Castle troops (Lava Hound, Ice Golem, Headhunters) & TH18 Guardian"),
-    ("26", "Enemy Heroes", "1.0 on tile", "Defending King, Queen, Warden, and Dragon Duke on defensive banners"),
-    ("27", "Enemy Ground Skeletons", "min(count / 10.0, 1.0)", "Defending ground skeletons from skeleton traps & defending witch"),
-    ("28", "Enemy Air Skeletons", "min(count / 10.0, 1.0)", "Defending air skeletons from air skeleton traps targeting air units"),
+    ("26", "Defending Barbarian King", "1.0 on tile", "High-HP defending melee tank on pedestal; draws friendly melee target focus into compartment"),
+    ("27", "Defending Archer Queen", "1.0 on tile", "High-DPS defending ranged carry (700+ DPS); priority target for Headhunters and Poison"),
+    ("28", "Defending Grand Warden", "1.0 on tile", "Long-range defending support sniper (7.0t range) covering defense core"),
+    ("29", "Defending Royal Champion", "1.0 on tile", "High-mobility defending defense assassin leaping walls to intercept attackers"),
+    ("30", "Defending Minion Prince", "1.0 on tile", "Airborne defending hero sniping advancing ground troops"),
+    ("31", "Defending Dragon Duke", "1.0 on tile", "Heavy aerial defending tank dealing continuous splash flame damage"),
+    ("32", "Enemy Ground Skeletons", "min(count / 10.0, 1.0)", "Defending ground skeletons from skeleton traps & defending witch"),
+    ("33", "Enemy Air Skeletons", "min(count / 10.0, 1.0)", "Defending air skeletons from air skeleton traps targeting air units"),
 
-    # Group 6: Dedicated Defense Types (29..49)
-    ("29", "Archer Tower", "1.0 on alive 3×3 footprint", "Point ground+air defense (10.0t range, 145 DPS)"),
-    ("30", "Multi-Archer Tower", "1.0 on alive 3×3 footprint", "3-target merged point defense (10.0t range, 363 DPS)"),
-    ("31", "Ricochet Cannon", "1.0 on alive 3×3 footprint", "2-target bounce ground defense (9.0t range, 396 DPS)"),
-    ("32", "Cannon", "1.0 on alive 3×3 footprint", "Ground point defense (9.0t range, 235 DPS)"),
-    ("33", "Mortar", "1.0 on alive 3×3 footprint", "Long-range ground splash (4–11t deadzone, 56 DPS)"),
-    ("34", "Air Defense", "1.0 on alive 3×3 footprint", "Anti-air high single-target rocket defense (10.0t range, 650 DPS)"),
-    ("35", "Wizard Tower", "1.0 on alive 3×3 footprint", "Ground+air splash defense (7.0t range, 110 DPS)"),
-    ("36", "Super Wizard Tower", "1.0 on alive 3×3 footprint", "Chain-lightning multi-target defense (8.0t range, 265 DPS)"),
-    ("37", "Air Sweeper", "0.25 + 0.75 * (dir_deg / 360.0)", "Directional 105° cone air pushback (encodes presence & facing angle)"),
-    ("38", "Hidden Tesla", "1.0 only when revealed, 0.0 hidden", "Revealed when enemy enters trigger range or destruction >= 51%"),
-    ("39", "Bomb Tower", "1.0 on alive 3×3 footprint", "Ground splash + lethal death bomb explosion on destruction"),
-    ("40", "X-Bow", "1.0 = Air & Ground, 0.5 = Ground Only", "Rapid-fire defense with mode-dependent range (11.5t A+G vs 14.0t Ground)"),
-    ("41", "Inferno Tower", "1.0 = Single-Target, 0.5 = Multi-Target", "3-stage exponential ramp beam (Single) vs 6-target scorch (Multi)"),
-    ("42", "Scattershot", "1.0 on alive 3×3 footprint", "Heavy 90° cone splash behind primary target (3–10t range)"),
-    ("43", "Builder's Hut", "1.0 on alive 2×2 footprint", "Weaponized turret + spawns repair builder healing nearby structures"),
-    ("44", "Spell Tower", "0.25=Rage, 0.50=Poison, 0.75=Invis, 1.0=EQ", "Encodes exact equipped defensive spell tower mode"),
-    ("45", "Monolith", "1.0 on alive 3×3 footprint", "Anti-tank % max-HP + flat damage priority core threat"),
-    ("46", "Multi-Gear Tower", "1.0 = Long Range, 0.5 = Fast Attack", "TH18 geared defense switching between long range and fast burst"),
-    ("47", "Firespitter", "0.25 + 0.75 * (dir_deg / 360.0)", "Directional 150° cone rapid piercing fireballs (encodes presence & facing angle)"),
-    ("48", "Revenge Tower", "1.0 on alive 3×3 footprint", "Escalates power as 5 / 25 / 50 village buildings are destroyed"),
-    ("49", "Hot Candle (Crafted)", "1.0 on alive 3×3 footprint", "Season 4 Crafted Defense firing 6 → 4 → 3 multi-target flames as it melts"),
+    # Group 6: Dedicated Defense Types & Clan Castle (34..55)
+    ("34", "Archer Tower", "1.0 on alive 3×3 footprint", "Point ground+air defense (10.0t range, 145 DPS)"),
+    ("35", "Multi-Archer Tower", "1.0 on alive 3×3 footprint", "3-target merged point defense (10.0t range, 363 DPS)"),
+    ("36", "Ricochet Cannon", "1.0 on alive 3×3 footprint", "2-target bounce ground defense (9.0t range, 396 DPS)"),
+    ("37", "Cannon", "1.0 on alive 3×3 footprint", "Ground point defense (9.0t range, 235 DPS)"),
+    ("38", "Mortar", "1.0 on alive 3×3 footprint", "Long-range ground splash (4–11t deadzone, 56 DPS)"),
+    ("39", "Air Defense", "1.0 on alive 3×3 footprint", "Anti-air high single-target rocket defense (10.0t range, 650 DPS)"),
+    ("40", "Wizard Tower", "1.0 on alive 3×3 footprint", "Ground+air splash defense (7.0t range, 110 DPS)"),
+    ("41", "Super Wizard Tower", "1.0 on alive 3×3 footprint", "Chain-lightning multi-target defense (8.0t range, 265 DPS)"),
+    ("42", "Air Sweeper", "0.25 + 0.75 * (dir_deg / 360.0)", "Directional 105° cone air pushback (encodes presence & facing angle)"),
+    ("43", "Hidden Tesla", "1.0 only when revealed, 0.0 hidden", "Revealed when enemy enters trigger range or destruction >= 51%"),
+    ("44", "Bomb Tower", "1.0 on alive 3×3 footprint", "Ground splash + lethal death bomb explosion on destruction"),
+    ("45", "X-Bow", "1.0 = Air & Ground, 0.5 = Ground Only", "Rapid-fire defense with mode-dependent range (11.5t A+G vs 14.0t Ground)"),
+    ("46", "Inferno Tower", "1.0 = Single-Target, 0.5 = Multi-Target", "3-stage exponential ramp beam (Single) vs 6-target scorch (Multi)"),
+    ("47", "Scattershot", "1.0 on alive 3×3 footprint", "Heavy 90° cone splash behind primary target (3–10t range)"),
+    ("48", "Builder's Hut", "1.0 on alive 2×2 footprint", "Weaponized turret + spawns repair builder healing nearby structures"),
+    ("49", "Spell Tower", "0.25=Rage, 0.50=Poison, 0.75=Invis, 1.0=EQ", "Encodes exact equipped defensive spell tower mode"),
+    ("50", "Monolith", "1.0 on alive 3×3 footprint", "Anti-tank % max-HP + flat damage priority core threat"),
+    ("51", "Multi-Gear Tower", "1.0 = Long Range, 0.5 = Fast Attack", "TH18 geared defense switching between long range and fast burst"),
+    ("52", "Firespitter", "0.25 + 0.75 * (dir_deg / 360.0)", "Directional 150° cone rapid piercing fireballs (encodes presence & facing angle)"),
+    ("53", "Revenge Tower", "1.0 on alive 3×3 footprint", "Escalates power as 5 / 25 / 50 village buildings are destroyed"),
+    ("54", "Hot Candle (Crafted)", "1.0 on alive 3×3 footprint", "Season 4 Crafted Defense firing 6 → 4 → 3 multi-target flames as it melts"),
+    ("55", "Clan Castle (Defense)", "1.0 on alive 3×3 footprint", "Defensive Clan Castle garrison structure housing defending CC reinforcements"),
+
+    # Group 7: Non-Offensive Structures (56..58)
+    ("56", "Storages & Hero Hall", "hp / max_hp across footprint", "High-HP non-offensive tanks (Gold, Elixir, Dark Elixir Storages, Hero Hall)"),
+    ("57", "Resource Collectors", "hp / max_hp across footprint", "Outer perimeter resource collection structures (Gold Mines, Collectors, Drills)"),
+    ("58", "Utility & Other Buildings", "hp / max_hp across footprint", "Remaining non-defensive village buildings (Army Camps, Barracks, Lab, Spell Factories, Blacksmith, etc.)"),
 ]
 
 REWARD_FUNCTION_DESC = """### 🎯 Reward Formulation & Two-Phase Pacing (TH18 Combat v3.0)
@@ -164,10 +175,10 @@ def init_default_registry() -> Dict[str, Any]:
         "models": {
             "v3_per_defense_31ch": {
                 "id": "v3_per_defense_31ch",
-                "name": "v3.0 — 50-Channel Dedicated CNN & Single-Army Specialist Actor-Critic",
+                "name": "v3.0 — 59-Channel Dedicated Multi-Block Dilated CNN & Single-Army Specialist Actor-Critic",
                 "arch_version": "3.0",
                 "status": "active",
-                "in_channels": 50,
+                "in_channels": 59,
                 "army_name": "TH18 Thrower + Healer + Totem Smash (Meta)",
                 "army_slug": "thrower_healer_totem_smash",
                 "action_heads": [
@@ -651,7 +662,7 @@ def generate_ai_diagnostics_chart(out_png_path: str) -> str:
 # ---------------------------------------------------------------------------
 
 def generate_stacked_cnn_svg(
-    in_channels: int = 50,
+    in_channels: int = 59,
     out_svg_path: Optional[str] = None,
     out_png_path: Optional[str] = None,
 ) -> Dict[str, str]:
@@ -850,7 +861,7 @@ def ensure_all_architecture_diagrams() -> Dict[str, str]:
     v3_svg = os.path.join(ARCH_ASSETS_DIR, "v3_architecture.svg")
     v3_png = os.path.join(ARCH_ASSETS_DIR, "v3_architecture.png")
 
-    generate_stacked_cnn_svg(in_channels=50, out_svg_path=v3_svg, out_png_path=v3_png)
+    generate_stacked_cnn_svg(in_channels=59, out_svg_path=v3_svg, out_png_path=v3_png)
 
     return {
         "v3_png": os.path.relpath(v3_png, VAULT_DIR),
@@ -1409,10 +1420,10 @@ def update_or_register_training_run(
     if target_model_id not in models:
         models[target_model_id] = {
             "id": target_model_id,
-            "name": "v3.0 — 50-Channel Dedicated CNN & Single-Army Specialist Actor-Critic",
+            "name": "v3.0 — 59-Channel Dedicated Multi-Block Dilated CNN & Single-Army Specialist Actor-Critic",
             "arch_version": "3.0",
             "status": "active",
-            "in_channels": 50,
+            "in_channels": 59,
             "army_name": army_name,
             "army_slug": army_slug,
             "action_heads": [
@@ -1435,7 +1446,7 @@ def update_or_register_training_run(
     m = models[target_model_id]
     m["army_name"] = army_name
     m["army_slug"] = army_slug
-    m["in_channels"] = 50
+    m["in_channels"] = 59
     m["arch_version"] = "3.0"
     m["total_episodes"] = total_cum_eps
     m["latest_checkpoint"] = ckpt_name

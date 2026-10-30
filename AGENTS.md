@@ -134,7 +134,7 @@ The current reinforcement learning pipeline (`v3.0`) operates on a dual-input ob
 
 ### 1. Current Input Implementation
 
-#### A. 50-Channel Spatial Observation Tensor `(B, 50, 50, 50)`
+#### A. 59-Channel Spatial Observation Tensor `(B, 59, 50, 50)`
 Extracted by [`extract_spatial_observation()`](file:///home/robin/Projects/CoC/crates/coc-engine/src/sim.rs#L6435) on the 50×50 battlefield grid:
 - **`Ch 0` — Building HP Ratio**: `hp / 11000.0` in `[0, 1]` across living building footprints. Unrevealed Hidden Teslas are masked to `0.0`.
 - **`Ch 1` — Defense DPS Threat**: `min(spec.dps / 750.0, 1.0)` across active defenses. Unrevealed Hidden Teslas are masked to `0.0`.
@@ -164,33 +164,43 @@ Extracted by [`extract_spatial_observation()`](file:///home/robin/Projects/CoC/c
   - `Ch 22`: Rage Spell (`rem / total` fading in `[0, 1]` across full circular AoE radius)
   - `Ch 23`: Poison Spell (`rem / total` fading in `[0, 1]` across full circular AoE radius)
   - `Ch 24`: Skeleton Spell (`rem / total` fading in `[0, 1]` across full circular AoE radius)
-- **`Ch 25..28` — 4 Enemy Defending Units**:
+- **`Ch 25..33` — 9 Enemy Defending Units**:
   - `Ch 25`: Enemy CC Troops & TH18 Guardian (`min(count / 5.0, 1.0)`)
-  - `Ch 26`: Enemy Heroes (`1.0` on tile)
-  - `Ch 27`: Enemy Ground Skeletons (`min(count / 10.0, 1.0)`)
-  - `Ch 28`: Enemy Air Skeletons (`min(count / 10.0, 1.0)`)
-- **`Ch 29..49` — 21 Dedicated Defense Type Channels** (3×3 footprint unless noted):
-  - `Ch 29`: Archer Tower (`1.0`)
-  - `Ch 30`: Multi-Archer Tower (`1.0`)
-  - `Ch 31`: Ricochet Cannon (`1.0`)
-  - `Ch 32`: Cannon (`1.0`)
-  - `Ch 33`: Mortar (`1.0`)
-  - `Ch 34`: Air Defense (`1.0`)
-  - `Ch 35`: Wizard Tower (`1.0`)
-  - `Ch 36`: Super Wizard Tower (`1.0`)
-  - `Ch 37`: Air Sweeper (`2×2`, encodes `0.25 + 0.75 * (theta_deg / 360.0)` for facing cone angle)
-  - `Ch 38`: Hidden Tesla (`2×2`, `1.0` ONLY when revealed by unit proximity or >=51% destruction; strictly `0.0` when hidden)
-  - `Ch 39`: Bomb Tower (`1.0`)
-  - `Ch 40`: X-Bow (`1.0` Air+Ground 11.5t mode, `0.5` Ground-only 14.0t mode)
-  - `Ch 41`: Inferno Tower (`1.0` Single-Target ramp beam, `0.5` Multi-Target 6-beam mode)
-  - `Ch 42`: Scattershot (`1.0`)
-  - `Ch 43`: Builder's Hut (`2×2`, `1.0`, weaponized turret + healing builder)
-  - `Ch 44`: Spell Tower (`2×2`, `0.25` Rage, `0.50` Poison, `0.75` Invis, `1.00` Earthquake mode)
-  - `Ch 45`: Monolith (`1.0`)
-  - `Ch 46`: Multi-Gear Tower (`1.0` Long Range mode, `0.5` Fast Attack mode)
-  - `Ch 47`: Firespitter (`0.25 + 0.75 * (theta_deg / 360.0)` for 150° piercing cone angle)
-  - `Ch 48`: Revenge Tower (`1.0`)
-  - `Ch 49`: Hot Candle / CraftingStation (`1.0`, Season 4 crafted defense)
+  - `Ch 26`: Defending Barbarian King (`1.0` on tile)
+  - `Ch 27`: Defending Archer Queen (`1.0` on tile)
+  - `Ch 28`: Defending Grand Warden (`1.0` on tile)
+  - `Ch 29`: Defending Royal Champion (`1.0` on tile)
+  - `Ch 30`: Defending Minion Prince (`1.0` on tile)
+  - `Ch 31`: Defending Dragon Duke (`1.0` on tile)
+  - `Ch 32`: Enemy Ground Skeletons (`min(count / 10.0, 1.0)`)
+  - `Ch 33`: Enemy Air Skeletons (`min(count / 10.0, 1.0)`)
+- **`Ch 34..55` — 22 Dedicated Defense Types & Clan Castle**:
+  - `Ch 34`: Archer Tower (`1.0`)
+  - `Ch 35`: Multi-Archer Tower (`1.0`)
+  - `Ch 36`: Ricochet Cannon (`1.0`)
+  - `Ch 37`: Cannon (`1.0`)
+  - `Ch 38`: Mortar (`1.0`)
+  - `Ch 39`: Air Defense (`1.0`)
+  - `Ch 40`: Wizard Tower (`1.0`)
+  - `Ch 41`: Super Wizard Tower (`1.0`)
+  - `Ch 42`: Air Sweeper (`2×2`, encodes `0.25 + 0.75 * (theta_deg / 360.0)` for facing cone angle)
+  - `Ch 43`: Hidden Tesla (`2×2`, `1.0` ONLY when revealed by unit proximity or >=51% destruction; strictly `0.0` when hidden)
+  - `Ch 44`: Bomb Tower (`1.0`)
+  - `Ch 45`: X-Bow (`1.0` Air+Ground 11.5t mode, `0.5` Ground-only 14.0t mode)
+  - `Ch 46`: Inferno Tower (`1.0` Single-Target ramp beam, `0.5` Multi-Target 6-beam mode)
+  - `Ch 47`: Scattershot (`1.0`)
+  - `Ch 48`: Builder's Hut (`2×2`, `1.0`, weaponized turret + healing builder)
+  - `Ch 49`: Spell Tower (`2×2`, `0.25` Rage, `0.50` Poison, `0.75` Invis, `1.00` Earthquake mode)
+  - `Ch 50`: Monolith (`1.0`)
+  - `Ch 51`: Multi-Gear Tower (`1.0` Long Range mode, `0.5` Fast Attack mode)
+  - `Ch 52`: Firespitter (`0.25 + 0.75 * (theta_deg / 360.0)` for 150° piercing cone angle)
+  - `Ch 53`: Revenge Tower (`1.0`)
+  - `Ch 54`: Hot Candle / CraftingStation (`1.0`, Season 4 crafted defense)
+  - `Ch 55`: Clan Castle (`1.0` while active on defense)
+- **`Ch 56..58` — 3 Non-Offensive Building Groups**:
+  - `Ch 56`: Resource Storages & Hero Hall (`hp / max_hp` in `[0, 1]`)
+  - `Ch 57`: Resource Collectors (Gold Mines, Elixir Collectors, DE Drills, `hp / max_hp` in `[0, 1]`)
+  - `Ch 58`: Utility & Other Buildings (Army Camps, Barracks, Lab, Spell Factories, etc., `hp / max_hp` in `[0, 1]`)
 
 #### B. 64-Dimensional Live Available Army Inventory Vector (`army_context`)
 Extracted by [`extract_army_context()`](file:///home/robin/Projects/CoC/crates/coc-engine/src/sim.rs#L6573) and projected via `Linear(64 -> 256) + LayerNorm + SiLU`:

@@ -6464,22 +6464,33 @@ impl BattleEngine {
     ///   - Ch 23: Poison Spell (full AoE circle, fading `remaining_sec / total_duration`)
     ///   - Ch 24: Skeleton Spell (full AoE circle, fading `remaining_sec / total_duration`)
     ///
-    /// Group 5: Enemy Defending Units (Ch 25..28)
+    /// Group 5: Enemy Defending Units (Ch 25..33)
     ///   - Ch 25: Enemy Clan Castle Troops & TH18 Guardian (`min(count / 5.0, 1.0)`)
-    ///   - Ch 26: Enemy Heroes (`1.0` if alive on tile, else `0.0`)
-    ///   - Ch 27: Enemy Ground Skeletons (`min(count / 10.0, 1.0)`)
-    ///   - Ch 28: Enemy Air Skeletons (`min(count / 10.0, 1.0)`)
+    ///   - Ch 26: Defending Barbarian King (`1.0` if alive on tile)
+    ///   - Ch 27: Defending Archer Queen (`1.0` if alive on tile)
+    ///   - Ch 28: Defending Grand Warden (`1.0` if alive on tile)
+    ///   - Ch 29: Defending Royal Champion (`1.0` if alive on tile)
+    ///   - Ch 30: Defending Minion Prince (`1.0` if alive on tile)
+    ///   - Ch 31: Defending Dragon Duke (`1.0` if alive on tile)
+    ///   - Ch 32: Enemy Ground Skeletons (`min(count / 10.0, 1.0)`)
+    ///   - Ch 33: Enemy Air Skeletons (`min(count / 10.0, 1.0)`)
     ///
-    /// Group 6: Dedicated Defense Types (Ch 29..49)
-    ///   - Ch 29: Archer Tower          - Ch 36: Super Wizard Tower    - Ch 43: Builder's Hut
-    ///   - Ch 30: Multi-Archer Tower    - Ch 37: Air Sweeper (dir)     - Ch 44: Spell Tower (mode)
-    ///   - Ch 31: Ricochet Cannon       - Ch 38: Hidden Tesla (rev)    - Ch 45: Monolith
-    ///   - Ch 32: Cannon                - Ch 39: Bomb Tower            - Ch 46: Multi-Gear Tower (mode)
-    ///   - Ch 33: Mortar                - Ch 40: X-Bow (mode)          - Ch 47: Firespitter (dir)
-    ///   - Ch 34: Air Defense           - Ch 41: Inferno Tower (mode)  - Ch 48: Revenge Tower
-    ///   - Ch 35: Wizard Tower          - Ch 42: Scattershot           - Ch 49: Hot Candle (CraftingStation)
+    /// Group 6: Dedicated Defense Types & Clan Castle (Ch 34..55)
+    ///   - Ch 34: Archer Tower          - Ch 41: Super Wizard Tower    - Ch 48: Builder's Hut
+    ///   - Ch 35: Multi-Archer Tower    - Ch 42: Air Sweeper (dir)     - Ch 49: Spell Tower (mode)
+    ///   - Ch 36: Ricochet Cannon       - Ch 43: Hidden Tesla (rev)    - Ch 50: Monolith
+    ///   - Ch 37: Cannon                - Ch 44: Bomb Tower            - Ch 51: Multi-Gear Tower (mode)
+    ///   - Ch 38: Mortar                - Ch 45: X-Bow (mode)          - Ch 52: Firespitter (dir)
+    ///   - Ch 39: Air Defense           - Ch 46: Inferno Tower (mode)  - Ch 53: Revenge Tower
+    ///   - Ch 40: Wizard Tower          - Ch 47: Scattershot           - Ch 54: Hot Candle (CraftingStation)
+    ///   - Ch 55: Clan Castle (defensive structure, `1.0` while alive)
+    ///
+    /// Group 7: Non-Offensive Structures (Ch 56..58)
+    ///   - Ch 56: Resource Storages & Hero Hall (Gold/Elixir/Dark Elixir Storages + Hero Hall HP ratio in [0, 1])
+    ///   - Ch 57: Resource Collectors (Gold Mine, Elixir Collector, Dark Elixir Drill HP ratio in [0, 1])
+    ///   - Ch 58: Utility & Other Buildings (Camps, Lab, Spell Factories, Barracks, Blacksmith, etc. HP ratio in [0, 1])
     pub fn extract_spatial_observation(&self) -> Vec<f32> {
-        let mut obs = vec![0.0f32; 50 * 50 * 50];
+        let mut obs = vec![0.0f32; 59 * 50 * 50];
         let idx = |ch: usize, y: usize, x: usize| ch * 2500 + y * 50 + x;
 
         for b in &self.buildings {
@@ -6498,22 +6509,22 @@ impl BattleEngine {
                 0.0
             };
             let def_ch_val: Option<(usize, f32)> = match b.building_id {
-                BuildingId::ArcherTower => Some((29, 1.0)),
-                BuildingId::MultiArcherTower => Some((30, 1.0)),
-                BuildingId::RicochetCannon => Some((31, 1.0)),
-                BuildingId::Cannon => Some((32, 1.0)),
-                BuildingId::Mortar => Some((33, 1.0)),
-                BuildingId::AirDefense => Some((34, 1.0)),
-                BuildingId::WizardTower => Some((35, 1.0)),
-                BuildingId::SuperWizardTower => Some((36, 1.0)),
+                BuildingId::ArcherTower => Some((34, 1.0)),
+                BuildingId::MultiArcherTower => Some((35, 1.0)),
+                BuildingId::RicochetCannon => Some((36, 1.0)),
+                BuildingId::Cannon => Some((37, 1.0)),
+                BuildingId::Mortar => Some((38, 1.0)),
+                BuildingId::AirDefense => Some((39, 1.0)),
+                BuildingId::WizardTower => Some((40, 1.0)),
+                BuildingId::SuperWizardTower => Some((41, 1.0)),
                 BuildingId::AirSweeper => Some((
-                    37,
+                    42,
                     0.25 + 0.75 * (b.direction_deg.rem_euclid(360.0) / 360.0),
                 )),
-                BuildingId::HiddenTesla => Some((38, 1.0)),
-                BuildingId::BombTower => Some((39, 1.0)),
+                BuildingId::HiddenTesla => Some((43, 1.0)),
+                BuildingId::BombTower => Some((44, 1.0)),
                 BuildingId::XBow => Some((
-                    40,
+                    45,
                     if b.mode == DefenseMode::XBowGround {
                         0.5
                     } else {
@@ -6521,17 +6532,17 @@ impl BattleEngine {
                     },
                 )),
                 BuildingId::InfernoTower => Some((
-                    41,
+                    46,
                     if b.mode == DefenseMode::InfernoMulti {
                         0.5
                     } else {
                         1.0
                     },
                 )),
-                BuildingId::Scattershot => Some((42, 1.0)),
-                BuildingId::BuildersHut => Some((43, 1.0)),
+                BuildingId::Scattershot => Some((47, 1.0)),
+                BuildingId::BuildersHut => Some((48, 1.0)),
                 BuildingId::SpellTower => Some((
-                    44,
+                    49,
                     match b.mode {
                         DefenseMode::SpellTowerRage => 0.25,
                         DefenseMode::SpellTowerPoison => 0.50,
@@ -6540,9 +6551,9 @@ impl BattleEngine {
                         _ => 0.25,
                     },
                 )),
-                BuildingId::Monolith => Some((45, 1.0)),
+                BuildingId::Monolith => Some((50, 1.0)),
                 BuildingId::MultiGearTower => Some((
-                    46,
+                    51,
                     if b.mode == DefenseMode::MultiGearFastAttack {
                         0.5
                     } else {
@@ -6550,11 +6561,39 @@ impl BattleEngine {
                     },
                 )),
                 BuildingId::Firespitter => Some((
-                    47,
+                    52,
                     0.25 + 0.75 * (b.direction_deg.rem_euclid(360.0) / 360.0),
                 )),
-                BuildingId::RevengeTower => Some((48, 1.0)),
-                BuildingId::CraftingStation => Some((49, 1.0)),
+                BuildingId::RevengeTower => Some((53, 1.0)),
+                BuildingId::CraftingStation => Some((54, 1.0)),
+                BuildingId::ClanCastle => Some((55, 1.0)),
+                BuildingId::GoldStorage
+                | BuildingId::ElixirStorage
+                | BuildingId::DarkElixirStorage
+                | BuildingId::HeroHall => {
+                    let hp_ratio = (b.hp / b.max_hp.max(1.0)).clamp(0.0, 1.0);
+                    Some((56, hp_ratio))
+                }
+                BuildingId::GoldMine
+                | BuildingId::ElixirCollector
+                | BuildingId::DarkElixirDrill => {
+                    let hp_ratio = (b.hp / b.max_hp.max(1.0)).clamp(0.0, 1.0);
+                    Some((57, hp_ratio))
+                }
+                BuildingId::ArmyCamp
+                | BuildingId::Barracks
+                | BuildingId::DarkBarracks
+                | BuildingId::Laboratory
+                | BuildingId::SpellFactory
+                | BuildingId::DarkSpellFactory
+                | BuildingId::Blacksmith
+                | BuildingId::Workshop
+                | BuildingId::PetHouse
+                | BuildingId::HelperHut
+                | BuildingId::BobsHut => {
+                    let hp_ratio = (b.hp / b.max_hp.max(1.0)).clamp(0.0, 1.0);
+                    Some((58, hp_ratio))
+                }
                 _ => None,
             };
             for dy in 0..b.footprint {
@@ -6632,14 +6671,22 @@ impl BattleEngine {
                 }
             } else {
                 match u.kind {
-                    UnitKind::Hero(_) => {
-                        obs[idx(26, y, x)] = 1.0;
+                    UnitKind::Hero(hid) => {
+                        let hero_ch = match hid {
+                            HeroId::BarbarianKing => 26,
+                            HeroId::ArcherQueen => 27,
+                            HeroId::GrandWarden => 28,
+                            HeroId::RoyalChampion => 29,
+                            HeroId::MinionPrince => 30,
+                            HeroId::DragonDuke => 31,
+                        };
+                        obs[idx(hero_ch, y, x)] = 1.0;
                     }
                     UnitKind::Troop(TroopId::Skeleton) => {
                         if u.is_air {
-                            obs[idx(28, y, x)] = (obs[idx(28, y, x)] + 0.1).min(1.0);
+                            obs[idx(33, y, x)] = (obs[idx(33, y, x)] + 0.1).min(1.0);
                         } else {
-                            obs[idx(27, y, x)] = (obs[idx(27, y, x)] + 0.1).min(1.0);
+                            obs[idx(32, y, x)] = (obs[idx(32, y, x)] + 0.1).min(1.0);
                         }
                     }
                     UnitKind::Troop(_) => {

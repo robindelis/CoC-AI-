@@ -15,28 +15,51 @@ from torch.distributions import Categorical
 NEG_INF = -1e8
 
 
+class DilatedResBlock(nn.Module):
+    """
+    Dilated Residual Context Block preserving exact 50x50 spatial grid resolution.
+    Dilation expands the receptive field across wall compartments without downsampling.
+    """
+
+    def __init__(self, dim: int, dilation: int = 1):
+        super().__init__()
+        self.conv1 = nn.Conv2d(
+            dim, dim, kernel_size=3, padding=dilation, dilation=dilation, bias=False
+        )
+        self.norm1 = nn.GroupNorm(8, dim)
+        self.conv2 = nn.Conv2d(
+            dim, dim, kernel_size=3, padding=dilation, dilation=dilation, bias=False
+        )
+        self.norm2 = nn.GroupNorm(8, dim)
+        self.act = nn.SiLU()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.act(self.norm2(self.conv2(self.act(self.norm1(self.conv1(x))))) + x)
+
+
 class CoCSpatialEncoder(nn.Module):
     """
-    Dual-pathway Spatial CNN Backbone for the 10x50x50 Village Observation Grid.
+    Dual-pathway Spatial CNN Backbone for the 59x50x50 Village Observation Grid.
 
-    Input tensor `obs` has shape (B, 10, 50, 50):
-      - Ch 0: Building HP (normalized)       - Ch 5: Ground attacker HP density
-      - Ch 1: Defense DPS threat             - Ch 6: Air attacker HP density
-      - Ch 2: Town Hall 18 footprint         - Ch 7: Active Spell zones
-      - Ch 3: Wall HP (normalized)           - Ch 8: Allied Unit Type Signature phi(u) in [0, 1]
-      - Ch 4: No-Deploy Red Zone mask        - Ch 9: Enemy Unit Type Signature phi(u) in [0, 1]
-                                                     (CC, Heroes, Guardians, Ground vs Air Skeletons)
+    Input tensor `obs` has shape (B, 59, 50, 50):
+      - Ch 0..4:   Base & Environment (Building HP, Defense DPS, TH18 Mask, Wall Integrity, Red Zone)
+      - Ch 5..16:  Friendly Army Troops, Siege & CC (Thrower, Healer, Furnace, Druid, Ice Golem, SWB, HH, Loon, Archer, Log Launcher, Super Yeti, Super Valkyrie)
+      - Ch 17..20: Friendly Heroes (Barbarian King, Archer Queen, Grand Warden, Royal Champion)
+      - Ch 21..24: Friendly Spells (Totem HP, Rage Fade, Poison Fade, Skeleton Fade)
+      - Ch 25..33: Enemy Defending Units (Enemy CC & Guardian, Defending BK, AQ, GW, RC, MP, DD, Ground & Air Skeletons)
+      - Ch 34..55: Dedicated Defense Types & Clan Castle (21 defense types + Clan Castle)
+      - Ch 56..58: Non-Offensive Structures (Storages/HeroHall, Collectors, Utility/Other Buildings)
 
     Outputs two complementary representations:
-      1. `spatial_features`: (B, 64, 50, 50) full-resolution feature map preserving exact
-         1-to-1 tile alignment for the spatial deployment pointer head.
+      1. `spatial_features`: (B, 128, 50, 50) full-resolution feature map preserving exact
+         1-to-1 tile alignment with 39x39 receptive field for the spatial deployment pointer head.
       2. `global_embedding`: (B, 256) compact tactical state vector summarizing the entire
          battlefield for the action-type, slot-index, and value-critic heads.
     """
 
     def __init__(
         self,
-        in_channels: int = 50,
+        in_channels: int = 59,
         subspatial_dim: int = 64,
         spatial_dim: int = 128,
         embed_dim: int = 256,
@@ -79,58 +102,72 @@ class CoCSpatialEncoder(nn.Module):
             nn.SiLU(),
         )
 
-        # Stage 2: Dilated residual context block (50x50 -> 50x50, receptive field 11x11)
-        # Dilation=2 lets each tile's feature vector see across TH18 wall compartments and
-        # overlapping defense ranges without downsampling the 50x50 coordinate grid.
+        # Stage 2: Multi-scale dilated residual backbone (50x50 -> 50x50, receptive field 39x39)
+        # Cascaded dilations (d=1, 2, 4) let features see across multiple wall compartments,
+        # town hall cores, and opposite-flank defenses without downsampling the 50x50 grid.
         self.context_res = nn.Sequential(
-            nn.Conv2d(
-                spatial_dim,
-                spatial_dim,
-                kernel_size=3,
-                padding=1,
-                # dilation=2,
-                bias=False,
-            ),
-            nn.GroupNorm(8, spatial_dim),
-            nn.SiLU(),
-            nn.Conv2d(spatial_dim, spatial_dim, kernel_size=3, padding=1, bias=False),
-            nn.GroupNorm(8, spatial_dim),
+            DilatedResBlock(spatial_dim, dilation=1),
+            DilatedResBlock(spatial_dim, dilation=2),
+            DilatedResBlock(spatial_dim, dilation=4),
         )
 
-        # Stage 3: Strided downsampling pyramid (50x50 -> 25x25 -> 13x13 -> 4x4 -> 256-D)
-        # Compresses the spatial map into a global battlefield summary vector.
+        # Stage 3: Strided downsampling pyramid (50x50 -> 25x25 -> 13x13 -> 1x1 -> 256-D)
+        # Global average pooling provides coordinate-invariant tactical aggregation
+        # while saving ~500k dense parameters for the spatial convolutional backbone.
         self.global_tower = nn.Sequential(
             nn.Conv2d(spatial_dim, 96, kernel_size=3, stride=2, padding=1),
             nn.SiLU(),
             nn.Conv2d(96, 128, kernel_size=3, stride=2, padding=1),
             nn.SiLU(),
-            nn.AdaptiveAvgPool2d((4, 4)),
+            nn.AdaptiveAvgPool2d((1, 1)),
             nn.Flatten(),
-            nn.Linear(128 * 4 * 4, embed_dim),
+            nn.Linear(128, embed_dim),
             nn.LayerNorm(embed_dim),
             nn.SiLU(),
         )
 
     def forward(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        if obs.shape[1] == 50 and self.in_channels == 31:
-            # Backward compatibility adapter for legacy 31-channel checkpoints
-            adapted = torch.zeros(
-                (obs.shape[0], 31, obs.shape[2], obs.shape[3]),
-                dtype=obs.dtype,
-                device=obs.device,
-            )
-            adapted[:, 0:5] = obs[:, 0:5]
-            ground_idx = [5, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 20]
-            adapted[:, 5] = torch.clamp(obs[:, ground_idx].sum(dim=1), max=1.0)
-            air_idx = [6, 12, 19]
-            adapted[:, 6] = torch.clamp(obs[:, air_idx].sum(dim=1), max=1.0)
-            adapted[:, 7] = torch.clamp(obs[:, 21:25].max(dim=1).values, max=1.0)
-            adapted[:, 8] = torch.clamp(obs[:, 5:21].max(dim=1).values, max=1.0)
-            adapted[:, 9] = torch.clamp(obs[:, 25:29].max(dim=1).values, max=1.0)
-            adapted[:, 10:31] = obs[:, 29:50]
-            obs = adapted
+        if obs.shape[1] != self.in_channels:
+            if obs.shape[1] == 50 and self.in_channels == 59:
+                adapted = torch.zeros(
+                    (obs.shape[0], 59, obs.shape[2], obs.shape[3]),
+                    dtype=obs.dtype,
+                    device=obs.device,
+                )
+                adapted[:, 0:26] = obs[:, 0:26]
+                adapted[:, 26] = obs[:, 26]
+                adapted[:, 32:34] = obs[:, 27:29]
+                adapted[:, 34:55] = obs[:, 29:50]
+                obs = adapted
+            elif obs.shape[1] == 59 and self.in_channels == 50:
+                adapted = torch.zeros(
+                    (obs.shape[0], 50, obs.shape[2], obs.shape[3]),
+                    dtype=obs.dtype,
+                    device=obs.device,
+                )
+                adapted[:, 0:26] = obs[:, 0:26]
+                adapted[:, 26] = obs[:, 26:32].max(dim=1).values
+                adapted[:, 27:29] = obs[:, 32:34]
+                adapted[:, 29:50] = obs[:, 34:55]
+                obs = adapted
+            elif obs.shape[1] == 50 and self.in_channels == 31:
+                adapted = torch.zeros(
+                    (obs.shape[0], 31, obs.shape[2], obs.shape[3]),
+                    dtype=obs.dtype,
+                    device=obs.device,
+                )
+                adapted[:, 0:5] = obs[:, 0:5]
+                ground_idx = [5, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 20]
+                adapted[:, 5] = torch.clamp(obs[:, ground_idx].sum(dim=1), max=1.0)
+                air_idx = [6, 12, 19]
+                adapted[:, 6] = torch.clamp(obs[:, air_idx].sum(dim=1), max=1.0)
+                adapted[:, 7] = torch.clamp(obs[:, 21:25].max(dim=1).values, max=1.0)
+                adapted[:, 8] = torch.clamp(obs[:, 5:21].max(dim=1).values, max=1.0)
+                adapted[:, 9] = torch.clamp(obs[:, 25:29].max(dim=1).values, max=1.0)
+                adapted[:, 10:31] = obs[:, 29:50]
+                obs = adapted
         h = self.spatial_stem(obs)
-        spatial_features = F.silu(h + self.context_res(h))
+        spatial_features = self.context_res(h)
         global_embedding = self.global_tower(spatial_features)
         return spatial_features, global_embedding
 
@@ -170,7 +207,7 @@ class CoCActorCritic(nn.Module):
 
     def __init__(
         self,
-        in_channels: int = 50,
+        in_channels: int = 59,
         army_context_dim: int = 64,
         num_fraction_bins: int = 5,
     ):
@@ -215,7 +252,7 @@ class CoCActorCritic(nn.Module):
         )
 
         # Head 4: Spatial Tile Pointer (projects conditioned embedding onto the spatial map)
-        self.tile_cond_proj = nn.Linear(embed_dim + 7, spatial_dim)
+        self.tile_cond_proj = nn.Linear(embed_dim + 7 + 10, spatial_dim)
         self.tile_conv_head = nn.Sequential(
             nn.Conv2d(spatial_dim, 32, kernel_size=3, padding=1),
             nn.SiLU(),
@@ -258,7 +295,7 @@ class CoCActorCritic(nn.Module):
         fraction_logits = self.deploy_fraction_head(frac_cond_emb)
 
         # 4. Conditioned 50x50 Spatial Tile Pointer
-        cond_spatial = self.tile_cond_proj(cond_emb).unsqueeze(-1).unsqueeze(-1)
+        cond_spatial = self.tile_cond_proj(frac_cond_emb).unsqueeze(-1).unsqueeze(-1)
         fused_spatial = F.silu(spatial_feat + cond_spatial)
         tile_logits = self.tile_conv_head(fused_spatial).reshape(B, 2500)
 
@@ -364,7 +401,7 @@ class CoCActorCritic(nn.Module):
 
         # 4. Spatial Tile Distribution (50x50 = 2500 tiles)
         # FiLM-style multiplicative + additive spatial conditioning & multi-scale core/defense proximity focus
-        cond_spatial = self.tile_cond_proj(cond_emb).unsqueeze(-1).unsqueeze(-1)
+        cond_spatial = self.tile_cond_proj(frac_cond_emb).unsqueeze(-1).unsqueeze(-1)
         fused_spatial = F.silu(
             spatial_feat * (1.0 + 0.5 * torch.tanh(cond_spatial)) + cond_spatial
         )
@@ -376,8 +413,9 @@ class CoCActorCritic(nn.Module):
             breach_stage1, kernel_size=15, stride=1, padding=7
         ).reshape(B, 2500)
         non_th_defenses = obs[:, 1:2] * (1.0 - obs[:, 2:3])
+        allied_units = obs[:, 5:21].sum(dim=1, keepdim=True).clamp(max=1.0)
         combat_focus = F.avg_pool2d(
-            1.2 * non_th_defenses + 3.0 * (obs[:, 5:6] + obs[:, 6:7]),
+            1.2 * non_th_defenses + 3.0 * allied_units,
             kernel_size=7,
             stride=1,
             padding=3,
@@ -390,7 +428,6 @@ class CoCActorCritic(nn.Module):
         if masks is not None and "tile" in masks:
             valid_green = masks["tile"].to(device=device, dtype=torch.bool)
             needs_green = (chosen_type == 1) | (chosen_type == 2) | (chosen_type == 4)
-            allied_units = obs[:, 5:6] + obs[:, 6:7]
             buildings_alive = obs[:, 0:1] + obs[:, 1:2]
             not_th_halo = (
                 F.max_pool2d(obs[:, 2:3], kernel_size=7, stride=1, padding=3) < 0.5

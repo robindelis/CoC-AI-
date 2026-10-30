@@ -263,7 +263,7 @@ export interface AIRolloutResponse {
   villages?: VillageLayout[];
 }
 
-export const POLICY_HEATMAP_CHANNEL_ID = 50;
+export const POLICY_HEATMAP_CHANNEL_ID = 59;
 
 export const SPATIAL_CHANNELS = [
   // Group 1: Base & Environment (0..4)
@@ -299,36 +299,47 @@ export const SPATIAL_CHANNELS = [
   { id: 23, label: 'Ch 23 • Poison Spell (Fade)', color: '#e11d48' },
   { id: 24, label: 'Ch 24 • Skeleton Spell (Fade)', color: '#94a3b8' },
 
-  // Group 5: Enemy Defending Units (25..28)
+  // Group 5: Enemy Defending Units (25..33)
   { id: 25, label: 'Ch 25 • Enemy CC & Guardian', color: '#e11d48' },
-  { id: 26, label: 'Ch 26 • Enemy Heroes', color: '#dc2626' },
-  { id: 27, label: 'Ch 27 • Enemy Ground Skeletons', color: '#cbd5e1' },
-  { id: 28, label: 'Ch 28 • Enemy Air Skeletons', color: '#93c5fd' },
+  { id: 26, label: 'Ch 26 • Defending Barbarian King', color: '#eab308' },
+  { id: 27, label: 'Ch 27 • Defending Archer Queen', color: '#c084fc' },
+  { id: 28, label: 'Ch 28 • Defending Grand Warden', color: '#60a5fa' },
+  { id: 29, label: 'Ch 29 • Defending Royal Champion', color: '#34d399' },
+  { id: 30, label: 'Ch 30 • Defending Minion Prince', color: '#a855f7' },
+  { id: 31, label: 'Ch 31 • Defending Dragon Duke', color: '#f97316' },
+  { id: 32, label: 'Ch 32 • Enemy Ground Skeletons', color: '#cbd5e1' },
+  { id: 33, label: 'Ch 33 • Enemy Air Skeletons', color: '#93c5fd' },
 
-  // Group 6: Dedicated Defense Types (29..49)
-  { id: 29, label: 'Ch 29 • Archer Tower', color: '#38bdf8' },
-  { id: 30, label: 'Ch 30 • Multi-Archer Tower', color: '#0ea5e9' },
-  { id: 31, label: 'Ch 31 • Ricochet Cannon', color: '#f97316' },
-  { id: 32, label: 'Ch 32 • Cannon', color: '#fb923c' },
-  { id: 33, label: 'Ch 33 • Mortar', color: '#a855f7' },
-  { id: 34, label: 'Ch 34 • Air Defense', color: '#ef4444' },
-  { id: 35, label: 'Ch 35 • Wizard Tower', color: '#c084fc' },
-  { id: 36, label: 'Ch 36 • Super Wizard Tower', color: '#8b5cf6' },
-  { id: 37, label: 'Ch 37 • Air Sweeper (Dir)', color: '#22d3ee' },
-  { id: 38, label: 'Ch 38 • Hidden Tesla (Revealed)', color: '#fde047' },
-  { id: 39, label: 'Ch 39 • Bomb Tower', color: '#fb7185' },
-  { id: 40, label: 'Ch 40 • X-Bow (Mode)', color: '#e879f9' },
-  { id: 41, label: 'Ch 41 • Inferno Tower (Single/Multi)', color: '#f43f5e' },
-  { id: 42, label: 'Ch 42 • Scattershot', color: '#6366f1' },
-  { id: 43, label: 'Ch 43 • Builder\'s Hut', color: '#4ade80' },
-  { id: 44, label: 'Ch 44 • Spell Tower (Mode)', color: '#a3e635' },
-  { id: 45, label: 'Ch 45 • Monolith', color: '#9333ea' },
-  { id: 46, label: 'Ch 46 • Multi-Gear Tower (Mode)', color: '#f59e0b' },
-  { id: 47, label: 'Ch 47 • Firespitter (Dir)', color: '#ea580c' },
-  { id: 48, label: 'Ch 48 • Revenge Tower', color: '#dc2626' },
-  { id: 49, label: 'Ch 49 • Hot Candle (Crafted)', color: '#fbbf24' },
+  // Group 6: Dedicated Defense Types & Clan Castle (34..55)
+  { id: 34, label: 'Ch 34 • Archer Tower', color: '#38bdf8' },
+  { id: 35, label: 'Ch 35 • Multi-Archer Tower', color: '#0ea5e9' },
+  { id: 36, label: 'Ch 36 • Ricochet Cannon', color: '#f97316' },
+  { id: 37, label: 'Ch 37 • Cannon', color: '#fb923c' },
+  { id: 38, label: 'Ch 38 • Mortar', color: '#a855f7' },
+  { id: 39, label: 'Ch 39 • Air Defense', color: '#ef4444' },
+  { id: 40, label: 'Ch 40 • Wizard Tower', color: '#c084fc' },
+  { id: 41, label: 'Ch 41 • Super Wizard Tower', color: '#8b5cf6' },
+  { id: 42, label: 'Ch 42 • Air Sweeper (Dir)', color: '#22d3ee' },
+  { id: 43, label: 'Ch 43 • Hidden Tesla (Revealed)', color: '#fde047' },
+  { id: 44, label: 'Ch 44 • Bomb Tower', color: '#fb7185' },
+  { id: 45, label: 'Ch 45 • X-Bow (Mode)', color: '#e879f9' },
+  { id: 46, label: 'Ch 46 • Inferno Tower (Single/Multi)', color: '#f43f5e' },
+  { id: 47, label: 'Ch 47 • Scattershot', color: '#6366f1' },
+  { id: 48, label: 'Ch 48 • Builder\'s Hut', color: '#4ade80' },
+  { id: 49, label: 'Ch 49 • Spell Tower (Mode)', color: '#a3e635' },
+  { id: 50, label: 'Ch 50 • Monolith', color: '#9333ea' },
+  { id: 51, label: 'Ch 51 • Multi-Gear Tower (Mode)', color: '#f59e0b' },
+  { id: 52, label: 'Ch 52 • Firespitter (Dir)', color: '#ea580c' },
+  { id: 53, label: 'Ch 53 • Revenge Tower', color: '#dc2626' },
+  { id: 54, label: 'Ch 54 • Hot Candle (Crafted)', color: '#fbbf24' },
+  { id: 55, label: 'Ch 55 • Clan Castle (Defense)', color: '#d97706' },
 
-  { id: 50, label: 'Policy Tile Heatmap', color: '#f59e0b' },
+  // Group 7: Non-Offensive Structures (56..58)
+  { id: 56, label: 'Ch 56 • Storages & Hero Hall', color: '#f59e0b' },
+  { id: 57, label: 'Ch 57 • Resource Collectors', color: '#10b981' },
+  { id: 58, label: 'Ch 58 • Utility & Other Buildings', color: '#8b5cf6' },
+
+  { id: 59, label: 'Policy Tile Heatmap', color: '#f59e0b' },
 ] as const;
 
 export const SLOT_TYPE_LABELS = [

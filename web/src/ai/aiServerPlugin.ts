@@ -240,7 +240,7 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
       const g1ChMatch = sourceCode.match(/Conv2d\(\s*spatial_dim\s*,\s*(\d+)\s*,\s*kernel_size=3\s*,\s*stride=2/);
       const g2ChMatch = sourceCode.match(/Conv2d\(\s*\d+\s*,\s*(\d+)\s*,\s*kernel_size=3\s*,\s*stride=2/);
 
-      const inCh = inChMatch ? Number(inChMatch[1]) : 31;
+      const inCh = inChMatch ? Number(inChMatch[1]) : 59;
       const spatialDim = spatialDimMatch ? Number(spatialDimMatch[1]) : 128;
       const embedDim = embedDimMatch ? Number(embedDimMatch[1]) : 256;
       const armyCtxDim = armyCtxMatch ? Number(armyCtxMatch[1]) : 64;
@@ -252,15 +252,15 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
       const s1Params = inCh * s1Ch * 9 + s1Ch * 2;
       const s2Params = s1Ch * s1Ch * 9 + s1Ch * 2;
       const s3Params = s1Ch * spatialDim * 9 + spatialDim * 2;
-      const resParams = 2 * (spatialDim * spatialDim * 9 + spatialDim * 2);
+      const resParams = 3 * (2 * (spatialDim * spatialDim * 9) + 2 * (spatialDim * 2));
       const g1Params = spatialDim * g1Ch * 9 + g1Ch;
       const g2Params = g1Ch * g2Ch * 9 + g2Ch;
-      const g5Params = g2Ch * 16 * embedDim + embedDim + embedDim * 2;
+      const g5Params = g2Ch * embedDim + embedDim + embedDim * 2;
       const armyCtxParams = armyCtxDim * embedDim + embedDim + embedDim * 2;
       const slotTypeParams = embedDim * 7 + 7;
       const slotIdxParams = (embedDim + 7) * 128 + 128 + 128 * 10 + 10;
       const deployFracParams = (embedDim + 17) * 128 + 128 + 128 * numFracBins + numFracBins;
-      const tileCondParams = (embedDim + 7) * spatialDim + spatialDim;
+      const tileCondParams = (embedDim + 17) * spatialDim + spatialDim;
       const tileConvParams = spatialDim * 32 * 9 + 32 + 32 * 1 + 1;
       const criticParams = embedDim * 128 + 128 + 128 * 1 + 1;
 
@@ -313,17 +313,17 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
         {
           id: 's4',
           stage: 'spatial' as const,
-          type: 'Residual Context Block',
-          short: 'ResBlock',
-          desc: `2×Conv ${spatialDim} ch, 3×3, p=1, GroupNorm(8), Residual Skip (+), SiLU`,
+          type: 'Cascaded Dilated ResBlocks (3×)',
+          short: '3× ResBlocks',
+          desc: `3× ResBlocks (d=1, 2, 4) in ${spatialDim} ch, GroupNorm(8), Residual Skips, SiLU`,
           inputShape: [spatialDim, 50, 50],
           outputShape: [spatialDim, 50, 50],
-          receptiveField: 15,
+          receptiveField: 39,
           params: resParams,
-          macs: 2 * (spatialDim * spatialDim * 9 * 50 * 50),
+          macs: 3 * (2 * (spatialDim * spatialDim * 9 * 50 * 50)),
           color: '#7c3aed',
           border: '#a78bfa',
-          coneLabel: '2×3×3 + Skip',
+          coneLabel: '3×(2×3×3)+Skips',
           hasSkipArc: true,
         },
         {
@@ -334,7 +334,7 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           desc: `${g1Ch} filters, 3×3, stride=2, pad=1, SiLU`,
           inputShape: [spatialDim, 50, 50],
           outputShape: [g1Ch, 25, 25],
-          receptiveField: 19,
+          receptiveField: 43,
           params: g1Params,
           macs: spatialDim * g1Ch * 9 * 25 * 25,
           color: '#2563eb',
@@ -349,7 +349,7 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           desc: `${g2Ch} filters, 3×3, stride=2, pad=1, SiLU`,
           inputShape: [g1Ch, 25, 25],
           outputShape: [g2Ch, 13, 13],
-          receptiveField: 27,
+          receptiveField: 50,
           params: g2Params,
           macs: g1Ch * g2Ch * 9 * 13 * 13,
           color: '#2563eb',
@@ -361,24 +361,24 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           stage: 'global' as const,
           type: 'AdaptiveAvgPool2d',
           short: 'AdapPool',
-          desc: 'Adaptive Grid 4×4',
+          desc: 'Global Average Pool 1×1',
           inputShape: [g2Ch, 13, 13],
-          outputShape: [g2Ch, 4, 4],
+          outputShape: [g2Ch, 1, 1],
           receptiveField: 50,
           params: 0,
           macs: 0,
           color: '#d97706',
           border: '#fbbf24',
-          coneLabel: 'Pool 4×4',
+          coneLabel: 'Pool 1×1',
         },
         {
           id: 'g4',
           stage: 'global' as const,
           type: 'Flatten',
           short: 'Flatten',
-          desc: `Flatten ${g2Ch}×4×4 → ${g2Ch * 16}`,
-          inputShape: [g2Ch, 4, 4],
-          outputShape: [g2Ch * 16],
+          desc: `Flatten ${g2Ch}×1×1 → ${g2Ch}`,
+          inputShape: [g2Ch, 1, 1],
+          outputShape: [g2Ch],
           receptiveField: 50,
           params: 0,
           macs: 0,
@@ -391,12 +391,12 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           stage: 'global' as const,
           type: 'Linear + LayerNorm + SiLU',
           short: 'GlobalTower',
-          desc: `Linear(${g2Ch * 16} → ${embedDim}) + LayerNorm(${embedDim}) + SiLU`,
-          inputShape: [g2Ch * 16],
+          desc: `Linear(${g2Ch} → ${embedDim}) + LayerNorm(${embedDim}) + SiLU`,
+          inputShape: [g2Ch],
           outputShape: [embedDim],
           receptiveField: 50,
           params: g5Params,
-          macs: g2Ch * 16 * embedDim,
+          macs: g2Ch * embedDim,
           color: '#059669',
           border: '#34d399',
           coneLabel: 'Dense',

@@ -4,19 +4,21 @@
     "type": "split",
     "children": [
       {
-        "id": "8d33fcee5aa97cd1",
+        "id": "598e45a9f1f175c8",
         "type": "tabs",
         "children": [
           {
-            "id": "a12dbd6778e0f270",
+            "id": "15409834d337fb26",
             "type": "leaf",
             "state": {
-              "type": "pdf",
+              "type": "markdown",
               "state": {
-                "file": "file:/home/robin/site/CV_Robin_De_Lissnyder_En.pdf"
+                "file": "architectures/v3.0_31Ch_PerDefense_SingleArmy_ActorCritic.md",
+                "mode": "source",
+                "source": false
               },
-              "icon": "lucide-file-text",
-              "title": "CV_Robin_De_Lissnyder_En"
+              "icon": "lucide-file",
+              "title": "v3.0_31Ch_PerDefense_SingleArmy_ActorCritic"
             }
           }
         ]
@@ -186,13 +188,15 @@
       "bases:Create new base": false
     }
   },
-  "active": "a12dbd6778e0f270",
+  "active": "15409834d337fb26",
   "lastOpenFiles": [
-    "file:/home/robin/jobs/CV_Robin_De_Lissnyder_En.pdf",
+    "architectures/v3.0_59Ch_CascadedDilatedResNet_SingleArmy_ActorCritic.md",
     "01_Model_Architecture_and_Training_Tracker.canvas",
+    "00_Index_MOC.md",
+    "file:/home/robin/site/CV_Robin_De_Lissnyder_En.pdf",
+    "file:/home/robin/jobs/CV_Robin_De_Lissnyder_En.pdf",
     "assets/charts/v2_ai_diagnostics_telemetry.png",
     "experiments/AI_Diagnostics_And_Training_Fixes.md",
-    "00_Index_MOC.md",
     "runs/v2_archetype_10ch.md",
     "runs/v1_baseline_8ch.md",
     "assets/charts/v2_archetype_10ch_training_curves.png",

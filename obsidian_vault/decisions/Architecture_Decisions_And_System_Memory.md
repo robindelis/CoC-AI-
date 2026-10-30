@@ -267,7 +267,7 @@ Defined in `CoCActorCritic` (`python/coc_rl/networks.py`), the policy parameteri
 
 ### ADR-007: 50-Channel Dedicated Composition, Heroes, Spells & Defenses Spatial Observation Tensor
 - **Date**: 2026-10-30
-- **Status**: Accepted
+- **Status**: Superseded by ADR-008 (Expanded to 59 channels: dedicated enemy heroes, Clan Castle, non-offensive storage/collector/utility channels, and 3-block dilated ResNet backbone)
 - **Context**: The previous 31-channel observation space aggregated all allied ground and air troops into coarse density maps (Channels 5 & 6) and compressed tactical identity into a single 1D archetype signature $\phi(u)$ (Channel 8). Under single-army specialization (ADR-005), the agent benefits from non-overlapping, fine-grained spatial tracking of every individual troop type, hero, active spell, and defending enemy unit.
 - **Decision**: Expand spatial observation tensor to $50 \times 50 \times 50$:
   1. **Friendly Troops, Siege & CC (Ch 5..16)**: Dedicated channel per loadout unit (Thrower, Healer, Furnace, Druid/Bear, Ice Golem, Super Wall Breaker, Headhunter, Balloon, Archer, Log Launcher, CC Super Yeti, CC Super Valkyrie), normalized by max initial army count on each tile.
@@ -276,3 +276,26 @@ Defined in `CoCActorCritic` (`python/coc_rl/networks.py`), the policy parameteri
   4. **Enemy Defending Units (Ch 25..28)**: Dedicated channels for Enemy CC & Guardians, Enemy Heroes, Enemy Ground Skeletons, and Enemy Air Skeletons.
   5. **Dedicated Defenses (Ch 29..49)**: Shifted 21 per-defense channels preserving all mode and directional cone encodings.
 - **Consequences**: Complete spatial clarity; eliminates multi-unit tile ambiguity; enables CNN spatial kernels to learn troop-specific micro-maneuvers and spell radius boundaries with zero archetype distortion.
+
+### ADR-008: 59-Channel Spatial Tensor (Per-Hero Defending Channels, Clan Castle & Non-Offensive Building Groups) + 3-Block Dilated ResNet Backbone
+- **Date**: 2026-10-30
+- **Status**: Accepted
+- **Context**:
+  1. **Enemy Hero Blindness**: The 50-channel observation compressed all defending heroes into a single binary channel (`Ch 26`), preventing the policy from distinguishing a 13,000 HP Barbarian King melee tank from a 700 DPS ranged Archer Queen or long-range Grand Warden. This directly impaired Headhunter deployment, hero charge routing, and defensive poison spell timing.
+  2. **Clan Castle Structure**: The Clan Castle (a key defensive fortification housing defending troops) lacked its own defense channel.
+  3. **Non-Offensive Funnel Structures**: Storage tanks (high HP funnel buffers), collectors (low HP trash), and utility structures (camps, lab, spell factories) were only represented in the aggregate building HP channel `Ch 0`. Differentiating high-durability reservoirs from outer trash buildings is essential for funnel planning.
+  4. **Bottlenecked CNN Topology**: Over 54% of network parameters were concentrated in a single dense layer `Linear(2048, 256)` in `global_tower`, while the spatial feature extractor had only 1 residual block with a narrow receptive field (~15×15 tiles) on a 50×50 battlefield.
+- **Decision**:
+  1. **Expand Spatial Observation Tensor to $59 \times 50 \times 50$**:
+     - **Enemy Defending Units (`Ch 25..33`)**: Dedicated channels for Defending CC & Guardian (`Ch 25`), Defending Barbarian King (`Ch 26`), Defending Archer Queen (`Ch 27`), Defending Grand Warden (`Ch 28`), Defending Royal Champion (`Ch 29`), Defending Minion Prince (`Ch 30`), Defending Dragon Duke (`Ch 31`), Enemy Ground Skeletons (`Ch 32`), and Enemy Air Skeletons (`Ch 33`).
+     - **Defenses & Clan Castle (`Ch 34..55`)**: 21 shifted defense types + `Ch 55: Clan Castle (1.0 while active)`.
+     - **Non-Offensive Building Groups (`Ch 56..58`)**:
+       - `Ch 56`: Storages & Reservoirs + Hero Hall (Gold/Elixir/Dark Elixir Storages + Hero Hall HP ratio $\text{HP}/\text{HP}_{\max} \in [0, 1]$).
+       - `Ch 57`: Resource Collectors (Gold Mines, Elixir Collectors, Dark Elixir Drills HP ratio $\in [0, 1]$).
+       - `Ch 58`: Utility & Other Buildings (Army Camps, Barracks, Laboratory, Spell Factories, Blacksmith, etc. HP ratio $\in [0, 1]$).
+  2. **Deepen Spatial Backbone & Lean Global Tower**:
+     - Replaced `AdaptiveAvgPool2d((4, 4)) + Linear(2048, 256)` with coordinate-invariant Global Average Pooling `AdaptiveAvgPool2d((1, 1)) + Linear(128, 256)`, eliminating 491,520 redundant dense parameters.
+     - Reinvested parameters into a 3-block cascaded Dilated ResNet (`DilatedResBlock` with dilations $d=1, 2, 4$), tripling spatial receptive field from $15\times 15$ to $39\times 39$ across the 50×50 board while keeping total parameters at ~1.48M.
+     - Conditioned spatial tile pointer `tile_cond_proj` on `[global_emb || type_onehot || idx_onehot]` (273-D) for slot-specific FiLM modulation.
+     - Fixed legacy 10-channel allied unit slicing bug in `networks.py` to sum all living friendly units across `Ch 5..20`.
+- **Consequences**: Exact identification of high-threat defending heroes; fine-grained funnel path prediction; base-wide receptive field allowing outer deployments to evaluate core defenses; verified >2,500 combat ticks/sec rollout throughput on NVIDIA RTX 4060 GPU.
