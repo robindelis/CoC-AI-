@@ -313,7 +313,8 @@ def analyze_codebase_drift(
     # Combine unique relevant files
     combined_files = sorted(list(set(relevant_files + relevant_uncommitted)))
 
-    has_drift = (len(commits_list) > 0) or (len(combined_files) > 0)
+    # Only treat as drift if actual relevant code files were modified
+    has_drift = len(combined_files) > 0
 
     # Categorize files
     categorized: Dict[str, List[str]] = {}
