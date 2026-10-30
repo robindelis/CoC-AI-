@@ -167,21 +167,23 @@ def ppo_minibatch_update(
             else 0.0
         )
 
-    total_pg_loss = 0.0
-    total_v_loss = 0.0
-    total_ent = 0.0
-    total_kl = 0.0
-    total_clip = 0.0
-    total_grad_norm = 0.0
+    device = obs_b.device
+    total_pg_loss = torch.zeros((), device=device)
+    total_v_loss = torch.zeros((), device=device)
+    total_ent = torch.zeros((), device=device)
+    total_kl = torch.zeros((), device=device)
+    total_clip = torch.zeros((), device=device)
+    total_grad_norm = torch.zeros((), device=device)
     num_updates = 0
+    mb_step = max(8, minibatch_size)
 
     for _epoch in range(max(1, ppo_epochs)):
-        perm = torch.randperm(B, device=obs_b.device)
-        epoch_kl = 0.0
+        perm = torch.randperm(B, device=device)
+        epoch_kl = torch.zeros((), device=device)
         epoch_mb = 0
 
-        for start in range(0, B, max(8, minibatch_size)):
-            mb_idx = perm[start : start + max(8, minibatch_size)]
+        for start in range(0, B, mb_step):
+            mb_idx = perm[start : start + mb_step]
             mb_obs = obs_b[mb_idx]
             mb_act = actions_b[mb_idx]
             mb_old_lp = old_logprobs_b[mb_idx]
@@ -211,36 +213,36 @@ def ppo_minibatch_update(
 
             loss = policy_loss + vf_coef * value_loss - ent_coef * reg_entropy
 
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             loss.backward()
             grad_norm = nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
             optimizer.step()
 
             with torch.no_grad():
-                approx_kl = ((ratio - 1.0) - logratio).mean().item()
-                clip_frac = ((ratio - 1.0).abs() > clip_coef).float().mean().item()
+                approx_kl = ((ratio - 1.0) - logratio).mean()
+                clip_frac = ((ratio - 1.0).abs() > clip_coef).float().mean()
+                total_pg_loss += policy_loss.detach()
+                total_v_loss += value_loss.detach()
+                total_ent += entropy_loss.detach()
+                total_kl += approx_kl
+                total_clip += clip_frac
+                total_grad_norm += grad_norm.detach() if isinstance(grad_norm, torch.Tensor) else float(grad_norm)
+                epoch_kl += approx_kl
 
-            total_pg_loss += float(policy_loss.item())
-            total_v_loss += float(value_loss.item())
-            total_ent += float(entropy_loss.item())
-            total_kl += float(approx_kl)
-            total_clip += float(clip_frac)
-            total_grad_norm += float(grad_norm.item()) if hasattr(grad_norm, "item") else float(grad_norm)
             num_updates += 1
-            epoch_kl += float(approx_kl)
             epoch_mb += 1
 
-        if target_kl > 0 and (epoch_kl / max(1, epoch_mb)) > target_kl:
+        if target_kl > 0 and float((epoch_kl / max(1, epoch_mb)).item()) > target_kl:
             break
 
-    denom = max(1, num_updates)
+    denom = float(max(1, num_updates))
     return {
-        "policy_loss": total_pg_loss / denom,
-        "value_loss": total_v_loss / denom,
-        "entropy": total_ent / denom,
-        "approx_kl": total_kl / denom,
-        "clip_fraction": total_clip / denom,
-        "grad_norm": total_grad_norm / denom,
+        "policy_loss": float(total_pg_loss.item()) / denom,
+        "value_loss": float(total_v_loss.item()) / denom,
+        "entropy": float(total_ent.item()) / denom,
+        "approx_kl": float(total_kl.item()) / denom,
+        "clip_fraction": float(total_clip.item()) / denom,
+        "grad_norm": float(total_grad_norm.item()) / denom,
         "explained_variance": explained_var,
         "minibatch_updates": num_updates,
     }

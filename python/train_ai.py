@@ -18,6 +18,7 @@ import coc_py
 from coc_rl import (
     CoCActorCritic,
     CoCAttackerEnv,
+    CoCVecAttackerEnv,
     compress_training_history,
     compute_custom_reward,
     compute_custom_reward_components,
@@ -28,6 +29,12 @@ from coc_rl import (
     ppo_minibatch_update,
     ppo_update_step,
 )
+
+if torch.cuda.is_available():
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    torch.set_float32_matmul_precision("high")
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 TRAINED_MODELS_DIR = os.path.join(REPO_ROOT, "trained_models")
@@ -102,8 +109,18 @@ def delete_custom_army(name: str) -> List[Dict[str, Any]]:
     return updated
 
 
+_CATALOG_CACHE: Optional[Dict[str, Any]] = None
+
+
+def _get_cached_catalog() -> Dict[str, Any]:
+    global _CATALOG_CACHE
+    if _CATALOG_CACHE is None:
+        _CATALOG_CACHE = json.loads(coc_py.get_catalog_json())
+    return _CATALOG_CACHE
+
+
 def get_all_army_presets() -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    cat = json.loads(coc_py.get_catalog_json())
+    cat = _get_cached_catalog()
     builtin = cat.get("preset_armies", [])
     custom = list_custom_armies()
     custom_names = {a.get("name") for a in custom}
@@ -331,7 +348,7 @@ def load_attacker_model(
 
 
 def get_meta_presets() -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    cat = json.loads(coc_py.get_catalog_json())
+    cat = _get_cached_catalog()
     layouts = cat["preset_layouts"][:5]
     armies = cat["preset_armies"][:3]
     return layouts, armies
@@ -792,9 +809,14 @@ def train_pytorch_ppo(
             )
 
     trained_army_json = json.dumps(trained_army)
-    env = CoCAttackerEnv(
-        layout_json=json.dumps(layouts[0]),
-        army_json=trained_army_json,
+    layouts_json_list = [json.dumps(l) for l in layouts]
+    b_eps = max(1, batch_episodes)
+    cpu_threads = max(1, os.cpu_count() or 12)
+    num_parallel_envs = min(cpu_threads, b_eps, max(1, episodes))
+    vec_env = CoCVecAttackerEnv(
+        num_envs=num_parallel_envs,
+        layouts_json=layouts_json_list,
+        armies_json=[trained_army_json],
         ticks_per_step=ticks_per_step,
     )
 
@@ -821,8 +843,6 @@ def train_pytorch_ppo(
         "explained_variance": float(base_history[-1].get("explained_variance", 0.0)) if base_history else 0.0,
     }
 
-    b_eps = max(1, batch_episodes)
-
     hyperparams_meta = {
         "lr": lr,
         "batch_episodes": batch_episodes,
@@ -838,6 +858,7 @@ def train_pytorch_ppo(
 
     strat_villages = list(range(len(layouts)))
     prev_intermediate_path: Optional[str] = None
+    last_saved_ep = 0
 
     def _get_ckpt_filename(ep_total: int) -> str:
         if save_name and save_name.strip():
@@ -845,7 +866,7 @@ def train_pytorch_ppo(
         return build_default_model_filename(trained_army_name, ep_total, best_pct, best_stars)
 
     def _save_attacker_ckpt(ep_total: int) -> str:
-        nonlocal prev_intermediate_path
+        nonlocal prev_intermediate_path, last_saved_ep
         fname = _get_ckpt_filename(ep_total)
         path = os.path.join(TRAINED_MODELS_DIR, fname)
         compressed_hist = compress_training_history(
@@ -870,6 +891,34 @@ def train_pytorch_ppo(
             "history_compressed": compressed_hist,
         }
         torch.save(payload, path)
+        last_saved_ep = ep_total
+        try:
+            mtime = os.path.getmtime(path)
+            size_kb = round(os.path.getsize(path) / 1024.0, 1)
+            hist_meta = get_compressed_history_meta(compressed_hist)
+            meta_entry = {
+                "filename": fname,
+                "size_kb": size_kb,
+                "updated_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mtime)),
+                "mtime": mtime,
+                "episode": int(ep_total),
+                "best_pct": int(best_pct),
+                "best_stars": int(best_stars),
+                "best_reward": round(float(best_reward), 2),
+                "model_type": "live_attacker",
+                "hyperparams": hyperparams_meta,
+                "army": trained_army,
+                "army_name": trained_army_name,
+                "army_slug": army_slug,
+                "armies": armies,
+                "villages": layouts,
+                "army_names": army_names,
+                "village_names": village_names,
+                **hist_meta,
+            }
+            _MODEL_META_CACHE[fname] = (mtime, size_kb, meta_entry)
+        except Exception:
+            pass
         if (
             prev_intermediate_path
             and prev_intermediate_path != path
@@ -886,343 +935,406 @@ def train_pytorch_ppo(
         return path
 
     live_attacker.train()
+    fixed_layout_obj = json.loads(layout_json) if (matchup_mode == "fixed_current" and layout_json) else layouts[0]
+    fixed_village_idx = next(
+        (i for i, l in enumerate(layouts) if l.get("name") == fixed_layout_obj.get("name")),
+        0,
+    )
 
-    for ep in range(1, episodes + 1):
+    ep_cursor = 0
+    stop_training = False
+
+    while ep_cursor < episodes and not stop_training:
         t0 = time.perf_counter()
-        cumulative_ep = base_trained_episodes + ep
-
-        # ---------------------------------------------------------------------
-        # Village Selection (Single Army Composition)
-        # ---------------------------------------------------------------------
-        army_idx = 0
-        if matchup_mode == "round_robin":
-            village_idx = (ep - 1) % len(layouts)
-            chosen_layout_dict = layouts[village_idx]
-        elif matchup_mode == "fixed_current":
-            chosen_layout_dict = (
-                json.loads(layout_json) if layout_json else layouts[0]
-            )
-            village_idx = next(
-                (
-                    i
-                    for i, l in enumerate(layouts)
-                    if l.get("name") == chosen_layout_dict.get("name")
-                ),
-                0,
-            )
-        else:
-            if (ep - 1) % max(1, len(layouts)) == 0:
-                random.shuffle(strat_villages)
-            village_idx = strat_villages[(ep - 1) % len(layouts)]
-            chosen_layout_dict = layouts[village_idx]
-
-        obs_np, info = env.reset(
-            options={
-                "layout_json": json.dumps(chosen_layout_dict),
-                "army_json": trained_army_json,
-            }
+        wave_size = min(
+            num_parallel_envs,
+            b_eps - buf_eps_count,
+            episodes - ep_cursor,
         )
 
         # ---------------------------------------------------------------------
-        # Live Battle Rollout (`CoCActorCritic` with live available army_context)
+        # Parallel Wave Village Selection (Single Army Composition)
         # ---------------------------------------------------------------------
-        obs_list: List[torch.Tensor] = []
-        army_ctx_list: List[torch.Tensor] = []
-        actions_list: List[torch.Tensor] = []
-        logprobs_list: List[torch.Tensor] = []
-        values_list: List[torch.Tensor] = []
-        rewards_list: List[float] = []
-        dones_list: List[float] = []
-        mask_type_list: List[torch.Tensor] = []
-        mask_idx_list: List[torch.Tensor] = []
-        mask_tile_list: List[torch.Tensor] = []
+        wave_village_indices: List[int] = []
+        for w in range(wave_size):
+            ep_num = ep_cursor + w + 1
+            if matchup_mode == "round_robin":
+                v_idx = (ep_num - 1) % len(layouts)
+            elif matchup_mode == "fixed_current":
+                v_idx = fixed_village_idx
+            else:
+                if (ep_num - 1) % max(1, len(layouts)) == 0:
+                    random.shuffle(strat_villages)
+                v_idx = strat_villages[(ep_num - 1) % len(layouts)]
+            wave_village_indices.append(v_idx)
 
-        ep_custom_reward = 0.0
-        ep_r_destr = 0.0
-        ep_r_stars = 0.0
-        ep_r_damage = 0.0
-        steps_run = 0
-        noop_steps = 0
-        deploy_steps = 0
-        spell_steps = 0
-        ability_steps = 0
-        ep_entropies: List[float] = []
-        ep_h_types: List[float] = []
-        ep_h_idxs: List[float] = []
-        ep_h_fracs: List[float] = []
-        ep_h_tiles: List[float] = []
+        obs_all, ctx_all, masks_all = vec_env.reset_batch(
+            wave_village_indices, [0] * wave_size
+        )
+
+        # ---------------------------------------------------------------------
+        # Batched Parallel Rollout (`CoCVecAttackerEnv` + Batched GPU Forward)
+        # ---------------------------------------------------------------------
+        w_obs: List[List[torch.Tensor]] = [[] for _ in range(wave_size)]
+        w_ctx: List[List[torch.Tensor]] = [[] for _ in range(wave_size)]
+        w_act: List[List[torch.Tensor]] = [[] for _ in range(wave_size)]
+        w_lp: List[List[torch.Tensor]] = [[] for _ in range(wave_size)]
+        w_val: List[List[torch.Tensor]] = [[] for _ in range(wave_size)]
+        w_rew: List[List[float]] = [[] for _ in range(wave_size)]
+        w_done: List[List[float]] = [[] for _ in range(wave_size)]
+        w_m_type: List[List[torch.Tensor]] = [[] for _ in range(wave_size)]
+        w_m_idx: List[List[torch.Tensor]] = [[] for _ in range(wave_size)]
+        w_m_tile: List[List[torch.Tensor]] = [[] for _ in range(wave_size)]
+        w_ent: List[List[torch.Tensor]] = [[] for _ in range(wave_size)]
+        w_h_type: List[List[torch.Tensor]] = [[] for _ in range(wave_size)]
+        w_h_idx: List[List[torch.Tensor]] = [[] for _ in range(wave_size)]
+        w_h_frac: List[List[torch.Tensor]] = [[] for _ in range(wave_size)]
+        w_h_tile: List[List[torch.Tensor]] = [[] for _ in range(wave_size)]
+
+        ep_custom_reward = [0.0] * wave_size
+        ep_r_destr = [0.0] * wave_size
+        ep_r_stars = [0.0] * wave_size
+        ep_r_damage = [0.0] * wave_size
+        steps_run = [0] * wave_size
+        noop_steps = [0] * wave_size
+        deploy_steps = [0] * wave_size
+        spell_steps = [0] * wave_size
+        ability_steps = [0] * wave_size
+        final_pct = [0] * wave_size
+        final_stars = [0] * wave_size
+        final_tick = [0] * wave_size
+
+        active = list(range(wave_size))
 
         for step_i in range(max_steps_per_ep):
-            obs_t = torch.as_tensor(obs_np, dtype=torch.float32, device=device).unsqueeze(0)
-            army_ctx_t = torch.as_tensor(
-                info["army_context"], dtype=torch.float32, device=device
-            ).unsqueeze(0)
-
-            prevent_noop = curriculum_deploy and (step_i == 0)
-            masks_t = masks_np_to_torch(
-                info["action_masks"], device, prevent_early_noop=prevent_noop
-            )
-
-            with torch.no_grad():
-                action_t, logprob_t, entropy_t, value_t, step_diag = live_attacker.get_action_and_value(
-                    obs_t, masks=masks_t, army_context=army_ctx_t
-                )
-                ep_entropies.append(float(entropy_t.item()))
-                if "h_type" in step_diag:
-                    ep_h_types.append(float(step_diag["h_type"].item()))
-                if "h_idx" in step_diag and float(step_diag["h_idx"].item()) > 0:
-                    ep_h_idxs.append(float(step_diag["h_idx"].item()))
-                if "h_frac" in step_diag and float(step_diag["h_frac"].item()) > 0:
-                    ep_h_fracs.append(float(step_diag["h_frac"].item()))
-                if "h_tile" in step_diag and float(step_diag["h_tile"].item()) > 0:
-                    ep_h_tiles.append(float(step_diag["h_tile"].item()))
-
-            action_np = action_t.squeeze(0).cpu().numpy()
-            chosen_slot_type = int(action_np[0])
-            if chosen_slot_type == 0:
-                noop_steps += 1
-            elif chosen_slot_type in (1, 2, 4):
-                deploy_steps += 1
-            elif chosen_slot_type == 6:
-                spell_steps += 1
-            elif chosen_slot_type in (3, 5):
-                ability_steps += 1
-
-            next_obs_np, _engine_rew, terminated, truncated, next_info = env.step(action_np)
-            done = bool(terminated or truncated)
-
-            custom_r, r_destr, r_stars, r_dmg = compute_custom_reward_components(next_info)
-            if chosen_slot_type == 0 and deploy_steps == 0 and step_i < 4:
-                custom_r -= 0.02
-                r_dmg -= 0.02
-
-            has_active_actions = bool(
-                next_info.get(
-                    "has_remaining_inventory",
-                    next_info["action_masks"]["slot_type"][1:].any(),
-                )
-            )
-            if not done and (not has_active_actions or step_i == max_steps_per_ep - 1):
-                next_obs_np, _ff_rew, ff_done, ff_info = env.finish_battle()
-                ff_equiv_steps = float(ff_info.get("ff_ticks", 0)) / max(
-                    1.0, float(ticks_per_step) * 4.0
-                )
-                ff_discount = float(gamma ** min(25.0, ff_equiv_steps))
-                ff_r, ff_destr, ff_stars, ff_dmg = compute_custom_reward_components(ff_info)
-                custom_r += ff_discount * ff_r
-                r_destr += ff_discount * ff_destr
-                r_stars += ff_discount * ff_stars
-                r_dmg += ff_discount * ff_dmg
-                next_info = ff_info
-                done = bool(ff_done)
-
-            ep_custom_reward += custom_r
-            ep_r_destr += r_destr
-            ep_r_stars += r_stars
-            ep_r_damage += r_dmg
-            steps_run += 1
-
-            obs_list.append(obs_t.squeeze(0))
-            army_ctx_list.append(army_ctx_t.squeeze(0))
-            actions_list.append(action_t.squeeze(0))
-            logprobs_list.append(logprob_t.squeeze(0))
-            values_list.append(value_t.squeeze(0))
-            rewards_list.append(custom_r)
-            dones_list.append(1.0 if done else 0.0)
-            mask_type_list.append(masks_t["slot_type"].squeeze(0))
-            mask_idx_list.append(masks_t["slot_idx"].squeeze(0))
-            mask_tile_list.append(masks_t["tile"].squeeze(0))
-
-            obs_np = next_obs_np
-            info = next_info
-            if done:
+            if not active:
                 break
 
-        pct = int(info["destruction_pct"])
-        stars = int(info["stars"])
+            obs_t = torch.as_tensor(
+                obs_all[active], dtype=torch.float32, device=device
+            )
+            ctx_t = torch.as_tensor(
+                ctx_all[active], dtype=torch.float32, device=device
+            )
+            st_t = torch.as_tensor(
+                masks_all["slot_type"][active], dtype=torch.bool, device=device
+            )
+            si_t = torch.as_tensor(
+                masks_all["slot_idx"][active], dtype=torch.bool, device=device
+            )
+            tile_t = torch.as_tensor(
+                masks_all["tile"][active], dtype=torch.bool, device=device
+            )
+
+            if curriculum_deploy and step_i == 0:
+                has_non_noop = st_t[:, 1:].any(dim=-1)
+                if has_non_noop.any():
+                    st_t = st_t.clone()
+                    st_t[has_non_noop, 0] = False
+
+            masks_t = {
+                "slot_type": st_t,
+                "slot_idx": si_t,
+                "tile": tile_t,
+            }
+
+            with torch.no_grad():
+                action_t, logprob_t, entropy_t, value_t, step_diag = (
+                    live_attacker.get_action_and_value(
+                        obs_t, masks=masks_t, army_context=ctx_t
+                    )
+                )
+
+            actions_np = action_t.cpu().numpy()
+
+            (
+                obs_all,
+                ctx_all,
+                masks_all,
+                (crews, rds, rss, rdms, dones, pcts, stars_out, ticks_out),
+            ) = vec_env.step_active(
+                active,
+                actions_np,
+                is_last_step=(step_i == max_steps_per_ep - 1),
+                gamma=gamma,
+            )
+
+            next_active: List[int] = []
+            for pos, w in enumerate(active):
+                chosen_slot_type = int(actions_np[pos, 0])
+                if chosen_slot_type == 0:
+                    noop_steps[w] += 1
+                elif chosen_slot_type in (1, 2, 4):
+                    deploy_steps[w] += 1
+                elif chosen_slot_type == 6:
+                    spell_steps[w] += 1
+                elif chosen_slot_type in (3, 5):
+                    ability_steps[w] += 1
+
+                custom_r = float(crews[pos])
+                r_destr = float(rds[pos])
+                r_stars = float(rss[pos])
+                r_dmg = float(rdms[pos])
+                done = bool(dones[pos])
+
+                if chosen_slot_type == 0 and deploy_steps[w] == 0 and step_i < 4:
+                    custom_r -= 0.02
+                    r_dmg -= 0.02
+
+                ep_custom_reward[w] += custom_r
+                ep_r_destr[w] += r_destr
+                ep_r_stars[w] += r_stars
+                ep_r_damage[w] += r_dmg
+                steps_run[w] += 1
+                final_pct[w] = int(pcts[pos])
+                final_stars[w] = int(stars_out[pos])
+                final_tick[w] = int(ticks_out[pos])
+
+                w_obs[w].append(obs_t[pos])
+                w_ctx[w].append(ctx_t[pos])
+                w_act[w].append(action_t[pos])
+                w_lp[w].append(logprob_t[pos])
+                w_val[w].append(value_t[pos])
+                w_rew[w].append(custom_r)
+                w_done[w].append(1.0 if done else 0.0)
+                w_m_type[w].append(st_t[pos])
+                w_m_idx[w].append(si_t[pos])
+                w_m_tile[w].append(tile_t[pos])
+                w_ent[w].append(entropy_t[pos])
+                if "h_type" in step_diag:
+                    w_h_type[w].append(step_diag["h_type"][pos])
+                if "h_idx" in step_diag:
+                    w_h_idx[w].append(step_diag["h_idx"][pos])
+                if "h_frac" in step_diag:
+                    w_h_frac[w].append(step_diag["h_frac"][pos])
+                if "h_tile" in step_diag:
+                    w_h_tile[w].append(step_diag["h_tile"][pos])
+
+                if not done:
+                    next_active.append(w)
+
+            active = next_active
 
         # ---------------------------------------------------------------------
-        # Rollout Buffer Accumulation & Shuffled Minibatch PPO Updates
+        # Batched Next-Value Estimation, GAE, and Shuffled Minibatch PPO Update
         # ---------------------------------------------------------------------
         with torch.no_grad():
             next_obs_t = torch.as_tensor(
-                obs_np, dtype=torch.float32, device=device
-            ).unsqueeze(0)
+                obs_all[:wave_size], dtype=torch.float32, device=device
+            )
             next_ctx_t = torch.as_tensor(
-                info["army_context"], dtype=torch.float32, device=device
-            ).unsqueeze(0)
-            _, _, _, next_val_t, _ = live_attacker.get_action_and_value(
+                ctx_all[:wave_size], dtype=torch.float32, device=device
+            )
+            _, _, _, next_vals_t, _ = live_attacker.get_action_and_value(
                 next_obs_t, army_context=next_ctx_t
             )
 
-        rewards_t = torch.tensor(rewards_list, dtype=torch.float32, device=device)
-        values_t = torch.stack(values_list)
-        dones_t = torch.tensor(dones_list, dtype=torch.float32, device=device)
-
-        advantages_t, returns_t = compute_gae(
-            rewards=rewards_t,
-            values=values_t,
-            dones=dones_t,
-            next_value=next_val_t.squeeze(0),
-            gamma=gamma,
-            gae_lambda=gae_lambda,
+        wave_elapsed = max(1e-6, time.perf_counter() - t0)
+        total_wave_ticks = sum(
+            final_tick[w] if final_tick[w] > 0 else steps_run[w] * ticks_per_step
+            for w in range(wave_size)
         )
+        wave_fps_ticks = total_wave_ticks / wave_elapsed
 
-        buf_obs.append(torch.stack(obs_list))
-        buf_ctx.append(torch.stack(army_ctx_list))
-        buf_act.append(torch.stack(actions_list))
-        buf_lp.append(torch.stack(logprobs_list))
-        buf_adv.append(advantages_t)
-        buf_ret.append(returns_t)
-        buf_m_type.append(torch.stack(mask_type_list))
-        buf_m_idx.append(torch.stack(mask_idx_list))
-        buf_m_tile.append(torch.stack(mask_tile_list))
-        buf_eps_count += 1
+        for w in range(wave_size):
+            ep = ep_cursor + w + 1
+            cumulative_ep = base_trained_episodes + ep
+            village_idx = wave_village_indices[w]
+            pct = final_pct[w]
+            stars = final_stars[w]
 
-        if buf_eps_count >= b_eps or ep == episodes:
-            obs_b = torch.cat(buf_obs, dim=0)
-            army_ctx_b = torch.cat(buf_ctx, dim=0)
-            actions_b = torch.cat(buf_act, dim=0)
-            old_logprobs_b = torch.cat(buf_lp, dim=0)
-            adv_b = torch.cat(buf_adv, dim=0)
-            ret_b = torch.cat(buf_ret, dim=0)
-            masks_b = {
-                "slot_type": torch.cat(buf_m_type, dim=0),
-                "slot_idx": torch.cat(buf_m_idx, dim=0),
-                "tile": torch.cat(buf_m_tile, dim=0),
-            }
+            rewards_t = torch.tensor(w_rew[w], dtype=torch.float32, device=device)
+            values_t = torch.stack(w_val[w])
+            dones_t = torch.tensor(w_done[w], dtype=torch.float32, device=device)
 
-            last_metrics = ppo_minibatch_update(
-                model=live_attacker,
-                optimizer=opt_live,
-                obs_b=obs_b,
-                actions_b=actions_b,
-                old_logprobs_b=old_logprobs_b,
-                advantages_b=adv_b,
-                returns_b=ret_b,
-                masks_b=masks_b,
-                army_context_b=army_ctx_b,
-                ppo_epochs=ppo_epochs,
-                minibatch_size=minibatch_size,
-                clip_coef=clip_coef,
-                ent_coef=ent_coef,
+            advantages_t, returns_t = compute_gae(
+                rewards=rewards_t,
+                values=values_t,
+                dones=dones_t,
+                next_value=next_vals_t[w],
+                gamma=gamma,
+                gae_lambda=gae_lambda,
             )
 
-            # Backfill initial episodes before the first optimizer step so curves have no 0-spike
-            for prev_rec in history:
-                if abs(float(prev_rec.get("value_loss", 0.0))) < 1e-6:
-                    prev_rec["policy_loss"] = round(last_metrics.get("policy_loss", 0.0), 4)
-                    prev_rec["value_loss"] = round(last_metrics.get("value_loss", 0.0), 4)
-                    prev_rec["approx_kl"] = round(last_metrics.get("approx_kl", 0.0), 4)
-                    prev_rec["clip_fraction"] = round(last_metrics.get("clip_fraction", 0.0), 4)
-                    prev_rec["grad_norm"] = round(last_metrics.get("grad_norm", 0.0), 4)
-                    prev_rec["explained_variance"] = round(last_metrics.get("explained_variance", 0.0), 4)
+            buf_obs.append(torch.stack(w_obs[w]))
+            buf_ctx.append(torch.stack(w_ctx[w]))
+            buf_act.append(torch.stack(w_act[w]))
+            buf_lp.append(torch.stack(w_lp[w]))
+            buf_adv.append(advantages_t)
+            buf_ret.append(returns_t)
+            buf_m_type.append(torch.stack(w_m_type[w]))
+            buf_m_idx.append(torch.stack(w_m_idx[w]))
+            buf_m_tile.append(torch.stack(w_m_tile[w]))
+            buf_eps_count += 1
 
-            buf_obs.clear()
-            buf_ctx.clear()
-            buf_act.clear()
-            buf_lp.clear()
-            buf_adv.clear()
-            buf_ret.clear()
-            buf_m_type.clear()
-            buf_m_idx.clear()
-            buf_m_tile.clear()
-            buf_eps_count = 0
+            new_best = False
+            if pct > best_pct or (pct == best_pct and ep_custom_reward[w] > best_reward):
+                best_pct = max(best_pct, pct)
+                best_stars = max(best_stars, stars)
+                best_reward = max(best_reward, ep_custom_reward[w])
+                new_best = True
 
-            # Periodically sync latest weights so live inspection reflects ongoing training
-            _save_attacker_ckpt(cumulative_ep)
+            if buf_eps_count >= b_eps or ep == episodes:
+                obs_b = torch.cat(buf_obs, dim=0)
+                army_ctx_b = torch.cat(buf_ctx, dim=0)
+                actions_b = torch.cat(buf_act, dim=0)
+                old_logprobs_b = torch.cat(buf_lp, dim=0)
+                adv_b = torch.cat(buf_adv, dim=0)
+                ret_b = torch.cat(buf_ret, dim=0)
+                masks_b = {
+                    "slot_type": torch.cat(buf_m_type, dim=0),
+                    "slot_idx": torch.cat(buf_m_idx, dim=0),
+                    "tile": torch.cat(buf_m_tile, dim=0),
+                }
 
-        elapsed = max(1e-6, time.perf_counter() - t0)
-        sim_ticks = info.get("tick", steps_run * ticks_per_step)
-        fps_ticks = sim_ticks / elapsed
+                last_metrics = ppo_minibatch_update(
+                    model=live_attacker,
+                    optimizer=opt_live,
+                    obs_b=obs_b,
+                    actions_b=actions_b,
+                    old_logprobs_b=old_logprobs_b,
+                    advantages_b=adv_b,
+                    returns_b=ret_b,
+                    masks_b=masks_b,
+                    army_context_b=army_ctx_b,
+                    ppo_epochs=ppo_epochs,
+                    minibatch_size=minibatch_size,
+                    clip_coef=clip_coef,
+                    ent_coef=ent_coef,
+                )
 
-        if pct > best_pct or (pct == best_pct and ep_custom_reward > best_reward):
-            best_pct = max(best_pct, pct)
-            best_stars = max(best_stars, stars)
-            best_reward = max(best_reward, ep_custom_reward)
-            _save_attacker_ckpt(cumulative_ep)
+                # Backfill initial episodes before the first optimizer step so curves have no 0-spike
+                if ep <= b_eps:
+                    for prev_rec in history:
+                        if abs(float(prev_rec.get("value_loss", 0.0))) < 1e-6:
+                            prev_rec["policy_loss"] = round(last_metrics.get("policy_loss", 0.0), 4)
+                            prev_rec["value_loss"] = round(last_metrics.get("value_loss", 0.0), 4)
+                            prev_rec["approx_kl"] = round(last_metrics.get("approx_kl", 0.0), 4)
+                            prev_rec["clip_fraction"] = round(last_metrics.get("clip_fraction", 0.0), 4)
+                            prev_rec["grad_norm"] = round(last_metrics.get("grad_norm", 0.0), 4)
+                            prev_rec["explained_variance"] = round(last_metrics.get("explained_variance", 0.0), 4)
 
-        recent_rewards = [h["reward"] for h in history[-9:]] + [ep_custom_reward]
-        avg_reward_10 = float(np.mean(recent_rewards))
-        recent_pcts = [h["destruction_pct"] for h in history[-9:]] + [pct]
-        avg_pct_10 = float(np.mean(recent_pcts))
-        recent_pcts_50 = [h["destruction_pct"] for h in history[-49:]] + [pct]
-        avg_pct_50 = float(np.mean(recent_pcts_50))
-        noop_pct = round(100.0 * noop_steps / max(1, steps_run), 1)
+                buf_obs.clear()
+                buf_ctx.clear()
+                buf_act.clear()
+                buf_lp.clear()
+                buf_adv.clear()
+                buf_ret.clear()
+                buf_m_type.clear()
+                buf_m_idx.clear()
+                buf_m_tile.clear()
+                buf_eps_count = 0
 
-        rollout_ent = float(np.mean(ep_entropies)) if ep_entropies else last_metrics.get("entropy", 0.0)
-        eff_ent = last_metrics.get("entropy", 0.0) if last_metrics.get("entropy", 0.0) > 1e-5 else rollout_ent
-        v_s0_val = float(values_list[0].item()) if values_list else 0.0
+                save_interval = max(b_eps, 48 if (len(base_history) + len(history)) >= 1000 else b_eps)
+                if new_best or ep == episodes or (cumulative_ep - last_saved_ep) >= save_interval:
+                    _save_attacker_ckpt(cumulative_ep)
+            elif new_best:
+                _save_attacker_ckpt(cumulative_ep)
 
-        ep_record = {
-            "episode": ep,
-            "cumulative_episode": cumulative_ep,
-            "total_episodes": episodes,
-            "army_idx": 0,
-            "army_name": trained_army_name,
-            "village_idx": village_idx,
-            "village_name": (
-                VILLAGE_SHORT_NAMES[village_idx]
-                if village_idx < len(VILLAGE_SHORT_NAMES)
-                else f"Village {village_idx}"
-            ),
-            "reward": round(float(ep_custom_reward), 3),
-            "reward_destr": round(float(ep_r_destr), 3),
-            "reward_stars": round(float(ep_r_stars), 3),
-            "reward_damage": round(float(ep_r_damage), 3),
-            "v_s0": round(v_s0_val, 2),
-            "avg_reward_10": round(avg_reward_10, 3),
-            "destruction_pct": pct,
-            "avg_pct_10": round(avg_pct_10, 1),
-            "avg_pct_50": round(avg_pct_50, 1),
-            "stars": stars,
-            "best_pct": best_pct,
-            "best_stars": best_stars,
-            "noop_pct": noop_pct,
-            "deploy_steps": deploy_steps,
-            "spell_steps": spell_steps,
-            "ability_steps": ability_steps,
-            "policy_loss": round(last_metrics.get("policy_loss", 0.0), 4),
-            "value_loss": round(last_metrics.get("value_loss", 0.0), 4),
-            "entropy": round(eff_ent, 3),
-            "approx_kl": round(last_metrics.get("approx_kl", 0.0), 4),
-            "clip_fraction": round(last_metrics.get("clip_fraction", 0.0), 4),
-            "grad_norm": round(last_metrics.get("grad_norm", 0.0), 4),
-            "explained_variance": round(last_metrics.get("explained_variance", 0.0), 4),
-            "entropy_type": round(float(np.mean(ep_h_types)), 3) if ep_h_types else 0.95,
-            "entropy_idx": round(float(np.mean(ep_h_idxs)), 3) if ep_h_idxs else 1.15,
-            "entropy_frac": round(float(np.mean(ep_h_fracs)), 3) if ep_h_fracs else 0.85,
-            "entropy_tile": round(float(np.mean(ep_h_tiles)), 3) if ep_h_tiles else 3.80,
-            "fps_ticks": round(fps_ticks, 0),
-            "steps": steps_run,
-        }
-        history.append(ep_record)
+            recent_rewards = [h["reward"] for h in history[-9:]] + [ep_custom_reward[w]]
+            avg_reward_10 = float(np.mean(recent_rewards))
+            recent_pcts = [h["destruction_pct"] for h in history[-9:]] + [pct]
+            avg_pct_10 = float(np.mean(recent_pcts))
+            recent_pcts_50 = [h["destruction_pct"] for h in history[-49:]] + [pct]
+            avg_pct_50 = float(np.mean(recent_pcts_50))
+            noop_pct = round(100.0 * noop_steps[w] / max(1, steps_run[w]), 1)
 
-        if on_episode_callback is not None:
-            should_continue = on_episode_callback(ep_record)
-            if not should_continue:
-                break
+            with torch.no_grad():
+                rollout_ent = (
+                    float(torch.stack(w_ent[w]).mean().item())
+                    if w_ent[w]
+                    else last_metrics.get("entropy", 0.0)
+                )
+                eff_ent = (
+                    last_metrics.get("entropy", 0.0)
+                    if last_metrics.get("entropy", 0.0) > 1e-5
+                    else rollout_ent
+                )
+                v_s0_val = float(values_t[0].item()) if values_t.numel() > 0 else 0.0
+                h_type_val = float(torch.stack(w_h_type[w]).mean().item()) if w_h_type[w] else 0.95
+                h_idx_t = torch.stack(w_h_idx[w]) if w_h_idx[w] else None
+                h_idx_pos = h_idx_t[h_idx_t > 0] if h_idx_t is not None else None
+                h_idx_val = float(h_idx_pos.mean().item()) if (h_idx_pos is not None and h_idx_pos.numel() > 0) else 1.15
+                h_frac_t = torch.stack(w_h_frac[w]) if w_h_frac[w] else None
+                h_frac_pos = h_frac_t[h_frac_t > 0] if h_frac_t is not None else None
+                h_frac_val = float(h_frac_pos.mean().item()) if (h_frac_pos is not None and h_frac_pos.numel() > 0) else 0.85
+                h_tile_t = torch.stack(w_h_tile[w]) if w_h_tile[w] else None
+                h_tile_pos = h_tile_t[h_tile_t > 0] if h_tile_t is not None else None
+                h_tile_val = float(h_tile_pos.mean().item()) if (h_tile_pos is not None and h_tile_pos.numel() > 0) else 3.80
+
+            ep_record = {
+                "episode": ep,
+                "cumulative_episode": cumulative_ep,
+                "total_episodes": episodes,
+                "army_idx": 0,
+                "army_name": trained_army_name,
+                "village_idx": village_idx,
+                "village_name": (
+                    VILLAGE_SHORT_NAMES[village_idx]
+                    if village_idx < len(VILLAGE_SHORT_NAMES)
+                    else f"Village {village_idx}"
+                ),
+                "reward": round(float(ep_custom_reward[w]), 3),
+                "reward_destr": round(float(ep_r_destr[w]), 3),
+                "reward_stars": round(float(ep_r_stars[w]), 3),
+                "reward_damage": round(float(ep_r_damage[w]), 3),
+                "v_s0": round(v_s0_val, 2),
+                "avg_reward_10": round(avg_reward_10, 3),
+                "destruction_pct": pct,
+                "avg_pct_10": round(avg_pct_10, 1),
+                "avg_pct_50": round(avg_pct_50, 1),
+                "stars": stars,
+                "best_pct": best_pct,
+                "best_stars": best_stars,
+                "noop_pct": noop_pct,
+                "deploy_steps": deploy_steps[w],
+                "spell_steps": spell_steps[w],
+                "ability_steps": ability_steps[w],
+                "policy_loss": round(last_metrics.get("policy_loss", 0.0), 4),
+                "value_loss": round(last_metrics.get("value_loss", 0.0), 4),
+                "entropy": round(eff_ent, 3),
+                "approx_kl": round(last_metrics.get("approx_kl", 0.0), 4),
+                "clip_fraction": round(last_metrics.get("clip_fraction", 0.0), 4),
+                "grad_norm": round(last_metrics.get("grad_norm", 0.0), 4),
+                "explained_variance": round(last_metrics.get("explained_variance", 0.0), 4),
+                "entropy_type": round(h_type_val, 3),
+                "entropy_idx": round(h_idx_val, 3),
+                "entropy_frac": round(h_frac_val, 3),
+                "entropy_tile": round(h_tile_val, 3),
+                "fps_ticks": round(wave_fps_ticks, 0),
+                "steps": steps_run[w],
+            }
+            history.append(ep_record)
+
+            if on_episode_callback is not None:
+                should_continue = on_episode_callback(ep_record)
+                if not should_continue:
+                    stop_training = True
+                    break
+
+        ep_cursor += wave_size
 
     final_cum_ep = base_trained_episodes + len(history)
     named_path = _save_attacker_ckpt(final_cum_ep)
     named_file = os.path.basename(named_path)
 
     # Automatically update the Obsidian Vault & Canvas with the new training results
-    try:
-        from coc_rl.vault_generator import update_or_register_training_run
-        update_or_register_training_run(
-            checkpoint_path=named_path,
-            resumed_from=resume_from,
-            base_episodes=base_trained_episodes,
-            new_episodes=len(history),
-            history=history,
-            hyperparams=hyperparams_meta,
-            best_pct=best_pct,
-            best_stars=best_stars,
-            best_reward=best_reward,
-        )
-    except Exception as e:
-        print(f"[vault_generator] Note: could not update obsidian vault: {e}")
+    if not named_file.startswith("_"):
+        try:
+            from coc_rl.vault_generator import update_or_register_training_run
+            update_or_register_training_run(
+                checkpoint_path=named_path,
+                resumed_from=resume_from,
+                base_episodes=base_trained_episodes,
+                new_episodes=len(history),
+                history=history,
+                hyperparams=hyperparams_meta,
+                best_pct=best_pct,
+                best_stars=best_stars,
+                best_reward=best_reward,
+            )
+        except Exception as e:
+            print(f"[vault_generator] Note: could not update obsidian vault: {e}")
 
     matchup_stats = compute_matchup_stats(
         history=history, layouts=layouts, armies=armies

@@ -1,4 +1,4 @@
-from .envs import CoCAttackerEnv
+from .envs import CoCAttackerEnv, CoCVecAttackerEnv
 from .history_compression import (
     compress_training_history,
     decompress_training_history,
@@ -31,6 +31,7 @@ def ensure_architecture_diagrams(*args, **kwargs):
 
 __all__ = [
     "CoCAttackerEnv",
+    "CoCVecAttackerEnv",
     "CoCSpatialEncoder",
     "CoCActorCritic",
     "compute_custom_reward",

@@ -31,10 +31,13 @@ class DilatedResBlock(nn.Module):
             dim, dim, kernel_size=3, padding=dilation, dilation=dilation, bias=False
         )
         self.norm2 = nn.GroupNorm(8, dim)
-        self.act = nn.SiLU()
+        self.act = nn.SiLU(inplace=True)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.act(self.norm2(self.conv2(self.act(self.norm1(self.conv1(x))))) + x)
+        c1 = self.conv1(x)
+        h = self.act(self.norm1(c1).to(c1.dtype))
+        c2 = self.conv2(h)
+        return self.act(self.norm2(c2).to(c2.dtype) + x.to(c2.dtype))
 
 
 class CoCSpatialEncoder(nn.Module):
@@ -169,7 +172,7 @@ class CoCSpatialEncoder(nn.Module):
         h = self.spatial_stem(obs)
         spatial_features = self.context_res(h)
         global_embedding = self.global_tower(spatial_features)
-        return spatial_features, global_embedding
+        return spatial_features.float(), global_embedding.float()
 
 
 DEPLOY_FRACTION_BINS: Tuple[float, ...] = (0.0, 0.25, 0.50, 0.75, 1.00)
@@ -265,6 +268,11 @@ class CoCActorCritic(nn.Module):
             nn.SiLU(),
             nn.Linear(128, 1),
         )
+        self.register_buffer(
+            "_frac_bins_tensor",
+            torch.tensor(DEPLOY_FRACTION_BINS, dtype=torch.float32),
+            persistent=False,
+        )
 
     def forward(
         self, obs: torch.Tensor, army_context: Optional[torch.Tensor] = None
@@ -327,11 +335,15 @@ class CoCActorCritic(nn.Module):
         B = obs.shape[0]
         device = obs.device
 
-        # Encode spatial grid and fuse with live available army inventory context
-        spatial_feat, global_emb = self.encoder(obs)
+        # Encode spatial grid (using BF16 Tensor Cores on CUDA) and fuse with live available army inventory context
+        if obs.is_cuda:
+            with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+                spatial_feat, global_emb = self.encoder(obs)
+        else:
+            spatial_feat, global_emb = self.encoder(obs)
         if army_context is not None:
             global_emb = global_emb + self.army_context_proj(
-                army_context.to(device=device, dtype=obs.dtype)
+                army_context.to(device=device, dtype=global_emb.dtype)
             )
 
         # 1. Action Type Distribution (0=NoOp is always valid as a fallback)
@@ -499,18 +511,18 @@ class CoCActorCritic(nn.Module):
             + uses_frac * frac_dist.log_prob(chosen_frac_bin)
             + uses_tile * tile_dist.log_prob(chosen_tile)
         )
-        entropy = (
-            type_dist.entropy()
-            + uses_idx * idx_dist.entropy()
-            + uses_frac * frac_dist.entropy()
-            + uses_tile * tile_dist.entropy()
-        )
+        e_type = type_dist.entropy()
+        e_idx = uses_idx * idx_dist.entropy()
+        e_frac = uses_frac * frac_dist.entropy()
+        e_tile = uses_tile * tile_dist.entropy()
+
+        entropy = e_type + e_idx + e_frac + e_tile
         # Normalized per-head entropy with decoupled coefficients so the 2500-tile spatial head
         # does not drown out discrete head exploration (slot_type, slot_idx, deploy_fraction)
-        h_type_norm = type_dist.entropy() / 1.94591
-        h_idx_norm = (uses_idx * idx_dist.entropy()) / 2.30259
-        h_frac_norm = (uses_frac * frac_dist.entropy()) / 1.60944
-        h_tile_norm = (uses_tile * tile_dist.entropy()) / 6.74288
+        h_type_norm = e_type / 1.94591
+        h_idx_norm = e_idx / 2.30259
+        h_frac_norm = e_frac / 1.60944
+        h_tile_norm = e_tile / 6.74288
         reg_entropy = (
             2.2 * h_type_norm
             + 2.2 * h_idx_norm
@@ -519,19 +531,25 @@ class CoCActorCritic(nn.Module):
         )
         value = self.critic_head(global_emb).squeeze(-1)
 
-        frac_bins_tensor = torch.tensor(
-            DEPLOY_FRACTION_BINS, device=device, dtype=torch.float32
-        )
-        diagnostics = {
-            "slot_type_probs": type_dist.probs.detach(),
-            "slot_idx_probs": idx_dist.probs.detach(),
-            "tile_heatmap": tile_dist.probs.detach().reshape(B, 50, 50),
-            "reg_entropy": reg_entropy,
-            "h_type": type_dist.entropy().detach(),
-            "h_idx": (uses_idx * idx_dist.entropy()).detach(),
-            "h_frac": (uses_frac * frac_dist.entropy()).detach(),
-            "h_tile": (uses_tile * tile_dist.entropy()).detach(),
-            "deploy_fraction_probs": frac_dist.probs.detach(),
-            "deploy_fraction": frac_bins_tensor[chosen_frac_bin].detach(),
-        }
+        if action is not None:
+            diagnostics = {
+                "reg_entropy": reg_entropy,
+                "h_type": e_type.detach(),
+                "h_idx": e_idx.detach(),
+                "h_frac": e_frac.detach(),
+                "h_tile": e_tile.detach(),
+            }
+        else:
+            diagnostics = {
+                "slot_type_probs": type_dist.probs.detach(),
+                "slot_idx_probs": idx_dist.probs.detach(),
+                "tile_heatmap": tile_dist.probs.detach().reshape(B, 50, 50),
+                "reg_entropy": reg_entropy,
+                "h_type": e_type.detach(),
+                "h_idx": e_idx.detach(),
+                "h_frac": e_frac.detach(),
+                "h_tile": e_tile.detach(),
+                "deploy_fraction_probs": frac_dist.probs.detach(),
+                "deploy_fraction": self._frac_bins_tensor[chosen_frac_bin].detach(),
+            }
         return out_action, log_prob, entropy, value, diagnostics

@@ -6491,6 +6491,14 @@ impl BattleEngine {
     ///   - Ch 58: Utility & Other Buildings (Camps, Lab, Spell Factories, Barracks, Blacksmith, etc. HP ratio in [0, 1])
     pub fn extract_spatial_observation(&self) -> Vec<f32> {
         let mut obs = vec![0.0f32; 59 * 50 * 50];
+        self.write_spatial_observation(&mut obs);
+        obs
+    }
+
+    /// Writes the 59x50x50 spatial observation directly into a pre-allocated slice of length `>= 59 * 2500`
+    /// (zero-allocation path for parallel RL rollouts).
+    pub fn write_spatial_observation(&self, obs: &mut [f32]) {
+        obs[..59 * 50 * 50].fill(0.0);
         let idx = |ch: usize, y: usize, x: usize| ch * 2500 + y * 50 + x;
 
         for b in &self.buildings {
@@ -6728,14 +6736,19 @@ impl BattleEngine {
                 }
             }
         }
-
-        obs
     }
 
     /// Extracts a 64-float vector encoding full knowledge of the attacking army composition
     /// and live remaining inventory (troops, spells, heroes, hero equipment, pets, siege machine, CC, clock).
     pub fn extract_army_context(&self) -> Vec<f32> {
         let mut ctx = vec![0.0f32; 64];
+        self.write_army_context(&mut ctx);
+        ctx
+    }
+
+    /// Writes the 64-float army context directly into a pre-allocated slice of length `>= 64`.
+    pub fn write_army_context(&self, ctx: &mut [f32]) {
+        ctx[..64].fill(0.0);
         // [0..4]: Global battle progress
         let active_attackers = self
             .units
@@ -6824,7 +6837,6 @@ impl BattleEngine {
             ctx[62] = ((cc_t1 as usize + 1) as f32 / 60.0).clamp(0.0, 1.0);
             ctx[63] = (cc_c1 as f32 / 5.0).clamp(0.0, 1.0);
         }
-        ctx
     }
 }
 

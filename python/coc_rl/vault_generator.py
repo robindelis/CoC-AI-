@@ -242,7 +242,9 @@ def evaluate_model_matchups(
             return cached[cache_key]
 
     layouts, default_armies = get_meta_presets()
-    _, ckpt_meta = load_attacker_model(torch.device("cpu"), attacker_model_file=model_file)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    live_attacker, ckpt_meta = load_attacker_model(device, attacker_model_file=model_file)
+    live_attacker.eval()
     if isinstance(ckpt_meta.get("army"), dict):
         armies = [ckpt_meta["army"]]
     elif isinstance(ckpt_meta.get("armies"), list) and len(ckpt_meta["armies"]) > 0:
@@ -254,25 +256,75 @@ def evaluate_model_matchups(
     comp_totals = [{"pct_sum": 0, "stars_sum": 0, "count": 0, "3stars": 0} for _ in armies]
     village_totals = [{"pct_sum": 0, "stars_sum": 0, "count": 0} for _ in layouts]
 
+    from .envs import CoCVecAttackerEnv
+
+    num_v = len(layouts)
+    layouts_json_list = [json.dumps(l) for l in layouts]
+
     for a_idx, army in enumerate(armies):
-        row = []
-        for v_idx, layout in enumerate(layouts):
-            res = simulate_model_rollout(
-                model_file=model_file,
-                layout_json=json.dumps(layout),
-                army_json=json.dumps(army),
-                ticks_per_step=8,
-                max_steps=120,
-                deterministic=True,
+        vec_env = CoCVecAttackerEnv(
+            num_envs=num_v,
+            layouts_json=layouts_json_list,
+            armies_json=[json.dumps(army)],
+            ticks_per_step=8,
+        )
+        obs_all, ctx_all, masks_all = vec_env.reset_batch(
+            list(range(num_v)), [0] * num_v
+        )
+        active = list(range(num_v))
+        total_rewards = [0.0] * num_v
+        steps_run = [0] * num_v
+        noop_steps = [0] * num_v
+        final_pcts = [0] * num_v
+        final_stars = [0] * num_v
+
+        for step_i in range(120):
+            if not active:
+                break
+            obs_t = torch.as_tensor(obs_all[active], dtype=torch.float32, device=device)
+            ctx_t = torch.as_tensor(ctx_all[active], dtype=torch.float32, device=device)
+            st_t = torch.as_tensor(masks_all["slot_type"][active], dtype=torch.bool, device=device)
+            si_t = torch.as_tensor(masks_all["slot_idx"][active], dtype=torch.bool, device=device)
+            tile_t = torch.as_tensor(masks_all["tile"][active], dtype=torch.bool, device=device)
+            if step_i == 0:
+                has_non_noop = st_t[:, 1:].any(dim=-1)
+                if has_non_noop.any():
+                    st_t = st_t.clone()
+                    st_t[has_non_noop, 0] = False
+
+            with torch.no_grad():
+                action_t, _, _, _, _ = live_attacker.get_action_and_value(
+                    obs_t,
+                    masks={"slot_type": st_t, "slot_idx": si_t, "tile": tile_t},
+                    deterministic=True,
+                    army_context=ctx_t,
+                )
+            acts_np = action_t.cpu().numpy()
+            obs_all, ctx_all, masks_all, (crews, _, _, _, dones, pcts, stars_out, _) = (
+                vec_env.step_active(active, acts_np, is_last_step=(step_i == 119), gamma=1.0)
             )
-            pct = int(res["destruction_pct"])
-            stars = int(res["stars"])
+            next_active = []
+            for pos, v_idx in enumerate(active):
+                if int(acts_np[pos, 0]) == 0:
+                    noop_steps[v_idx] += 1
+                total_rewards[v_idx] += float(crews[pos])
+                steps_run[v_idx] += 1
+                final_pcts[v_idx] = int(pcts[pos])
+                final_stars[v_idx] = int(stars_out[pos])
+                if not dones[pos]:
+                    next_active.append(v_idx)
+            active = next_active
+
+        row = []
+        for v_idx in range(num_v):
+            pct = final_pcts[v_idx]
+            stars = final_stars[v_idx]
             row.append({
                 "destruction_pct": pct,
                 "stars": stars,
-                "total_reward": res["total_reward"],
-                "steps_run": res["steps_run"],
-                "noop_pct": res["noop_pct"],
+                "total_reward": round(float(total_rewards[v_idx]), 2),
+                "steps_run": steps_run[v_idx],
+                "noop_pct": round(100.0 * noop_steps[v_idx] / max(1, steps_run[v_idx]), 1),
             })
             comp_totals[a_idx]["pct_sum"] += pct
             comp_totals[a_idx]["stars_sum"] += stars

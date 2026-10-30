@@ -8,7 +8,7 @@ import json
 import os
 import sys
 import threading
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -147,28 +147,40 @@ class FeedbackRequest(BaseModel):
     model_file: Optional[str] = None
 
 
+_ARCH_MANIFEST_CACHE: Tuple[float, Dict[str, Any]] = (0.0, {})
+
+
 def _get_fresh_architecture_manifest(force: bool = False) -> Dict[str, Any]:
+    global _ARCH_MANIFEST_CACHE
     import importlib
     import coc_rl.networks as _net_mod
 
+    net_file = getattr(_net_mod, "__file__", "")
+    mtime = os.path.getmtime(net_file) if net_file and os.path.exists(net_file) else 0.0
+    if not force and _ARCH_MANIFEST_CACHE[1] and _ARCH_MANIFEST_CACHE[0] == mtime:
+        return _ARCH_MANIFEST_CACHE[1]
+
     importlib.reload(_net_mod)
     fresh_model = _net_mod.CoCActorCritic()
-    return ensure_architecture_diagrams(fresh_model, force=force)
+    manifest = ensure_architecture_diagrams(fresh_model, force=force)
+    _ARCH_MANIFEST_CACHE = (mtime, manifest)
+    return manifest
 
 
 @app.get("/api/ai/status")
 def get_ai_status() -> Dict[str, Any]:
-    live_attacker, ckpt = load_attacker_model(DEVICE)
     arch_manifest = _get_fresh_architecture_manifest(force=False)
-    live_params = int(arch_manifest.get("total_params") or sum(p.numel() for p in live_attacker.parameters()))
+    live_params = int(arch_manifest.get("total_params") or 1360000)
+    saved_models = list_trained_models()
 
     ckpt_meta: Dict[str, Any] = {}
-    if ckpt:
+    if saved_models:
+        latest = saved_models[0]
         ckpt_meta = {
-            "episode": ckpt.get("episode", 0),
-            "best_pct": ckpt.get("best_pct", 0),
-            "best_stars": ckpt.get("best_stars", 0),
-            "best_reward": round(float(ckpt.get("best_reward", 0.0)), 3),
+            "episode": latest.get("episode", 0),
+            "best_pct": latest.get("best_pct", 0),
+            "best_stars": latest.get("best_stars", 0),
+            "best_reward": round(float(latest.get("best_reward", 0.0)), 3),
         }
 
     if not _training_state.get("matchup_stats") or not _training_state["matchup_stats"].get("army_stats"):
@@ -181,7 +193,7 @@ def get_ai_status() -> Dict[str, Any]:
         "device": str(DEVICE),
         "device_name": DEVICE_NAME,
         "param_count": live_params,
-        "saved_models": list_trained_models(),
+        "saved_models": saved_models,
         "architecture_hash": arch_manifest.get("architecture_hash"),
         "architecture_files": arch_manifest.get("files"),
         "architecture_spec": arch_manifest.get("live_spec"),
@@ -381,7 +393,8 @@ def start_ppo_training(req: TrainStartRequest) -> Dict[str, Any]:
             _training_state["best_stars"] = ep_copy["best_stars"]
             _training_state["history"].append(ep_copy)
 
-            if ep_copy["episode"] % 2 == 0 or ep_copy["episode"] == ep_copy["total_episodes"]:
+            stats_stride = max(2, int(req.batch_episodes))
+            if ep_copy["episode"] % stats_stride == 0 or ep_copy["episode"] == ep_copy["total_episodes"]:
                 try:
                     _training_state["matchup_stats"] = compute_matchup_stats(
                         history=_training_state["history"]
