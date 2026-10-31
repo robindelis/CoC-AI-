@@ -27,94 +27,42 @@ A Clash of Clans Town Hall 18 combat simulator, village layout editor, and reinf
 ```text
 /home/robin/Projects/CoC/
 ├── Cargo.toml                        # Rust workspace manifest (coc-data, coc-engine, coc-wasm, coc-py)
-├── start_ai_studio.sh                # One-command launcher for the PyTorch GPU backend (8000) + Vite UI (5173)
+├── start_ai_studio.sh                # Launcher for PyTorch GPU backend (8000) + Vite UI (5173)
 ├── crates/
-│   ├── coc-data/                     # Static data definitions and presets
-│   │   ├── src/lib.rs                # Exports FullCatalog and data modules
-│   │   ├── src/buildings.rs          # Building specs, footprints, stats, and defense modes
-│   │   ├── src/traps.rs              # Trap specs, trigger radii, and effects
-│   │   ├── src/troops.rs             # Troop and siege machine specs
-│   │   ├── src/heroes.rs             # Hero, hero equipment, and pet specs
-│   │   ├── src/spells.rs             # Spell specs and effect types
-│   │   └── src/presets.rs            # VillageLayout / ArmyLoadout structs and default presets
-│   ├── coc-engine/                   # Deterministic combat simulation engine
-│   │   ├── src/lib.rs                # Exports grid and simulation modules + unit tests
-│   │   ├── src/grid.rs               # 50x50 grid validation, no-deploy mask, and A* pathfinding
-│   │   └── src/sim.rs                # Tick-based combat loop (BattleEngine, units, buildings, spells, traps)
-│   ├── coc-wasm/                     # WebAssembly bindings for the browser UI
-│   │   └── src/lib.rs                # WasmBattleSession wrapper and JSON bridge functions
-│   └── coc-py/                       # Native Python module (PyO3 + Rayon)
-│       ├── Cargo.toml
-│       ├── pyproject.toml
-│       └── src/lib.rs                # PyBattleEnv class, action masks, and parallel layout evaluation
-├── learning/                         # Isolated educational curriculum (PyTorch warmup & Deep RL labs)
-│   ├── pytorch_bootcamp/
-│   │   ├── bootcamp_exercises.py
-│   │   ├── bootcamp_solutions.py
-│   │   └── verify_bootcamp.py
-│   └── rl_labs/
-│       ├── student_lab.py            # Guided 4-stage hands-on PyTorch Deep RL workbook (CNN, Actor-Critic, GAE, PPO)
-│       ├── reference_solution.py     # Complete reference PyTorch implementation for Labs 1–4
-│       └── verify_labs.py            # Automated CUDA unit & shape verifier for student_lab.py
+│   ├── coc-data/                     # Static catalog, stats, footprints, and presets (src/lib.rs, buildings.rs, presets.rs)
+│   ├── coc-engine/                   # Deterministic simulation engine (src/lib.rs, grid.rs, sim.rs)
+│   ├── coc-wasm/                     # WebAssembly bindings for browser canvas (src/lib.rs)
+│   └── coc-py/                       # PyO3 native Python extension & Rayon parallel rollout env (src/lib.rs)
+├── learning/                         # Educational curriculum (PyTorch warmup & Deep RL labs)
+│   ├── pytorch_bootcamp/             # Bootcamp exercises, solutions, and verification
+│   └── rl_labs/                      # 4-stage PyTorch Deep RL workbook (student_lab.py, reference_solution.py, verify_labs.py)
 ├── python/                           # Production AI / RL runtime, GPU trainer, and FastAPI AI bridge
-│   ├── coc_rl/
-│   │   ├── __init__.py
-│   │   ├── envs.py                   # Gymnasium environment (CoCAttackerEnv)
-│   │   ├── networks.py               # Standalone CoCSpatialEncoder & CoCActorCritic neural networks
-│   │   ├── visualize.py              # Architecture visualizer, live layer telemetry & torchview graph generator
-│   │   ├── ppo.py                    # Standalone reward shaping, GAE, and PPO update step
-│   │   └── vault_generator.py        # Obsidian vault and canvas auto-generation engine
-│   ├── train_ai.py                   # CLI PyTorch GPU PPO trainer & benchmark
-│   ├── ai_server.py                  # FastAPI bridge server for the Web AI Studio
-│   ├── visualize_model.py            # CLI entrypoint to generate SVG/PNG torchview computation graphs
-│   └── generate_vault.py             # CLI entrypoint to rebuild Obsidian vault and canvas
-├── .agents/                          # Persisting agent definitions (checked into Git)
-│   └── agents/
-│       ├── vault-updater/
-│       │   └── agent.md              # Specialist Obsidian vault sync agent (agy, gemini-3.8-flash-medium)
-│       └── model-visualizer/
-│           └── agent.md              # Specialist model visualizer & architecture representation agent (agy, gemini-3.8-flash-medium)
+│   ├── coc_rl/                       # Envs, networks.py, visualize.py, ppo.py, vault_generator.py
+│   ├── train_ai.py                   # PyTorch GPU PPO trainer & layout benchmark CLI
+│   ├── ai_server.py                  # FastAPI bridge server for Web AI Studio (port 8000)
+│   ├── visualize_model.py            # CLI entrypoint to generate SVG/PNG torchview graphs
+│   └── generate_vault.py             # CLI entrypoint to rebuild Obsidian vault & canvas
+├── .agents/agents/                   # Version-controlled agent definitions
+│   ├── vault-updater/agent.md        # Specialist Obsidian vault sync agent (agy, gemini-3.8-flash-medium)
+│   └── model-visualizer/agent.md     # Specialist neural model visualizer agent (agy, gemini-3.8-flash-medium)
 ├── obsidian_vault/                   # Central Long-Term Memory & Source of Truth
-│   ├── 00_Index_MOC.md               # Master Map of Content index
+│   ├── 00_Index_MOC.md               # Central Map of Content index & sync banner
 │   ├── 01_Model_Architecture_and_Training_Tracker.canvas # Visual interactive 2D whiteboard
-│   ├── decisions/                    # Architectural Decision Records (ADRs) & system memory ledger
-│   │   └── Architecture_Decisions_And_System_Memory.md
-│   ├── architectures/                # Neural network architecture specifications
-│   │   └── v3.0_31Ch_PerDefense_SingleArmy_ActorCritic.md
-│   ├── encodings/                    # Spatial tensor and army inventory encoding specs
-│   │   ├── Defense_And_Unit_Spatial_Encoding.md
-│   │   └── Unit_Type_Spatial_Encoding.md
-│   ├── experiments/                  # Empirical benchmarks and AI diagnostics
-│   │   ├── Experiment_Log_And_Benchmarks.md
-│   │   └── AI_Diagnostics_And_Training_Fixes.md
-│   ├── runs/                         # Model run dossiers and session histories
-│   └── assets/                       # Computation graphs (SVG/PNG) and training curves
-├── scripts/
-│   └── fetch_assets.py               # Utility script to download sprite and font assets into web/public/assets/
-└── web/                              # React + TypeScript + Vite web application
-    ├── package.json
-    ├── vite.config.ts
-    ├── public/assets/                # Static sprites (.webp/.png) and fonts
-    └── src/
-        ├── main.tsx                  # React root entry point
-        ├── App.tsx                   # Top-level shell routing between Game views and AI Studio
-        ├── types.ts                  # TypeScript interfaces mirroring Rust structs
-        ├── assetsManifest.ts         # Sprite asset path mappings
-        ├── styles.css                # Application styling
-        ├── wasm-pkg/                 # Generated wasm-pack output consumed by the frontend
-        ├── canvas/
-        │   ├── BattlefieldCanvas.tsx # HTML5 Canvas renderer (2.5D isometric & 2D top-down views, pan/zoom, pointer input)
-        │   ├── fx.ts                 # 60fps combat FX overlay layer
-        │   └── spriteLoader.ts       # Image preloader, cache, and sprite sizing helpers
-        ├── game/                     # Pure Game UI components (no AI dependencies)
-        │   ├── GameBattleHud.tsx     # Manual Battle Arena HUD, timer, playback controls, and deployment dock
-        │   ├── GameVillageEditor.tsx # 44x44 Village Editor palette, tools, and building inspector
-        │   ├── GameArmyBuilder.tsx   # Army composition, hero equipment, and pet selection UI
-        │   └── GameTacticalDrawer.tsx# Tactical overlays and live entity telemetry drawer
-        └── ai/                       # Dedicated AI Studio UI, client, and types
-            ├── AIStudioView.tsx      # AI Attack Sandbox, Spatial Tensor Inspector & GPU PPO Trainer
-            ├── aiClient.ts           # FastAPI AI server client
-            └── aiTypes.ts            # AI telemetry and tensor interfaces
+│   ├── decisions/                    # Architectural Decision Records (ADR ledger)
+│   ├── architectures/                # Model architecture dossiers
+│   ├── encodings/                    # Spatial tensor (59ch) & inventory (64-D) specifications
+│   ├── experiments/                  # Benchmark dossiers & AI diagnostics
+│   └── assets/                       # SVG computation graphs & training curve charts
+├── scripts/                          # Tooling & utilities
+│   ├── post_task_background.sh       # Asynchronous background post-task model & vault sync runner
+│   ├── vault_diff.py                 # Incremental Git commit drift detector for Obsidian vault
+│   ├── fetch_assets.py               # Sprite/font asset downloader
+│   └── csv_logic_audit.py            # Supercell CSV integrity auditor
+└── web/                              # React 18 + TypeScript + Vite 6 frontend
+    ├── src/main.tsx & App.tsx        # React root shell & navigation
+    ├── src/canvas/                   # HTML5 2D Battlefield canvas (BattlefieldCanvas.tsx, fx.ts, spriteLoader.ts)
+    ├── src/game/                     # Game views (Battle Arena HUD, 44x44 Village Editor, Army Builder)
+    └── src/ai/                       # AI Studio views, tensor visualizers & FastAPI client
 ```
 
 ## Long-Term Memory & Obsidian Vault (Source of Truth)
@@ -139,91 +87,22 @@ The current reinforcement learning pipeline (`v3.0`) operates on a dual-input ob
 ### 1. Current Input Implementation
 
 #### A. 59-Channel Spatial Observation Tensor `(B, 59, 50, 50)`
-Extracted by [`extract_spatial_observation()`](file:///home/robin/Projects/CoC/crates/coc-engine/src/sim.rs#L6435) on the 50×50 battlefield grid:
-- **`Ch 0` — Building HP Ratio**: `hp / 11000.0` in `[0, 1]` across living building footprints. Unrevealed Hidden Teslas are masked to `0.0`.
-- **`Ch 1` — Defense DPS Threat**: `min(spec.dps / 750.0, 1.0)` across active defenses. Unrevealed Hidden Teslas are masked to `0.0`.
-- **`Ch 2` — Town Hall 18 Mask**: `1.0` on the 4×4 TH18 footprint, `0.0` elsewhere. Pinpoints the 2nd Victory Star objective.
-- **`Ch 3` — Wall Durability**: `hp / max_hp` in `[0, 1]` for each 1×1 wall piece. Destroyed walls drop to `0.0`.
-- **`Ch 4` — No-Deploy Red Zone**: `1.0` on forbidden tiles (building buffer halos), `0.0` on legal deployment green zone.
-- **`Ch 5..16` — 12 Friendly Army Troops, Siege & CC Channels** (`count / max_in_army` on tile):
-  - `Ch 5`: Thrower (`N / 12.0`)
-  - `Ch 6`: Healer (`N / 5.0`)
-  - `Ch 7`: Furnace (`N / 2.0`)
-  - `Ch 8`: Druid & Bear (`N / 1.0`)
-  - `Ch 9`: Ice Golem (`N / 1.0`)
-  - `Ch 10`: Super Wall Breaker (`N / 1.0`)
-  - `Ch 11`: Headhunter (`N / 1.0`)
-  - `Ch 12`: Balloon (`N / 1.0`)
-  - `Ch 13`: Archer (`N / 4.0`)
-  - `Ch 14`: Log Launcher Siege (`1.0`)
-  - `Ch 15`: CC Super Yeti (`1.0`)
-  - `Ch 16`: CC Super Valkyrie (`1.0`)
-- **`Ch 17..20` — 4 Friendly Heroes** (`1.0` if alive on tile, `0.0` otherwise):
-  - `Ch 17`: Barbarian King
-  - `Ch 18`: Archer Queen
-  - `Ch 19`: Grand Warden
-  - `Ch 20`: Royal Champion
-- **`Ch 21..24` — 4 Friendly Spells**:
-  - `Ch 21`: Totem Spell (summoned 1×1 unit HP ratio `u.hp / u.max_hp`)
-  - `Ch 22`: Rage Spell (`rem / total` fading in `[0, 1]` across full circular AoE radius)
-  - `Ch 23`: Poison Spell (`rem / total` fading in `[0, 1]` across full circular AoE radius)
-  - `Ch 24`: Skeleton Spell (`rem / total` fading in `[0, 1]` across full circular AoE radius)
-- **`Ch 25..33` — 9 Enemy Defending Units**:
-  - `Ch 25`: Enemy CC Troops & TH18 Guardian (`min(count / 5.0, 1.0)`)
-  - `Ch 26`: Defending Barbarian King (`1.0` on tile)
-  - `Ch 27`: Defending Archer Queen (`1.0` on tile)
-  - `Ch 28`: Defending Grand Warden (`1.0` on tile)
-  - `Ch 29`: Defending Royal Champion (`1.0` on tile)
-  - `Ch 30`: Defending Minion Prince (`1.0` on tile)
-  - `Ch 31`: Defending Dragon Duke (`1.0` on tile)
-  - `Ch 32`: Enemy Ground Skeletons (`min(count / 10.0, 1.0)`)
-  - `Ch 33`: Enemy Air Skeletons (`min(count / 10.0, 1.0)`)
-- **`Ch 34..55` — 22 Dedicated Defense Types & Clan Castle**:
-  - `Ch 34`: Archer Tower (`1.0`)
-  - `Ch 35`: Multi-Archer Tower (`1.0`)
-  - `Ch 36`: Ricochet Cannon (`1.0`)
-  - `Ch 37`: Cannon (`1.0`)
-  - `Ch 38`: Mortar (`1.0`)
-  - `Ch 39`: Air Defense (`1.0`)
-  - `Ch 40`: Wizard Tower (`1.0`)
-  - `Ch 41`: Super Wizard Tower (`1.0`)
-  - `Ch 42`: Air Sweeper (`2×2`, encodes `0.25 + 0.75 * (theta_deg / 360.0)` for facing cone angle)
-  - `Ch 43`: Hidden Tesla (`2×2`, `1.0` ONLY when revealed by unit proximity or >=51% destruction; strictly `0.0` when hidden)
-  - `Ch 44`: Bomb Tower (`1.0`)
-  - `Ch 45`: X-Bow (`1.0` Air+Ground 11.5t mode, `0.5` Ground-only 14.0t mode)
-  - `Ch 46`: Inferno Tower (`1.0` Single-Target ramp beam, `0.5` Multi-Target 6-beam mode)
-  - `Ch 47`: Scattershot (`1.0`)
-  - `Ch 48`: Builder's Hut (`2×2`, `1.0`, weaponized turret + healing builder)
-  - `Ch 49`: Spell Tower (`2×2`, `0.25` Rage, `0.50` Poison, `0.75` Invis, `1.00` Earthquake mode)
-  - `Ch 50`: Monolith (`1.0`)
-  - `Ch 51`: Multi-Gear Tower (`1.0` Long Range mode, `0.5` Fast Attack mode)
-  - `Ch 52`: Firespitter (`0.25 + 0.75 * (theta_deg / 360.0)` for 150° piercing cone angle)
-  - `Ch 53`: Revenge Tower (`1.0`)
-  - `Ch 54`: Hot Candle / CraftingStation (`1.0`, Season 4 crafted defense)
-  - `Ch 55`: Clan Castle (`1.0` while active on defense)
-- **`Ch 56..58` — 3 Non-Offensive Building Groups**:
-  - `Ch 56`: Resource Storages & Hero Hall (`hp / max_hp` in `[0, 1]`)
-  - `Ch 57`: Resource Collectors (Gold Mines, Elixir Collectors, DE Drills, `hp / max_hp` in `[0, 1]`)
-  - `Ch 58`: Utility & Other Buildings (Army Camps, Barracks, Lab, Spell Factories, etc., `hp / max_hp` in `[0, 1]`)
+Extracted by [`extract_spatial_observation()`](file:///home/robin/Projects/CoC/crates/coc-engine/src/sim.rs#L6435) on the 50×50 grid (see full specification in [`Defense_And_Unit_Spatial_Encoding.md`](file:///home/robin/Projects/CoC/obsidian_vault/encodings/Defense_And_Unit_Spatial_Encoding.md)):
+- **`Ch 0..4` (Base & Environment)**: Building HP ratio (`hp / 11000.0`), Defense DPS threat (`min(dps / 750.0, 1.0)`), TH18 4×4 mask (`1.0`), Wall durability (`hp / max_hp`), and No-Deploy Red Zone (`1.0` on forbidden buffer tiles).
+- **`Ch 5..16` (12 Friendly Army Troops, Siege & CC)**: Normalized density `count / max_in_army` on tile for Thrower, Healer, Furnace, Druid/Bear, Ice Golem, Super Wall Breaker, Headhunter, Balloon, Archer, Log Launcher Siege, CC Super Yeti, CC Super Valkyrie.
+- **`Ch 17..20` (4 Friendly Heroes)**: `1.0` if alive on tile for Barbarian King, Archer Queen, Grand Warden, Royal Champion.
+- **`Ch 21..24` (4 Friendly Spells)**: Summoned Totem HP ratio, and fading AoE remaining duration `rem / total` for Rage, Poison, and Skeleton spells.
+- **`Ch 25..33` (9 Defending Enemy Units & Heroes)**: Defending CC Troops / TH18 Guardian, Barbarian King, Archer Queen, Grand Warden, Royal Champion, Minion Prince, Dragon Duke, Ground Skeletons, and Air Skeletons.
+- **`Ch 34..55` (22 Dedicated Defense Types & Clan Castle)**: Archer Tower, Multi-Archer Tower, Ricochet Cannon, Cannon, Mortar, Air Defense, Wizard Tower, Super Wizard Tower, Air Sweeper (facing cone angle), Hidden Tesla (revealed-only), Bomb Tower, X-Bow (Ground vs Air+Ground mode), Inferno Tower (Single vs Multi mode), Scattershot, Builder's Hut (turret), Spell Tower (Rage/Poison/Invis/Quake modes), Monolith, Multi-Gear Tower, Firespitter (150° cone angle), Revenge Tower, Hot Candle (Inferno Candle), and Clan Castle.
+- **`Ch 56..58` (3 Non-Offensive Building Groups)**: Resource Storages & Hero Hall (`hp / max_hp`), Resource Collectors (`hp / max_hp`), and Utility/Other Buildings (`hp / max_hp`).
 
 #### B. 64-Dimensional Live Available Army Inventory Vector (`army_context`)
 Extracted by [`extract_army_context()`](file:///home/robin/Projects/CoC/crates/coc-engine/src/sim.rs#L6573) and projected via `Linear(64 -> 256) + LayerNorm + SiLU`:
 - **`[0..4]` Global Battle Progress**: Remaining time fraction `((1800 - tick) / 1800)`, destruction `% / 100`, stars `/ 3`, alive attacker count `/ 50`.
-- **`[4..24]` 10 Troop Slots (20 floats, 2 per slot `i in 0..9`)**: `(troop_id + 1) / 60.0` and `remaining_count / 20.0`.
-  - **Depletion Invariant**: As soon as `remaining_count == 0`, **both entries immediately drop to `0.0`**.
-- **`[24..44]` 10 Spell Slots (20 floats, 2 per slot `i in 0..9`)**: `(spell_id + 1) / 20.0` and `remaining_count / 8.0`.
-  - **Depletion Invariant**: As soon as `remaining_count == 0`, **both entries immediately drop to `0.0`**.
-- **`[44..56]` 4 Hero Slots (12 floats, 3 per hero `i in 0..3`)**:
-  - Entry 0: Composite signature `((hero_id + 1)*60 + eq_sig + pet_sig) / 500.0` encoding hero identity, equipment pair, and pet.
-  - Entry 1: Availability or HP ratio (`1.0` if in dock ready to deploy; `u.hp / u.max_hp` once deployed).
-  - Entry 2: Ability state (`0.5` undeployed in dock, `1.0` deployed and ability ready, `0.0` ability spent).
-- **`[56..64]` Siege Machine & Clan Castle Slots (8 floats)**:
-  - `ctx[56]`: `(siege_id + 1) / 60.0` normalized siege ID.
-  - `ctx[57]`: Undeployed siege availability (`1.0` ready, `0.0` spent/none).
-  - `ctx[58]`: Deployed siege pop availability (`1.0` active on field unpopped, `0.0` popped/none).
-  - `ctx[59]`: Attacker Clan Castle popped flag (`1.0` popped, `0.0` unpopped).
-  - `ctx[60..61]`: CC Troop Slot 0 (`(id + 1) / 60.0` and `count / 5.0`).
-  - `ctx[62..63]`: CC Troop Slot 1 (`(id + 1) / 60.0` and `count / 5.0`).
+- **`[4..24]` 10 Troop Slots (20 floats, 2 per slot `i in 0..9`)**: `(troop_id + 1) / 60.0` and `remaining_count / 20.0` (drops strictly to `0.0` when depleted).
+- **`[24..44]` 10 Spell Slots (20 floats, 2 per slot `i in 0..9`)**: `(spell_id + 1) / 20.0` and `remaining_count / 8.0` (drops strictly to `0.0` when depleted).
+- **`[44..56]` 4 Hero Slots (12 floats, 3 per hero `i in 0..3`)**: Composite signature `((hero_id + 1)*60 + eq_sig + pet_sig) / 500.0`, HP ratio / dock availability, and ability readiness (`0.5` dock, `1.0` ready, `0.0` spent).
+- **`[56..64]` Siege Machine & Clan Castle Slots (8 floats)**: Siege ID, dock availability, deployed unpopped flag, CC popped flag, and CC Troop Slots 0 & 1.
 
 ### 2. Current Output Implementation (Action & Critic Heads)
 
@@ -306,6 +185,38 @@ agy --agent model-visualizer --model gemini-3.8-flash-medium
 # Direct CLI command for regenerating static computation graphs:
 .venv/bin/python python/visualize_model.py --force
 ```
+
+---
+
+## Mandatory Post-Task Protocol: Asynchronous Background Maintenance
+
+Whenever any code changes, refactors, simulation updates, or neural network modifications are made, the agent **MUST ALWAYS run the model visualization and vault update workflows in the background at the very end of the task**.
+
+### ⚠️ CORE INVARIANT: Never Block on Post-Task Maintenance
+- **Strict Prohibition**: NEVER run post-task synchronization synchronously blocking the agent response or forcing Robin to wait before sending his next prompt.
+- **Immediate Response**: Launch the maintenance asynchronously in the background as the final step, then immediately complete the turn so Robin can continue prompting without interruption.
+
+### How to Run in the Background:
+
+1. **Automated Background Runner Script (Recommended)**:
+   ```bash
+   # Launch detached in the background with output logged:
+   nohup bash scripts/post_task_background.sh > .logs/post_task_sync.log 2>&1 &
+   ```
+   *Features of [`scripts/post_task_background.sh`](file:///home/robin/Projects/CoC/scripts/post_task_background.sh)*:
+   - **Mutex Locked (`flock`)**: Prevents duplicate or overlapping sync runs.
+   - **Smart Drift Detection**: Inspects `git diff` for model/visualization files (`networks.py`, `visualize.py`, `visualize_model.py`, `rl_labs/`) to trigger `model-visualizer`; runs `python3 scripts/vault_diff.py --status` to detect code drift and trigger `vault-updater`.
+   - **Auto Commit & Push**: Automatically stages updated artifacts (`obsidian_vault/`, `docs/architecture/`), commits, rebases, and pushes to `origin main`.
+   - **Audit Log**: Progress is continuously streamed to `.logs/post_task_sync.log` (`tail -f .logs/post_task_sync.log`).
+
+2. **Direct CLI Background Invocations**:
+   ```bash
+   # Model visualizer in background:
+   agy --agent model-visualizer --model gemini-3.8-flash-medium --dangerously-skip-permissions -p "Reconcile model architecture visualizations and manifest with latest codebase" &
+
+   # Vault updater in background:
+   agy --agent vault-updater --model gemini-3.8-flash-medium --dangerously-skip-permissions -p "Update the vault with the latest codebase changes" &
+   ```
 
 ---
 
