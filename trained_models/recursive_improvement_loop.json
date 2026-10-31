@@ -1,19 +1,205 @@
 {
-  "enabled": true,
+  "enabled": false,
   "interval_seconds": 600,
   "auto_apply_and_test": true,
   "test_episodes_per_cycle": 144,
   "provider": "opencode_argon",
-  "phase": "monitoring",
+  "phase": "idle",
   "is_running_cycle": false,
-  "last_check_at": "2026-10-31 17:25:46",
-  "last_check_ts": 1793463946.454798,
-  "next_check_ts": 1793464546.454798,
-  "next_check_at": "2026-10-31 17:35:46",
-  "current_cycle_id": 8,
-  "active_hypothesis": null,
+  "last_check_at": "2026-10-31 17:38:09",
+  "last_check_ts": 1793464689.617706,
+  "next_check_ts": 1793465289.617706,
+  "next_check_at": "2026-10-31 17:48:09",
+  "current_cycle_id": 10,
+  "active_hypothesis": {
+    "cycle_id": 10,
+    "solution": {
+      "solution_id": "sol_arch_spatial_breach_and_film_v10+sol_hyperparams_critic_and_round_robin_v10",
+      "selected_solution_ids": [
+        "sol_arch_spatial_breach_and_film_v10",
+        "sol_hyperparams_critic_and_round_robin_v10"
+      ],
+      "rank": 1,
+      "category": "combined",
+      "categories_combined": [
+        "architecture",
+        "hyperparameters"
+      ],
+      "title": "Multi-Solution Bundle (2): U-Net FiLM Conditioning & TH18 Spatial Breach Attraction Amplification + Critic Calibration Acceleration, Trust-Region Fine-Tuning & Round-Robin Sampling",
+      "target_problem": "Spatial Breach Focus & Factorized Head Conditioning Imbalance & Critic Baseline Lag & PPO Trust-Region Plateau",
+      "rationale": "Increases the U-Net decoder's FiLM multiplicative conditioning scale (`film_cond_scale`), strengthens the 15\u00d715 cascaded Town Hall 18 breach attraction field (`th_threat_weight`, `breach_prior_weight`) and mid-battle spell combat focus (`spell_combat_prior_weight`), and tightens spatial tile entropy regularization so troops funnel into a concentrated breach corridor. | Refines actor learning rate for fine-grained late-stage convergence while boosting `critic_lr_mult` and `vf_coef` to eliminate V(s\u2080) calibration lag, and enforces `round_robin` village sampling so every PPO batch receives equal gradient weight from the hardest TH18 layout.",
+      "config_patch": {
+        "arch_config": {
+          "th_threat_weight": 9.5,
+          "breach_prior_weight": 11.5,
+          "spell_combat_prior_weight": 9.1,
+          "film_cond_scale": 0.85,
+          "tile_logit_scale": 2.6,
+          "reg_ent_tile_weight": 0.08,
+          "reg_ent_type_weight": 2.6
+        },
+        "reward_config": {},
+        "hyperparams": {
+          "lr": 0.000184,
+          "critic_lr_mult": 4.0,
+          "vf_coef": 0.75,
+          "ent_coef": 0.0128,
+          "target_kl": 0.03,
+          "matchup_mode": "round_robin"
+        }
+      },
+      "diffs": [
+        {
+          "section": "arch_config",
+          "parameter": "th_threat_weight",
+          "before": 8.6,
+          "after": 9.5
+        },
+        {
+          "section": "arch_config",
+          "parameter": "breach_prior_weight",
+          "before": 10.6,
+          "after": 11.5
+        },
+        {
+          "section": "arch_config",
+          "parameter": "spell_combat_prior_weight",
+          "before": 8.3,
+          "after": 9.1
+        },
+        {
+          "section": "arch_config",
+          "parameter": "film_cond_scale",
+          "before": 0.8,
+          "after": 0.85
+        },
+        {
+          "section": "arch_config",
+          "parameter": "tile_logit_scale",
+          "before": 2.4,
+          "after": 2.6
+        },
+        {
+          "section": "arch_config",
+          "parameter": "reg_ent_tile_weight",
+          "before": 0.1,
+          "after": 0.08
+        },
+        {
+          "section": "arch_config",
+          "parameter": "reg_ent_type_weight",
+          "before": 2.4,
+          "after": 2.6
+        },
+        {
+          "section": "hyperparams",
+          "parameter": "lr",
+          "before": 0.000217,
+          "after": 0.000184
+        },
+        {
+          "section": "hyperparams",
+          "parameter": "critic_lr_mult",
+          "before": 3.8,
+          "after": 4.0
+        },
+        {
+          "section": "hyperparams",
+          "parameter": "vf_coef",
+          "before": 0.7,
+          "after": 0.75
+        },
+        {
+          "section": "hyperparams",
+          "parameter": "ent_coef",
+          "before": 0.0135,
+          "after": 0.0128
+        }
+      ],
+      "diff_summary": [
+        "arch_config.th_threat_weight: 8.6 \u2192 9.5",
+        "arch_config.breach_prior_weight: 10.6 \u2192 11.5",
+        "arch_config.spell_combat_prior_weight: 8.3 \u2192 9.1",
+        "arch_config.film_cond_scale: 0.8 \u2192 0.85",
+        "arch_config.tile_logit_scale: 2.4 \u2192 2.6",
+        "arch_config.reg_ent_tile_weight: 0.1 \u2192 0.08",
+        "arch_config.reg_ent_type_weight: 2.4 \u2192 2.6",
+        "hyperparams.lr: 0.000217 \u2192 0.000184",
+        "hyperparams.critic_lr_mult: 3.8 \u2192 4.0",
+        "hyperparams.vf_coef: 0.7 \u2192 0.75",
+        "hyperparams.ent_coef: 0.0135 \u2192 0.0128"
+      ],
+      "expected_verification_criteria": "Increase Top-5 Tile Probability Mass %, reduce perimeter scatter \u03c3, and improve 2\u2605+ TH18 breach rate. & Reduce inter-village destruction gap, improve Critic Explained Variance, and resume positive destruction slope.",
+      "requires_code_edit": false,
+      "target_files": [],
+      "code_edit_instructions": null,
+      "applied_at": "2026-10-31 17:38:09"
+    },
+    "baseline_episode": 15672,
+    "target_episodes": 144,
+    "baseline_metrics": {
+      "episode": 15672,
+      "history_length": 144,
+      "mean_pct_50": 74.64,
+      "std_pct_50": 17.47,
+      "rolling50_peak_pct": 74.8,
+      "episodes_since_peak": 6,
+      "drawdown_from_peak_pct": -0.2,
+      "best_pct": 100,
+      "best_stars": 3,
+      "one_star_rate_50": 98.0,
+      "two_star_th_rate_50": 82.0,
+      "three_star_triple_rate_50": 20.0,
+      "mean_reward_50": 93.19,
+      "reward_snr": 3.01,
+      "destr_share_pct": 26.7,
+      "stars_th_share_pct": 53.2,
+      "damage_funnel_share_pct": 20.1,
+      "pct_slope_per_100ep": 17.272,
+      "reward_slope_per_100ep": 60.198,
+      "entropy_slope_per_100ep": -1.039,
+      "mean_noop_pct_50": 37.45,
+      "mean_steps_50": 61.7,
+      "explained_variance_50": 0.7547,
+      "approx_kl_50": 0.0181,
+      "kl_saturation_rate_pct": 2.0,
+      "clip_fraction_50": 0.113,
+      "grad_norm_50": 196.1351,
+      "critic_v_s0": 60.07,
+      "calibration_gap": -33.12,
+      "head_saturation_pct": {
+        "slot_type": 88.8,
+        "slot_idx": 74.7,
+        "deploy_fraction": 91.0,
+        "tile_xy": 96.7
+      },
+      "top5_tile_mass_pct": 17.69,
+      "spatial_spread_std": 3.66,
+      "star_funnel": {
+        "p_1star_pct": 98.0,
+        "p_2star_given_1star_pct": 83.7,
+        "p_3star_given_2star_pct": 24.4,
+        "near_miss_85_to_99_pct_rate": 8.0
+      },
+      "worst_village": {
+        "name": "Offset Diamond (Hot Candle)",
+        "full_name": "TH18 Offset Diamond (Hot Candle + Longshot)",
+        "recent_avg_pct": 67.4,
+        "avg_stars": 1.79,
+        "triple_rate": 6.9
+      },
+      "best_village": {
+        "name": "Anti-Hydra Air Ring",
+        "full_name": "TH18 Anti-Hydra Air Ring (4 Air X-Bows + Sweepers)",
+        "recent_avg_pct": 74.8,
+        "avg_stars": 2.0,
+        "triple_rate": 13.8
+      },
+      "inter_village_gap_pct": 7.4
+    }
+  },
   "active_config": {
-    "updated_at": "2026-10-31 17:25:03",
+    "updated_at": "2026-10-31 17:38:09",
     "arch_config": {
       "arch_version": "3.0-UNet",
       "in_channels": 59,
@@ -24,16 +210,16 @@
       "logit_temp_type": 1.4,
       "logit_temp_idx": 1.6,
       "logit_temp_frac": 1.4,
-      "tile_logit_scale": 2.4,
-      "th_threat_weight": 8.6,
+      "tile_logit_scale": 2.6,
+      "th_threat_weight": 9.5,
       "defense_threat_weight": 1.8,
-      "breach_prior_weight": 10.6,
-      "spell_combat_prior_weight": 8.3,
-      "film_cond_scale": 0.8,
-      "reg_ent_type_weight": 2.4,
+      "breach_prior_weight": 11.5,
+      "spell_combat_prior_weight": 9.1,
+      "film_cond_scale": 0.85,
+      "reg_ent_type_weight": 2.6,
       "reg_ent_idx_weight": 2.2,
       "reg_ent_frac_weight": 2.2,
-      "reg_ent_tile_weight": 0.1,
+      "reg_ent_tile_weight": 0.08,
       "total_params": 2480440
     },
     "reward_config": {
@@ -50,14 +236,14 @@
       "pacing_wait_bonus": 0.0
     },
     "hyperparams": {
-      "lr": 0.000217,
-      "critic_lr_mult": 3.8,
+      "lr": 0.000184,
+      "critic_lr_mult": 4.0,
       "batch_episodes": 12,
       "minibatch_size": 128,
       "ppo_epochs": 4,
       "clip_coef": 0.2,
-      "ent_coef": 0.0135,
-      "vf_coef": 0.7,
+      "ent_coef": 0.0128,
+      "vf_coef": 0.75,
       "target_kl": 0.03,
       "gamma": 0.99,
       "gae_lambda": 0.95,
@@ -5051,6 +5237,1543 @@
         },
         "analysis_summary": "Evaluated `Multi-Solution Bundle (2): OpenCode Argon 4 Medium Surgical Code Upgrade (Spatial Prior & Reward Shaping) + High-Destruction Milestone & Core HP Shaping Boost` over +72 episodes (Ep 15,192 \u2192 15,264): Destruction \u0394=-1.50% (79.3%), 2\u2605+ TH18 \u0394=-6.0% (80.0%), 3\u2605 \u0394=-8.0% (34.0%), Return \u0394=-1.23 pts. Retained configuration for continued consolidation."
       }
+    },
+    {
+      "cycle_id": 9,
+      "started_at": "2026-10-31 17:36:05",
+      "completed_at": "2026-10-31 17:38:09",
+      "trigger": "scheduled_10m",
+      "episode_at_analysis": 15528,
+      "health_verdict": {
+        "status": "plateaued",
+        "health_score": 66,
+        "is_plateaued": true,
+        "headline": "Policy has plateaued at 79.58% mean destruction (28.0% 3\u2605 rate, -1.012%/100ep slope) due to a 28.4% inter-village gap on Offset Diamond (63.3%) and a -32.43 pt critic V(s\u2080) calibration lag.",
+        "progression_summary": "At episode 15,528, the policy reliably secures 1\u2605 (100.0%) and 2\u2605 TH18 takedowns (94.0%), but converts only 29.8% of 2\u2605 runs into 3\u2605 triples (28.0% overall 3\u2605 rate, 10.0% near-miss 85\u201399% rate) with negative recent slopes (-1.012% destruction/100ep, -0.559 reward/100ep). While Anti-Fireball Wide Spread reaches 91.7% destruction (46.8% 3\u2605), Offset Diamond (Hot Candle) lags at 63.3% (10.9% 3\u2605), compounded by 74.0% KL saturation (approx KL 0.0253) and a -32.43 pt V(s\u2080) calibration gap (43.81 vs 76.24 mean return).",
+        "model_used": "google-vertex/gemini-4-argon#medium",
+        "reasons": [
+          {
+            "id": "village_layout_bottleneck",
+            "title": "28.4% Inter-Village Destruction Gap on Offset Diamond (Hot Candle)",
+            "severity": "critical",
+            "category": "architecture",
+            "symptom": "Worst village Offset Diamond (Hot Candle) averages 63.3% destruction (1.95\u2605, 10.9% 3\u2605) vs Best village Anti-Fireball Wide Spread at 91.7% (2.44\u2605, 46.8% 3\u2605); top-5 tile mass is only 16.62% with spatial spread \u03c3 = 4.19.",
+            "root_cause": "Current spatial breach attraction (`th_threat_weight=8.6`, `breach_prior_weight=10.6`) and FiLM conditioning scale (`0.8`) under-concentrate troop and spell placement along narrow entry corridors, causing troops to split around Offset Diamond's asymmetric Hot Candle and Longshot compartments."
+          },
+          {
+            "id": "two_to_three_star_cleanup_plateau",
+            "title": "2\u2605 \u2192 3\u2605 Back-End Conversion Bottleneck",
+            "severity": "warning",
+            "category": "reward_function",
+            "symptom": "P(2\u2605|1\u2605) is 94.0%, but P(3\u2605|2\u2605) drops to 29.8% with a 10.0% near-miss rate (85\u201399% destruction) and a -1.012%/100ep destruction slope.",
+            "root_cause": "Once the Town Hall 18 is destroyed, marginal step-wise damage and funneling reward gradients (`damage_weight=20.0`, `funnel_weight=0.14`) are diluted across the remaining high-HP defenses, weakening late-episode GAE signals needed to sustain core push momentum."
+          },
+          {
+            "id": "critic_calibration_and_kl_saturation",
+            "title": "Critic V(s\u2080) Underestimation Lag & High KL Saturation",
+            "severity": "warning",
+            "category": "hyperparameters",
+            "symptom": "Critic V(s\u2080) = 43.81 vs mean return R\u0304 = 76.24 (calibration gap = -32.43 pts), grad norm = 37.20, and KL saturation rate = 74.0% (approx KL = 0.0253 near target_kl = 0.03).",
+            "root_cause": "After cumulative milestone reward increases in prior cycles shifted empirical returns upward to 76.24, the value head baseline lagged behind, inflating positive GAE advantage magnitudes and causing 74% of PPO updates to hit the trust-region KL ceiling."
+          }
+        ]
+      },
+      "pre_change_snapshot": {
+        "snapshot_id": "snapshot_cycle_009_1793464565",
+        "cycle_id": 9,
+        "documented_at": "2026-10-31 17:36:05",
+        "git_commit": "945b7ba",
+        "checkpoint_file": "thrower_healer_totem_smash_ep15528_100pct_3star.pt",
+        "cumulative_episode": 15528,
+        "arch_config": {
+          "arch_version": "3.0-UNet",
+          "in_channels": 59,
+          "base_ch": 32,
+          "spatial_dim": 32,
+          "embed_dim": 256,
+          "head_hidden_dim": 128,
+          "total_params": 2480440,
+          "logit_temp_type": 1.4,
+          "logit_temp_idx": 1.6,
+          "logit_temp_frac": 1.4,
+          "tile_logit_scale": 2.4,
+          "th_threat_weight": 8.6,
+          "defense_threat_weight": 1.8,
+          "breach_prior_weight": 10.6,
+          "spell_combat_prior_weight": 8.3,
+          "film_cond_scale": 0.8,
+          "reg_ent_type_weight": 2.4,
+          "reg_ent_idx_weight": 2.2,
+          "reg_ent_frac_weight": 2.2,
+          "reg_ent_tile_weight": 0.1
+        },
+        "reward_config": {
+          "destr_weight": 0.35,
+          "star_weight": 12.0,
+          "th_bonus": 21.0,
+          "damage_weight": 20.0,
+          "funnel_weight": 0.14,
+          "invalid_penalty": 0.05,
+          "early_noop_penalty": 0.02,
+          "high_pct_milestone_75": 8.0,
+          "high_pct_milestone_90": 10.0,
+          "triple_wipe_bonus": 14.0,
+          "pacing_wait_bonus": 0.0
+        },
+        "reward_formula": "R_t = 0.35\u00b7\u0394%destr + 20.0\u00b7\u0394HPratio + 12.0\u00b7\u0394stars + 21.0\u00b7I(TH18) + 0.14\u00b7C_funnel + 8.0\u00b7I(%\u226575) + 10.0\u00b7I(%\u226590) + 14.0\u00b7I(3\u2605) - 0.05\u00b7I(invalid)",
+        "hyperparams": {
+          "lr": 0.000217,
+          "critic_lr_mult": 3.8,
+          "batch_episodes": 12,
+          "minibatch_size": 128,
+          "ppo_epochs": 4,
+          "clip_coef": 0.2,
+          "ent_coef": 0.0135,
+          "vf_coef": 0.7,
+          "target_kl": 0.03,
+          "gamma": 0.99,
+          "gae_lambda": 0.95,
+          "max_grad_norm": 0.5,
+          "ticks_per_step": 8,
+          "matchup_mode": "round_robin",
+          "episodes": 60000,
+          "resumed_from": "thrower_healer_totem_smash_ep6492_100pct_3star.pt",
+          "army_name": "TH18 Thrower + Healer + Totem Smash (Meta)",
+          "army_slug": "thrower_healer_totem_smash"
+        },
+        "code_backups": {
+          "python/coc_rl/networks.py": {
+            "sha256_short": "c98670bd5b4f",
+            "backup_file": "/home/robin/Projects/CoC/trained_models/code_backups/cycle_009/python__coc_rl__networks.py",
+            "lines": 714
+          },
+          "python/coc_rl/ppo.py": {
+            "sha256_short": "b2d227b128dd",
+            "backup_file": "/home/robin/Projects/CoC/trained_models/code_backups/cycle_009/python__coc_rl__ppo.py",
+            "lines": 316
+          },
+          "python/train_ai.py": {
+            "sha256_short": "a6578ec6054e",
+            "backup_file": "/home/robin/Projects/CoC/trained_models/code_backups/cycle_009/python__train_ai.py",
+            "lines": 1526
+          }
+        },
+        "baseline_metrics": {
+          "episode": 15528,
+          "history_length": 9036,
+          "mean_pct_50": 79.58,
+          "std_pct_50": 16.14,
+          "rolling50_peak_pct": 100.0,
+          "episodes_since_peak": 9035,
+          "drawdown_from_peak_pct": -20.4,
+          "best_pct": 100,
+          "best_stars": 3,
+          "one_star_rate_50": 100.0,
+          "two_star_th_rate_50": 94.0,
+          "three_star_triple_rate_50": 28.0,
+          "mean_reward_50": 76.24,
+          "reward_snr": 6.23,
+          "destr_share_pct": 33.9,
+          "stars_th_share_pct": 49.2,
+          "damage_funnel_share_pct": 16.9,
+          "pct_slope_per_100ep": -1.012,
+          "reward_slope_per_100ep": -0.559,
+          "entropy_slope_per_100ep": -0.074,
+          "mean_noop_pct_50": 16.1,
+          "mean_steps_50": 45.5,
+          "explained_variance_50": 0.8978,
+          "approx_kl_50": 0.0253,
+          "kl_saturation_rate_pct": 74.0,
+          "clip_fraction_50": 0.1427,
+          "grad_norm_50": 37.2042,
+          "critic_v_s0": 43.81,
+          "calibration_gap": -32.43,
+          "head_saturation_pct": {
+            "slot_type": 89.4,
+            "slot_idx": 83.2,
+            "deploy_fraction": 92.3,
+            "tile_xy": 96.4
+          },
+          "top5_tile_mass_pct": 16.62,
+          "spatial_spread_std": 4.19,
+          "star_funnel": {
+            "p_1star_pct": 100.0,
+            "p_2star_given_1star_pct": 94.0,
+            "p_3star_given_2star_pct": 29.8,
+            "near_miss_85_to_99_pct_rate": 10.0
+          },
+          "worst_village": {
+            "name": "Offset Diamond (Hot Candle)",
+            "full_name": "TH18 Offset Diamond (Hot Candle + Longshot)",
+            "recent_avg_pct": 63.3,
+            "avg_stars": 1.95,
+            "triple_rate": 10.9
+          },
+          "best_village": {
+            "name": "Anti-Fireball Wide Spread",
+            "full_name": "TH18 Anti-Fireball Wide Spread (3 Single Infernos)",
+            "recent_avg_pct": 91.7,
+            "avg_stars": 2.44,
+            "triple_rate": 46.8
+          },
+          "inter_village_gap_pct": 28.4
+        },
+        "detected_signals": [
+          {
+            "id": "village_layout_bottleneck",
+            "severity": "warning",
+            "metric": "Worst: Offset Diamond (Hot Candle) (63.3%) vs Best: Anti-Fireball Wide Spread (91.7%)",
+            "detail": "28.4% destruction spread across reference villages indicates the policy struggles to penetrate TH18 Offset Diamond (Hot Candle + Longshot) compartment geometry."
+          },
+          {
+            "id": "critic_calibration_lag",
+            "severity": "warning",
+            "metric": "|V(s\u2080)\u2212R\u0304| = 32.43 pts \u2022 Explained Variance = 89.8%",
+            "detail": "Critic baseline prediction V(s\u2080) lags empirical episode return or captures low return variance, increasing GAE advantage variance during PPO updates."
+          }
+        ]
+      },
+      "candidate_solutions": [
+        {
+          "solution_id": "sol_reward_milestone_push_v9",
+          "rank": 1,
+          "category": "reward_function",
+          "title": "High-Destruction Milestone & Core HP Shaping Boost",
+          "target_problem": "2\u2605 \u2192 3\u2605 Back-End Cleanup Plateau",
+          "rationale": "Adds explicit progressive milestone bonuses at \u226575% (+4.5 pts) and \u226590% (+6.0 pts) destruction plus a +8.0 pt 3\u2605 wipe bonus and elevated Core HP & TH18 takedown weights so GAE advantages strongly reward pushing through the TH18 core into back-end cleanup.",
+          "config_patch": {
+            "reward_config": {
+              "th_bonus": 22.0,
+              "damage_weight": 22.0,
+              "funnel_weight": 0.16,
+              "high_pct_milestone_75": 8.0,
+              "high_pct_milestone_90": 10.0,
+              "triple_wipe_bonus": 14.0
+            }
+          },
+          "expected_verification_criteria": "Improve recent 50-ep Mean Destruction % by \u2265 +0.5% or increase 2\u2605+ TH18 / 3\u2605 Triple conversion rate.",
+          "diffs": [
+            {
+              "section": "reward_config",
+              "parameter": "th_bonus",
+              "before": 21.0,
+              "after": 22.0
+            },
+            {
+              "section": "reward_config",
+              "parameter": "damage_weight",
+              "before": 20.0,
+              "after": 22.0
+            },
+            {
+              "section": "reward_config",
+              "parameter": "funnel_weight",
+              "before": 0.14,
+              "after": 0.16
+            }
+          ],
+          "diff_summary": [
+            "reward_config.th_bonus: 21.0 \u2192 22.0",
+            "reward_config.damage_weight: 20.0 \u2192 22.0",
+            "reward_config.funnel_weight: 0.14 \u2192 0.16"
+          ],
+          "is_recommended": true
+        },
+        {
+          "solution_id": "sol_arch_spatial_breach_and_film_v9",
+          "rank": 2,
+          "category": "architecture",
+          "title": "U-Net FiLM Conditioning & TH18 Spatial Breach Attraction Amplification",
+          "target_problem": "Spatial Breach Focus & Factorized Head Conditioning Imbalance",
+          "rationale": "Increases the U-Net decoder's FiLM multiplicative conditioning scale (`film_cond_scale`), strengthens the 15\u00d715 cascaded Town Hall 18 breach attraction field (`th_threat_weight`, `breach_prior_weight`) and mid-battle spell combat focus (`spell_combat_prior_weight`), and tightens spatial tile entropy regularization so troops funnel into a concentrated breach corridor.",
+          "config_patch": {
+            "arch_config": {
+              "th_threat_weight": 9.5,
+              "breach_prior_weight": 11.5,
+              "spell_combat_prior_weight": 9.1,
+              "film_cond_scale": 0.85,
+              "tile_logit_scale": 2.6,
+              "reg_ent_tile_weight": 0.08,
+              "reg_ent_type_weight": 2.6
+            }
+          },
+          "expected_verification_criteria": "Increase Top-5 Tile Probability Mass %, reduce perimeter scatter \u03c3, and improve 2\u2605+ TH18 breach rate.",
+          "diffs": [
+            {
+              "section": "arch_config",
+              "parameter": "th_threat_weight",
+              "before": 8.6,
+              "after": 9.5
+            },
+            {
+              "section": "arch_config",
+              "parameter": "breach_prior_weight",
+              "before": 10.6,
+              "after": 11.5
+            },
+            {
+              "section": "arch_config",
+              "parameter": "spell_combat_prior_weight",
+              "before": 8.3,
+              "after": 9.1
+            },
+            {
+              "section": "arch_config",
+              "parameter": "film_cond_scale",
+              "before": 0.8,
+              "after": 0.85
+            },
+            {
+              "section": "arch_config",
+              "parameter": "tile_logit_scale",
+              "before": 2.4,
+              "after": 2.6
+            },
+            {
+              "section": "arch_config",
+              "parameter": "reg_ent_tile_weight",
+              "before": 0.1,
+              "after": 0.08
+            },
+            {
+              "section": "arch_config",
+              "parameter": "reg_ent_type_weight",
+              "before": 2.4,
+              "after": 2.6
+            }
+          ],
+          "diff_summary": [
+            "arch_config.th_threat_weight: 8.6 \u2192 9.5",
+            "arch_config.breach_prior_weight: 10.6 \u2192 11.5",
+            "arch_config.spell_combat_prior_weight: 8.3 \u2192 9.1",
+            "arch_config.film_cond_scale: 0.8 \u2192 0.85",
+            "arch_config.tile_logit_scale: 2.4 \u2192 2.6",
+            "arch_config.reg_ent_tile_weight: 0.1 \u2192 0.08",
+            "arch_config.reg_ent_type_weight: 2.4 \u2192 2.6"
+          ],
+          "is_recommended": true
+        },
+        {
+          "solution_id": "sol_hyperparams_critic_and_round_robin_v9",
+          "rank": 3,
+          "category": "hyperparameters",
+          "title": "Critic Calibration Acceleration, Trust-Region Fine-Tuning & Round-Robin Sampling",
+          "target_problem": "High Cross-Village Performance Gap (28.4% Spread)",
+          "rationale": "Refines actor learning rate for fine-grained late-stage convergence while boosting `critic_lr_mult` and `vf_coef` to eliminate V(s\u2080) calibration lag, and enforces `round_robin` village sampling so every PPO batch receives equal gradient weight from the hardest TH18 layout.",
+          "config_patch": {
+            "hyperparams": {
+              "lr": 0.000184,
+              "critic_lr_mult": 4.0,
+              "vf_coef": 0.75,
+              "ent_coef": 0.0128,
+              "target_kl": 0.03,
+              "matchup_mode": "round_robin"
+            }
+          },
+          "expected_verification_criteria": "Reduce inter-village destruction gap, improve Critic Explained Variance, and resume positive destruction slope.",
+          "diffs": [
+            {
+              "section": "hyperparams",
+              "parameter": "lr",
+              "before": 0.000217,
+              "after": 0.000184
+            },
+            {
+              "section": "hyperparams",
+              "parameter": "critic_lr_mult",
+              "before": 3.8,
+              "after": 4.0
+            },
+            {
+              "section": "hyperparams",
+              "parameter": "vf_coef",
+              "before": 0.7,
+              "after": 0.75
+            },
+            {
+              "section": "hyperparams",
+              "parameter": "ent_coef",
+              "before": 0.0135,
+              "after": 0.0128
+            }
+          ],
+          "diff_summary": [
+            "hyperparams.lr: 0.000217 \u2192 0.000184",
+            "hyperparams.critic_lr_mult: 3.8 \u2192 4.0",
+            "hyperparams.vf_coef: 0.7 \u2192 0.75",
+            "hyperparams.ent_coef: 0.0135 \u2192 0.0128"
+          ],
+          "is_recommended": true
+        },
+        {
+          "solution_id": "sol_code_agent_argon_spatial_reward_v9",
+          "rank": 4,
+          "category": "code_agent",
+          "title": "OpenCode Argon 4 Medium Surgical Code Upgrade (Spatial Prior & Reward Shaping)",
+          "target_problem": "2\u2605 \u2192 3\u2605 Back-End Cleanup Plateau",
+          "rationale": "Invokes the OpenCode `google-vertex/gemini-4-argon#medium` coding agent directly on `python/coc_rl/networks.py` and `python/coc_rl/ppo.py` to refine the spatial breach/spell prior and reward shaping weights while combining synergistic architecture, reward, and critic calibration parameters.",
+          "requires_code_edit": true,
+          "target_files": [
+            "python/coc_rl/networks.py",
+            "python/coc_rl/ppo.py"
+          ],
+          "code_edit_instructions": "In `python/coc_rl/networks.py` (`DEFAULT_ARCH_CONFIG`) and `python/coc_rl/ppo.py` (`DEFAULT_REWARD_CONFIG`), update default spatial conditioning and late-battle milestone shaping to address `2\u2605 \u2192 3\u2605 Back-End Cleanup Plateau` (Worst village: `Offset Diamond (Hot Candle)` at `63.3%`, 3\u2605 rate: `28.0%`): set default `th_threat_weight` to `9.4`, `breach_prior_weight` to `11.0`, `film_cond_scale` to `0.8`, and in `DEFAULT_REWARD_CONFIG` set `th_bonus` to `20.0`.",
+          "config_patch": {
+            "arch_config": {
+              "th_threat_weight": 9.4,
+              "breach_prior_weight": 11.0,
+              "film_cond_scale": 0.8
+            },
+            "reward_config": {
+              "th_bonus": 20.0,
+              "high_pct_milestone_75": 8.0,
+              "high_pct_milestone_90": 10.0,
+              "triple_wipe_bonus": 12.0
+            },
+            "hyperparams": {
+              "critic_lr_mult": 3.8,
+              "matchup_mode": "round_robin"
+            }
+          },
+          "expected_verification_criteria": "Simultaneously lift recent 50-ep Destruction %, 2\u2605+ TH18 rate, and worst-village performance via code + config synergy.",
+          "diffs": [
+            {
+              "section": "arch_config",
+              "parameter": "th_threat_weight",
+              "before": 8.6,
+              "after": 9.4
+            },
+            {
+              "section": "arch_config",
+              "parameter": "breach_prior_weight",
+              "before": 10.6,
+              "after": 11.0
+            },
+            {
+              "section": "reward_config",
+              "parameter": "th_bonus",
+              "before": 21.0,
+              "after": 20.0
+            },
+            {
+              "section": "reward_config",
+              "parameter": "triple_wipe_bonus",
+              "before": 14.0,
+              "after": 12.0
+            }
+          ],
+          "diff_summary": [
+            "arch_config.th_threat_weight: 8.6 \u2192 9.4",
+            "arch_config.breach_prior_weight: 10.6 \u2192 11.0",
+            "reward_config.th_bonus: 21.0 \u2192 20.0",
+            "reward_config.triple_wipe_bonus: 14.0 \u2192 12.0"
+          ],
+          "is_recommended": false
+        }
+      ],
+      "recommended_solution_ids": [
+        "sol_reward_milestone_push_v9",
+        "sol_arch_spatial_breach_and_film_v9",
+        "sol_hyperparams_critic_and_round_robin_v9"
+      ],
+      "selected_solutions": [
+        {
+          "solution_id": "sol_reward_milestone_push_v9",
+          "rank": 1,
+          "category": "reward_function",
+          "title": "High-Destruction Milestone & Core HP Shaping Boost",
+          "target_problem": "2\u2605 \u2192 3\u2605 Back-End Cleanup Plateau",
+          "rationale": "Adds explicit progressive milestone bonuses at \u226575% (+4.5 pts) and \u226590% (+6.0 pts) destruction plus a +8.0 pt 3\u2605 wipe bonus and elevated Core HP & TH18 takedown weights so GAE advantages strongly reward pushing through the TH18 core into back-end cleanup.",
+          "config_patch": {
+            "reward_config": {
+              "th_bonus": 22.0,
+              "damage_weight": 22.0,
+              "funnel_weight": 0.16,
+              "high_pct_milestone_75": 8.0,
+              "high_pct_milestone_90": 10.0,
+              "triple_wipe_bonus": 14.0
+            }
+          },
+          "expected_verification_criteria": "Improve recent 50-ep Mean Destruction % by \u2265 +0.5% or increase 2\u2605+ TH18 / 3\u2605 Triple conversion rate.",
+          "diffs": [
+            {
+              "section": "reward_config",
+              "parameter": "th_bonus",
+              "before": 21.0,
+              "after": 22.0
+            },
+            {
+              "section": "reward_config",
+              "parameter": "damage_weight",
+              "before": 20.0,
+              "after": 22.0
+            },
+            {
+              "section": "reward_config",
+              "parameter": "funnel_weight",
+              "before": 0.14,
+              "after": 0.16
+            }
+          ],
+          "diff_summary": [
+            "reward_config.th_bonus: 21.0 \u2192 22.0",
+            "reward_config.damage_weight: 20.0 \u2192 22.0",
+            "reward_config.funnel_weight: 0.14 \u2192 0.16"
+          ],
+          "is_recommended": true
+        },
+        {
+          "solution_id": "sol_arch_spatial_breach_and_film_v9",
+          "rank": 2,
+          "category": "architecture",
+          "title": "U-Net FiLM Conditioning & TH18 Spatial Breach Attraction Amplification",
+          "target_problem": "Spatial Breach Focus & Factorized Head Conditioning Imbalance",
+          "rationale": "Increases the U-Net decoder's FiLM multiplicative conditioning scale (`film_cond_scale`), strengthens the 15\u00d715 cascaded Town Hall 18 breach attraction field (`th_threat_weight`, `breach_prior_weight`) and mid-battle spell combat focus (`spell_combat_prior_weight`), and tightens spatial tile entropy regularization so troops funnel into a concentrated breach corridor.",
+          "config_patch": {
+            "arch_config": {
+              "th_threat_weight": 9.5,
+              "breach_prior_weight": 11.5,
+              "spell_combat_prior_weight": 9.1,
+              "film_cond_scale": 0.85,
+              "tile_logit_scale": 2.6,
+              "reg_ent_tile_weight": 0.08,
+              "reg_ent_type_weight": 2.6
+            }
+          },
+          "expected_verification_criteria": "Increase Top-5 Tile Probability Mass %, reduce perimeter scatter \u03c3, and improve 2\u2605+ TH18 breach rate.",
+          "diffs": [
+            {
+              "section": "arch_config",
+              "parameter": "th_threat_weight",
+              "before": 8.6,
+              "after": 9.5
+            },
+            {
+              "section": "arch_config",
+              "parameter": "breach_prior_weight",
+              "before": 10.6,
+              "after": 11.5
+            },
+            {
+              "section": "arch_config",
+              "parameter": "spell_combat_prior_weight",
+              "before": 8.3,
+              "after": 9.1
+            },
+            {
+              "section": "arch_config",
+              "parameter": "film_cond_scale",
+              "before": 0.8,
+              "after": 0.85
+            },
+            {
+              "section": "arch_config",
+              "parameter": "tile_logit_scale",
+              "before": 2.4,
+              "after": 2.6
+            },
+            {
+              "section": "arch_config",
+              "parameter": "reg_ent_tile_weight",
+              "before": 0.1,
+              "after": 0.08
+            },
+            {
+              "section": "arch_config",
+              "parameter": "reg_ent_type_weight",
+              "before": 2.4,
+              "after": 2.6
+            }
+          ],
+          "diff_summary": [
+            "arch_config.th_threat_weight: 8.6 \u2192 9.5",
+            "arch_config.breach_prior_weight: 10.6 \u2192 11.5",
+            "arch_config.spell_combat_prior_weight: 8.3 \u2192 9.1",
+            "arch_config.film_cond_scale: 0.8 \u2192 0.85",
+            "arch_config.tile_logit_scale: 2.4 \u2192 2.6",
+            "arch_config.reg_ent_tile_weight: 0.1 \u2192 0.08",
+            "arch_config.reg_ent_type_weight: 2.4 \u2192 2.6"
+          ],
+          "is_recommended": true
+        },
+        {
+          "solution_id": "sol_hyperparams_critic_and_round_robin_v9",
+          "rank": 3,
+          "category": "hyperparameters",
+          "title": "Critic Calibration Acceleration, Trust-Region Fine-Tuning & Round-Robin Sampling",
+          "target_problem": "High Cross-Village Performance Gap (28.4% Spread)",
+          "rationale": "Refines actor learning rate for fine-grained late-stage convergence while boosting `critic_lr_mult` and `vf_coef` to eliminate V(s\u2080) calibration lag, and enforces `round_robin` village sampling so every PPO batch receives equal gradient weight from the hardest TH18 layout.",
+          "config_patch": {
+            "hyperparams": {
+              "lr": 0.000184,
+              "critic_lr_mult": 4.0,
+              "vf_coef": 0.75,
+              "ent_coef": 0.0128,
+              "target_kl": 0.03,
+              "matchup_mode": "round_robin"
+            }
+          },
+          "expected_verification_criteria": "Reduce inter-village destruction gap, improve Critic Explained Variance, and resume positive destruction slope.",
+          "diffs": [
+            {
+              "section": "hyperparams",
+              "parameter": "lr",
+              "before": 0.000217,
+              "after": 0.000184
+            },
+            {
+              "section": "hyperparams",
+              "parameter": "critic_lr_mult",
+              "before": 3.8,
+              "after": 4.0
+            },
+            {
+              "section": "hyperparams",
+              "parameter": "vf_coef",
+              "before": 0.7,
+              "after": 0.75
+            },
+            {
+              "section": "hyperparams",
+              "parameter": "ent_coef",
+              "before": 0.0135,
+              "after": 0.0128
+            }
+          ],
+          "diff_summary": [
+            "hyperparams.lr: 0.000217 \u2192 0.000184",
+            "hyperparams.critic_lr_mult: 3.8 \u2192 4.0",
+            "hyperparams.vf_coef: 0.7 \u2192 0.75",
+            "hyperparams.ent_coef: 0.0135 \u2192 0.0128"
+          ],
+          "is_recommended": true
+        }
+      ],
+      "selected_solution": {
+        "solution_id": "sol_reward_milestone_push_v9+sol_arch_spatial_breach_and_film_v9+sol_hyperparams_critic_and_round_robin_v9",
+        "selected_solution_ids": [
+          "sol_reward_milestone_push_v9",
+          "sol_arch_spatial_breach_and_film_v9",
+          "sol_hyperparams_critic_and_round_robin_v9"
+        ],
+        "rank": 1,
+        "category": "combined",
+        "categories_combined": [
+          "reward_function",
+          "architecture",
+          "hyperparameters"
+        ],
+        "title": "Multi-Solution Bundle (3): High-Destruction Milestone & Core HP Shaping Boost + U-Net FiLM Conditioning & TH18 Spatial Breach Attraction Amplification + Critic Calibration Acceleration, Trust-Region Fine-Tuning & Round-Robin Sampling",
+        "target_problem": "2\u2605 \u2192 3\u2605 Back-End Cleanup Plateau & Spatial Breach Focus & Factorized Head Conditioning Imbalance & High Cross-Village Performance Gap (28.4% Spread)",
+        "rationale": "Adds explicit progressive milestone bonuses at \u226575% (+4.5 pts) and \u226590% (+6.0 pts) destruction plus a +8.0 pt 3\u2605 wipe bonus and elevated Core HP & TH18 takedown weights so GAE advantages strongly reward pushing through the TH18 core into back-end cleanup. | Increases the U-Net decoder's FiLM multiplicative conditioning scale (`film_cond_scale`), strengthens the 15\u00d715 cascaded Town Hall 18 breach attraction field (`th_threat_weight`, `breach_prior_weight`) and mid-battle spell combat focus (`spell_combat_prior_weight`), and tightens spatial tile entropy regularization so troops funnel into a concentrated breach corridor. | Refines actor learning rate for fine-grained late-stage convergence while boosting `critic_lr_mult` and `vf_coef` to eliminate V(s\u2080) calibration lag, and enforces `round_robin` village sampling so every PPO batch receives equal gradient weight from the hardest TH18 layout.",
+        "config_patch": {
+          "arch_config": {
+            "th_threat_weight": 9.5,
+            "breach_prior_weight": 11.5,
+            "spell_combat_prior_weight": 9.1,
+            "film_cond_scale": 0.85,
+            "tile_logit_scale": 2.6,
+            "reg_ent_tile_weight": 0.08,
+            "reg_ent_type_weight": 2.6
+          },
+          "reward_config": {
+            "th_bonus": 22.0,
+            "damage_weight": 22.0,
+            "funnel_weight": 0.16,
+            "high_pct_milestone_75": 8.0,
+            "high_pct_milestone_90": 10.0,
+            "triple_wipe_bonus": 14.0
+          },
+          "hyperparams": {
+            "lr": 0.000184,
+            "critic_lr_mult": 4.0,
+            "vf_coef": 0.75,
+            "ent_coef": 0.0128,
+            "target_kl": 0.03,
+            "matchup_mode": "round_robin"
+          }
+        },
+        "diffs": [
+          {
+            "section": "arch_config",
+            "parameter": "th_threat_weight",
+            "before": 8.6,
+            "after": 9.5
+          },
+          {
+            "section": "arch_config",
+            "parameter": "breach_prior_weight",
+            "before": 10.6,
+            "after": 11.5
+          },
+          {
+            "section": "arch_config",
+            "parameter": "spell_combat_prior_weight",
+            "before": 8.3,
+            "after": 9.1
+          },
+          {
+            "section": "arch_config",
+            "parameter": "film_cond_scale",
+            "before": 0.8,
+            "after": 0.85
+          },
+          {
+            "section": "arch_config",
+            "parameter": "tile_logit_scale",
+            "before": 2.4,
+            "after": 2.6
+          },
+          {
+            "section": "arch_config",
+            "parameter": "reg_ent_tile_weight",
+            "before": 0.1,
+            "after": 0.08
+          },
+          {
+            "section": "arch_config",
+            "parameter": "reg_ent_type_weight",
+            "before": 2.4,
+            "after": 2.6
+          },
+          {
+            "section": "reward_config",
+            "parameter": "th_bonus",
+            "before": 21.0,
+            "after": 22.0
+          },
+          {
+            "section": "reward_config",
+            "parameter": "damage_weight",
+            "before": 20.0,
+            "after": 22.0
+          },
+          {
+            "section": "reward_config",
+            "parameter": "funnel_weight",
+            "before": 0.14,
+            "after": 0.16
+          },
+          {
+            "section": "hyperparams",
+            "parameter": "lr",
+            "before": 0.000217,
+            "after": 0.000184
+          },
+          {
+            "section": "hyperparams",
+            "parameter": "critic_lr_mult",
+            "before": 3.8,
+            "after": 4.0
+          },
+          {
+            "section": "hyperparams",
+            "parameter": "vf_coef",
+            "before": 0.7,
+            "after": 0.75
+          },
+          {
+            "section": "hyperparams",
+            "parameter": "ent_coef",
+            "before": 0.0135,
+            "after": 0.0128
+          }
+        ],
+        "diff_summary": [
+          "arch_config.th_threat_weight: 8.6 \u2192 9.5",
+          "arch_config.breach_prior_weight: 10.6 \u2192 11.5",
+          "arch_config.spell_combat_prior_weight: 8.3 \u2192 9.1",
+          "arch_config.film_cond_scale: 0.8 \u2192 0.85",
+          "arch_config.tile_logit_scale: 2.4 \u2192 2.6",
+          "arch_config.reg_ent_tile_weight: 0.1 \u2192 0.08",
+          "arch_config.reg_ent_type_weight: 2.4 \u2192 2.6",
+          "reward_config.th_bonus: 21.0 \u2192 22.0",
+          "reward_config.damage_weight: 20.0 \u2192 22.0",
+          "reward_config.funnel_weight: 0.14 \u2192 0.16",
+          "hyperparams.lr: 0.000217 \u2192 0.000184",
+          "hyperparams.critic_lr_mult: 3.8 \u2192 4.0",
+          "hyperparams.vf_coef: 0.7 \u2192 0.75",
+          "hyperparams.ent_coef: 0.0135 \u2192 0.0128"
+        ],
+        "expected_verification_criteria": "Improve recent 50-ep Mean Destruction % by \u2265 +0.5% or increase 2\u2605+ TH18 / 3\u2605 Triple conversion rate. & Increase Top-5 Tile Probability Mass %, reduce perimeter scatter \u03c3, and improve 2\u2605+ TH18 breach rate. & Reduce inter-village destruction gap, improve Critic Explained Variance, and resume positive destruction slope.",
+        "requires_code_edit": false,
+        "target_files": [],
+        "code_edit_instructions": null,
+        "applied_at": "2026-10-31 17:36:05"
+      },
+      "code_agent_execution": null,
+      "verification_result": {
+        "verified_at": "2026-10-31 17:38:09",
+        "start_episode": 15528,
+        "end_episode": 15672,
+        "episodes_tested": 144,
+        "problem_solved": false,
+        "verdict": "NOT_SOLVED_ROLLED_BACK",
+        "decision_taken": "rolled_back_to_baseline",
+        "post_change_metrics": {
+          "episode": 15672,
+          "history_length": 144,
+          "mean_pct_50": 74.64,
+          "std_pct_50": 17.47,
+          "rolling50_peak_pct": 74.8,
+          "episodes_since_peak": 6,
+          "drawdown_from_peak_pct": -0.2,
+          "best_pct": 100,
+          "best_stars": 3,
+          "one_star_rate_50": 98.0,
+          "two_star_th_rate_50": 82.0,
+          "three_star_triple_rate_50": 20.0,
+          "mean_reward_50": 93.19,
+          "reward_snr": 3.01,
+          "destr_share_pct": 26.7,
+          "stars_th_share_pct": 53.2,
+          "damage_funnel_share_pct": 20.1,
+          "pct_slope_per_100ep": 17.272,
+          "reward_slope_per_100ep": 60.198,
+          "entropy_slope_per_100ep": -1.039,
+          "mean_noop_pct_50": 37.45,
+          "mean_steps_50": 61.7,
+          "explained_variance_50": 0.7547,
+          "approx_kl_50": 0.0181,
+          "kl_saturation_rate_pct": 2.0,
+          "clip_fraction_50": 0.113,
+          "grad_norm_50": 196.1351,
+          "critic_v_s0": 60.07,
+          "calibration_gap": -33.12,
+          "head_saturation_pct": {
+            "slot_type": 88.8,
+            "slot_idx": 74.7,
+            "deploy_fraction": 91.0,
+            "tile_xy": 96.7
+          },
+          "top5_tile_mass_pct": 17.69,
+          "spatial_spread_std": 3.66,
+          "star_funnel": {
+            "p_1star_pct": 98.0,
+            "p_2star_given_1star_pct": 83.7,
+            "p_3star_given_2star_pct": 24.4,
+            "near_miss_85_to_99_pct_rate": 8.0
+          },
+          "worst_village": {
+            "name": "Offset Diamond (Hot Candle)",
+            "full_name": "TH18 Offset Diamond (Hot Candle + Longshot)",
+            "recent_avg_pct": 67.4,
+            "avg_stars": 1.79,
+            "triple_rate": 6.9
+          },
+          "best_village": {
+            "name": "Anti-Hydra Air Ring",
+            "full_name": "TH18 Anti-Hydra Air Ring (4 Air X-Bows + Sweepers)",
+            "recent_avg_pct": 74.8,
+            "avg_stars": 2.0,
+            "triple_rate": 13.8
+          },
+          "inter_village_gap_pct": 7.4
+        },
+        "metric_deltas": {
+          "delta_mean_pct_50": -4.94,
+          "delta_two_star_th_rate": -12.0,
+          "delta_three_star_rate": -8.0,
+          "delta_mean_reward": 16.95,
+          "delta_pct_slope": 18.28,
+          "delta_noop_pct": 21.35,
+          "delta_explained_variance": -0.1431,
+          "delta_worst_village_pct": 4.1,
+          "delta_inter_village_gap_pct": -21.0
+        },
+        "analysis_summary": "Tested `Multi-Solution Bundle (3): High-Destruction Milestone & Core HP Shaping Boost + U-Net FiLM Conditioning & TH18 Spatial Breach Attraction Amplification + Critic Calibration Acceleration, Trust-Region Fine-Tuning & Round-Robin Sampling` over +144 episodes (Ep 15,528 \u2192 15,672). Mean destruction shifted by -4.94% (79.6% \u2192 74.6%) and 2\u2605+ TH18 rate by -12.0%. Rolled back to the pre-change baseline configuration and recorded this parameter combination to avoid in future cycles."
+      }
+    },
+    {
+      "cycle_id": 10,
+      "started_at": "2026-10-31 17:38:09",
+      "completed_at": null,
+      "trigger": "post_test_verification",
+      "episode_at_analysis": 15672,
+      "health_verdict": {
+        "status": "plateaued",
+        "health_score": 72,
+        "is_plateaued": true,
+        "headline": "Training PLATEAUED at 74.6% recent destruction (+17.27%/100ep, 82.0% 2\u2605 TH18, 20.0% 3\u2605) \u2014 2\u2605 \u2192 3\u2605 Back-End Cleanup Plateau.",
+        "progression_summary": "At cumulative episode 15,672, recent 50-ep average destruction is 74.6% (peak rolling-50: 74.8% 6 eps ago; slope +17.27%/100ep). Star conversion funnel: 1\u2605=98.0% \u2192 P(2\u2605|1\u2605)=83.7% \u2192 P(3\u2605|2\u2605)=24.4% (Worst village: Offset Diamond (Hot Candle) at 67.4%).",
+        "model_used": "deterministic_hybrid",
+        "reasons": [
+          {
+            "id": "late_battle_3star_cleanup_stall",
+            "title": "2\u2605 \u2192 3\u2605 Back-End Cleanup Plateau",
+            "severity": "warning",
+            "category": "reward_function",
+            "symptom": "Policy achieves 82.0% 2\u2605 TH18 takedowns, but only converts P(3\u2605|2\u2605) = 24.4% into full 3\u2605 triples (20.0% overall; 8.0% near-miss finishes at 85\u201399%).",
+            "root_cause": "Once the 2nd star and TH18 bonus are secured around 65\u201375% destruction, marginal reward per surviving defense drops, giving insufficient late-battle gradient incentive to preserve spell/ability sustain for 75%\u219290%\u2192100% back-end compartment cleanup."
+          },
+          {
+            "id": "spatial_pointer_dispersion_vs_head_focus",
+            "title": "Spatial Breach Focus & Factorized Head Conditioning Imbalance",
+            "severity": "warning",
+            "category": "architecture",
+            "symptom": "Tile pointer saturation is 96.7% (Top-5 tile mass 17.7%, spread \u03c3=3.66t) while Action Type saturation is 88.8%.",
+            "root_cause": "Current spatial breach attraction (`th_threat_weight=8.6`, `breach_prior_weight=10.6`) and FiLM conditioning scale (`film_cond_scale=0.8`) allow troop drops to spread too widely along the border rather than concentrating on the shortest breach vector to TH18."
+          },
+          {
+            "id": "critic_calibration_and_trust_region_stagnation",
+            "title": "Critic Baseline Lag & PPO Trust-Region Plateau",
+            "severity": "info",
+            "category": "hyperparameters",
+            "symptom": "Critic calibration gap |V(s\u2080)\u2212R\u0304| = 33.12 pts, Explained Variance = 75.5%, Approx KL = 0.0181 (Slope +17.27%/100ep, 6 eps since peak).",
+            "root_cause": "As policy returns shift into higher destruction regimes, the Critic value head lags behind the new return distribution, increasing GAE advantage noise and causing small policy updates to stall."
+          }
+        ]
+      },
+      "pre_change_snapshot": {
+        "snapshot_id": "snapshot_cycle_010_1793464689",
+        "cycle_id": 10,
+        "documented_at": "2026-10-31 17:38:09",
+        "git_commit": "945b7ba",
+        "checkpoint_file": "thrower_healer_totem_smash_ep15672_100pct_3star.pt",
+        "cumulative_episode": 15672,
+        "arch_config": {
+          "arch_version": "3.0-UNet",
+          "in_channels": 59,
+          "base_ch": 32,
+          "spatial_dim": 32,
+          "embed_dim": 256,
+          "head_hidden_dim": 128,
+          "total_params": 2480440,
+          "logit_temp_type": 1.4,
+          "logit_temp_idx": 1.6,
+          "logit_temp_frac": 1.4,
+          "tile_logit_scale": 2.4,
+          "th_threat_weight": 8.6,
+          "defense_threat_weight": 1.8,
+          "breach_prior_weight": 10.6,
+          "spell_combat_prior_weight": 8.3,
+          "film_cond_scale": 0.8,
+          "reg_ent_type_weight": 2.4,
+          "reg_ent_idx_weight": 2.2,
+          "reg_ent_frac_weight": 2.2,
+          "reg_ent_tile_weight": 0.1
+        },
+        "reward_config": {
+          "destr_weight": 0.35,
+          "star_weight": 12.0,
+          "th_bonus": 21.0,
+          "damage_weight": 20.0,
+          "funnel_weight": 0.14,
+          "invalid_penalty": 0.05,
+          "early_noop_penalty": 0.02,
+          "high_pct_milestone_75": 8.0,
+          "high_pct_milestone_90": 10.0,
+          "triple_wipe_bonus": 14.0,
+          "pacing_wait_bonus": 0.0
+        },
+        "reward_formula": "R_t = 0.35\u00b7\u0394%destr + 20.0\u00b7\u0394HPratio + 12.0\u00b7\u0394stars + 21.0\u00b7I(TH18) + 0.14\u00b7C_funnel + 8.0\u00b7I(%\u226575) + 10.0\u00b7I(%\u226590) + 14.0\u00b7I(3\u2605) - 0.05\u00b7I(invalid)",
+        "hyperparams": {
+          "lr": 0.000217,
+          "critic_lr_mult": 3.8,
+          "batch_episodes": 12,
+          "minibatch_size": 128,
+          "ppo_epochs": 4,
+          "clip_coef": 0.2,
+          "ent_coef": 0.0135,
+          "vf_coef": 0.7,
+          "target_kl": 0.03,
+          "gamma": 0.99,
+          "gae_lambda": 0.95,
+          "max_grad_norm": 0.5,
+          "ticks_per_step": 8,
+          "matchup_mode": "round_robin",
+          "episodes": 60000,
+          "resumed_from": "thrower_healer_totem_smash_ep6492_100pct_3star.pt",
+          "army_name": "TH18 Thrower + Healer + Totem Smash (Meta)",
+          "army_slug": "thrower_healer_totem_smash"
+        },
+        "code_backups": {
+          "python/coc_rl/networks.py": {
+            "sha256_short": "c98670bd5b4f",
+            "backup_file": "/home/robin/Projects/CoC/trained_models/code_backups/cycle_010/python__coc_rl__networks.py",
+            "lines": 714
+          },
+          "python/coc_rl/ppo.py": {
+            "sha256_short": "b2d227b128dd",
+            "backup_file": "/home/robin/Projects/CoC/trained_models/code_backups/cycle_010/python__coc_rl__ppo.py",
+            "lines": 316
+          },
+          "python/train_ai.py": {
+            "sha256_short": "a6578ec6054e",
+            "backup_file": "/home/robin/Projects/CoC/trained_models/code_backups/cycle_010/python__train_ai.py",
+            "lines": 1526
+          }
+        },
+        "baseline_metrics": {
+          "episode": 15672,
+          "history_length": 144,
+          "mean_pct_50": 74.64,
+          "std_pct_50": 17.47,
+          "rolling50_peak_pct": 74.8,
+          "episodes_since_peak": 6,
+          "drawdown_from_peak_pct": -0.2,
+          "best_pct": 100,
+          "best_stars": 3,
+          "one_star_rate_50": 98.0,
+          "two_star_th_rate_50": 82.0,
+          "three_star_triple_rate_50": 20.0,
+          "mean_reward_50": 93.19,
+          "reward_snr": 3.01,
+          "destr_share_pct": 26.7,
+          "stars_th_share_pct": 53.2,
+          "damage_funnel_share_pct": 20.1,
+          "pct_slope_per_100ep": 17.272,
+          "reward_slope_per_100ep": 60.198,
+          "entropy_slope_per_100ep": -1.039,
+          "mean_noop_pct_50": 37.45,
+          "mean_steps_50": 61.7,
+          "explained_variance_50": 0.7547,
+          "approx_kl_50": 0.0181,
+          "kl_saturation_rate_pct": 2.0,
+          "clip_fraction_50": 0.113,
+          "grad_norm_50": 196.1351,
+          "critic_v_s0": 60.07,
+          "calibration_gap": -33.12,
+          "head_saturation_pct": {
+            "slot_type": 88.8,
+            "slot_idx": 74.7,
+            "deploy_fraction": 91.0,
+            "tile_xy": 96.7
+          },
+          "top5_tile_mass_pct": 17.69,
+          "spatial_spread_std": 3.66,
+          "star_funnel": {
+            "p_1star_pct": 98.0,
+            "p_2star_given_1star_pct": 83.7,
+            "p_3star_given_2star_pct": 24.4,
+            "near_miss_85_to_99_pct_rate": 8.0
+          },
+          "worst_village": {
+            "name": "Offset Diamond (Hot Candle)",
+            "full_name": "TH18 Offset Diamond (Hot Candle + Longshot)",
+            "recent_avg_pct": 67.4,
+            "avg_stars": 1.79,
+            "triple_rate": 6.9
+          },
+          "best_village": {
+            "name": "Anti-Hydra Air Ring",
+            "full_name": "TH18 Anti-Hydra Air Ring (4 Air X-Bows + Sweepers)",
+            "recent_avg_pct": 74.8,
+            "avg_stars": 2.0,
+            "triple_rate": 13.8
+          },
+          "inter_village_gap_pct": 7.4
+        },
+        "detected_signals": [
+          {
+            "id": "critic_calibration_lag",
+            "severity": "warning",
+            "metric": "|V(s\u2080)\u2212R\u0304| = 33.12 pts \u2022 Explained Variance = 75.5%",
+            "detail": "Critic baseline prediction V(s\u2080) lags empirical episode return or captures low return variance, increasing GAE advantage variance during PPO updates."
+          },
+          {
+            "id": "late_game_3star_cleanup_bottleneck",
+            "severity": "info",
+            "metric": "P(2\u2605|1\u2605)=83.7% \u2192 P(3\u2605|2\u2605)=24.4% \u2022 Near-miss (85\u201399%)=8.0%",
+            "detail": "Policy reliably breaches the Town Hall 18 core for 2\u2605 but stalls on 85\u201399% back-end defense cleanup before reaching 100% 3\u2605."
+          }
+        ]
+      },
+      "candidate_solutions": [
+        {
+          "solution_id": "sol_arch_spatial_breach_and_film_v10",
+          "rank": 1,
+          "category": "architecture",
+          "title": "U-Net FiLM Conditioning & TH18 Spatial Breach Attraction Amplification",
+          "target_problem": "Spatial Breach Focus & Factorized Head Conditioning Imbalance",
+          "rationale": "Increases the U-Net decoder's FiLM multiplicative conditioning scale (`film_cond_scale`), strengthens the 15\u00d715 cascaded Town Hall 18 breach attraction field (`th_threat_weight`, `breach_prior_weight`) and mid-battle spell combat focus (`spell_combat_prior_weight`), and tightens spatial tile entropy regularization so troops funnel into a concentrated breach corridor.",
+          "config_patch": {
+            "arch_config": {
+              "th_threat_weight": 9.5,
+              "breach_prior_weight": 11.5,
+              "spell_combat_prior_weight": 9.1,
+              "film_cond_scale": 0.85,
+              "tile_logit_scale": 2.6,
+              "reg_ent_tile_weight": 0.08,
+              "reg_ent_type_weight": 2.6
+            }
+          },
+          "expected_verification_criteria": "Increase Top-5 Tile Probability Mass %, reduce perimeter scatter \u03c3, and improve 2\u2605+ TH18 breach rate.",
+          "diffs": [
+            {
+              "section": "arch_config",
+              "parameter": "th_threat_weight",
+              "before": 8.6,
+              "after": 9.5
+            },
+            {
+              "section": "arch_config",
+              "parameter": "breach_prior_weight",
+              "before": 10.6,
+              "after": 11.5
+            },
+            {
+              "section": "arch_config",
+              "parameter": "spell_combat_prior_weight",
+              "before": 8.3,
+              "after": 9.1
+            },
+            {
+              "section": "arch_config",
+              "parameter": "film_cond_scale",
+              "before": 0.8,
+              "after": 0.85
+            },
+            {
+              "section": "arch_config",
+              "parameter": "tile_logit_scale",
+              "before": 2.4,
+              "after": 2.6
+            },
+            {
+              "section": "arch_config",
+              "parameter": "reg_ent_tile_weight",
+              "before": 0.1,
+              "after": 0.08
+            },
+            {
+              "section": "arch_config",
+              "parameter": "reg_ent_type_weight",
+              "before": 2.4,
+              "after": 2.6
+            }
+          ],
+          "diff_summary": [
+            "arch_config.th_threat_weight: 8.6 \u2192 9.5",
+            "arch_config.breach_prior_weight: 10.6 \u2192 11.5",
+            "arch_config.spell_combat_prior_weight: 8.3 \u2192 9.1",
+            "arch_config.film_cond_scale: 0.8 \u2192 0.85",
+            "arch_config.tile_logit_scale: 2.4 \u2192 2.6",
+            "arch_config.reg_ent_tile_weight: 0.1 \u2192 0.08",
+            "arch_config.reg_ent_type_weight: 2.4 \u2192 2.6"
+          ],
+          "is_recommended": true
+        },
+        {
+          "solution_id": "sol_hyperparams_critic_and_round_robin_v10",
+          "rank": 2,
+          "category": "hyperparameters",
+          "title": "Critic Calibration Acceleration, Trust-Region Fine-Tuning & Round-Robin Sampling",
+          "target_problem": "Critic Baseline Lag & PPO Trust-Region Plateau",
+          "rationale": "Refines actor learning rate for fine-grained late-stage convergence while boosting `critic_lr_mult` and `vf_coef` to eliminate V(s\u2080) calibration lag, and enforces `round_robin` village sampling so every PPO batch receives equal gradient weight from the hardest TH18 layout.",
+          "config_patch": {
+            "hyperparams": {
+              "lr": 0.000184,
+              "critic_lr_mult": 4.0,
+              "vf_coef": 0.75,
+              "ent_coef": 0.0128,
+              "target_kl": 0.03,
+              "matchup_mode": "round_robin"
+            }
+          },
+          "expected_verification_criteria": "Reduce inter-village destruction gap, improve Critic Explained Variance, and resume positive destruction slope.",
+          "diffs": [
+            {
+              "section": "hyperparams",
+              "parameter": "lr",
+              "before": 0.000217,
+              "after": 0.000184
+            },
+            {
+              "section": "hyperparams",
+              "parameter": "critic_lr_mult",
+              "before": 3.8,
+              "after": 4.0
+            },
+            {
+              "section": "hyperparams",
+              "parameter": "vf_coef",
+              "before": 0.7,
+              "after": 0.75
+            },
+            {
+              "section": "hyperparams",
+              "parameter": "ent_coef",
+              "before": 0.0135,
+              "after": 0.0128
+            }
+          ],
+          "diff_summary": [
+            "hyperparams.lr: 0.000217 \u2192 0.000184",
+            "hyperparams.critic_lr_mult: 3.8 \u2192 4.0",
+            "hyperparams.vf_coef: 0.7 \u2192 0.75",
+            "hyperparams.ent_coef: 0.0135 \u2192 0.0128"
+          ],
+          "is_recommended": true
+        },
+        {
+          "solution_id": "sol_code_agent_argon_spatial_reward_v10",
+          "rank": 3,
+          "category": "code_agent",
+          "title": "OpenCode Argon 4 Medium Surgical Code Upgrade (Spatial Prior & Reward Shaping)",
+          "target_problem": "2\u2605 \u2192 3\u2605 Back-End Cleanup Plateau",
+          "rationale": "Invokes the OpenCode `google-vertex/gemini-4-argon#medium` coding agent directly on `python/coc_rl/networks.py` and `python/coc_rl/ppo.py` to refine the spatial breach/spell prior and reward shaping weights while combining synergistic architecture, reward, and critic calibration parameters.",
+          "requires_code_edit": true,
+          "target_files": [
+            "python/coc_rl/networks.py",
+            "python/coc_rl/ppo.py"
+          ],
+          "code_edit_instructions": "In `python/coc_rl/networks.py` (`DEFAULT_ARCH_CONFIG`) and `python/coc_rl/ppo.py` (`DEFAULT_REWARD_CONFIG`), update default spatial conditioning and late-battle milestone shaping to address `2\u2605 \u2192 3\u2605 Back-End Cleanup Plateau` (Worst village: `Offset Diamond (Hot Candle)` at `67.4%`, 3\u2605 rate: `20.0%`): set default `th_threat_weight` to `9.4`, `breach_prior_weight` to `11.0`, `film_cond_scale` to `0.8`, and in `DEFAULT_REWARD_CONFIG` set `th_bonus` to `20.0`.",
+          "config_patch": {
+            "arch_config": {
+              "th_threat_weight": 9.4,
+              "breach_prior_weight": 11.0,
+              "film_cond_scale": 0.8
+            },
+            "reward_config": {
+              "th_bonus": 20.0,
+              "high_pct_milestone_75": 8.0,
+              "high_pct_milestone_90": 10.0,
+              "triple_wipe_bonus": 12.0
+            },
+            "hyperparams": {
+              "critic_lr_mult": 3.8,
+              "matchup_mode": "round_robin"
+            }
+          },
+          "expected_verification_criteria": "Simultaneously lift recent 50-ep Destruction %, 2\u2605+ TH18 rate, and worst-village performance via code + config synergy.",
+          "diffs": [
+            {
+              "section": "arch_config",
+              "parameter": "th_threat_weight",
+              "before": 8.6,
+              "after": 9.4
+            },
+            {
+              "section": "arch_config",
+              "parameter": "breach_prior_weight",
+              "before": 10.6,
+              "after": 11.0
+            },
+            {
+              "section": "reward_config",
+              "parameter": "th_bonus",
+              "before": 21.0,
+              "after": 20.0
+            },
+            {
+              "section": "reward_config",
+              "parameter": "triple_wipe_bonus",
+              "before": 14.0,
+              "after": 12.0
+            }
+          ],
+          "diff_summary": [
+            "arch_config.th_threat_weight: 8.6 \u2192 9.4",
+            "arch_config.breach_prior_weight: 10.6 \u2192 11.0",
+            "reward_config.th_bonus: 21.0 \u2192 20.0",
+            "reward_config.triple_wipe_bonus: 14.0 \u2192 12.0"
+          ],
+          "is_recommended": false
+        },
+        {
+          "solution_id": "sol_reward_milestone_push_v10",
+          "rank": 4,
+          "category": "reward_function",
+          "title": "High-Destruction Milestone & Core HP Shaping Boost",
+          "target_problem": "2\u2605 \u2192 3\u2605 Back-End Cleanup Plateau",
+          "rationale": "Adds explicit progressive milestone bonuses at \u226575% (+4.5 pts) and \u226590% (+6.0 pts) destruction plus a +8.0 pt 3\u2605 wipe bonus and elevated Core HP & TH18 takedown weights so GAE advantages strongly reward pushing through the TH18 core into back-end cleanup.",
+          "config_patch": {
+            "reward_config": {
+              "th_bonus": 22.0,
+              "damage_weight": 22.0,
+              "funnel_weight": 0.16,
+              "high_pct_milestone_75": 8.0,
+              "high_pct_milestone_90": 10.0,
+              "triple_wipe_bonus": 14.0
+            }
+          },
+          "expected_verification_criteria": "Improve recent 50-ep Mean Destruction % by \u2265 +0.5% or increase 2\u2605+ TH18 / 3\u2605 Triple conversion rate.",
+          "diffs": [
+            {
+              "section": "reward_config",
+              "parameter": "th_bonus",
+              "before": 21.0,
+              "after": 22.0
+            },
+            {
+              "section": "reward_config",
+              "parameter": "damage_weight",
+              "before": 20.0,
+              "after": 22.0
+            },
+            {
+              "section": "reward_config",
+              "parameter": "funnel_weight",
+              "before": 0.14,
+              "after": 0.16
+            }
+          ],
+          "diff_summary": [
+            "reward_config.th_bonus: 21.0 \u2192 22.0",
+            "reward_config.damage_weight: 20.0 \u2192 22.0",
+            "reward_config.funnel_weight: 0.14 \u2192 0.16"
+          ],
+          "is_recommended": false
+        }
+      ],
+      "recommended_solution_ids": [
+        "sol_arch_spatial_breach_and_film_v10",
+        "sol_hyperparams_critic_and_round_robin_v10"
+      ],
+      "selected_solutions": [
+        {
+          "solution_id": "sol_arch_spatial_breach_and_film_v10",
+          "rank": 1,
+          "category": "architecture",
+          "title": "U-Net FiLM Conditioning & TH18 Spatial Breach Attraction Amplification",
+          "target_problem": "Spatial Breach Focus & Factorized Head Conditioning Imbalance",
+          "rationale": "Increases the U-Net decoder's FiLM multiplicative conditioning scale (`film_cond_scale`), strengthens the 15\u00d715 cascaded Town Hall 18 breach attraction field (`th_threat_weight`, `breach_prior_weight`) and mid-battle spell combat focus (`spell_combat_prior_weight`), and tightens spatial tile entropy regularization so troops funnel into a concentrated breach corridor.",
+          "config_patch": {
+            "arch_config": {
+              "th_threat_weight": 9.5,
+              "breach_prior_weight": 11.5,
+              "spell_combat_prior_weight": 9.1,
+              "film_cond_scale": 0.85,
+              "tile_logit_scale": 2.6,
+              "reg_ent_tile_weight": 0.08,
+              "reg_ent_type_weight": 2.6
+            }
+          },
+          "expected_verification_criteria": "Increase Top-5 Tile Probability Mass %, reduce perimeter scatter \u03c3, and improve 2\u2605+ TH18 breach rate.",
+          "diffs": [
+            {
+              "section": "arch_config",
+              "parameter": "th_threat_weight",
+              "before": 8.6,
+              "after": 9.5
+            },
+            {
+              "section": "arch_config",
+              "parameter": "breach_prior_weight",
+              "before": 10.6,
+              "after": 11.5
+            },
+            {
+              "section": "arch_config",
+              "parameter": "spell_combat_prior_weight",
+              "before": 8.3,
+              "after": 9.1
+            },
+            {
+              "section": "arch_config",
+              "parameter": "film_cond_scale",
+              "before": 0.8,
+              "after": 0.85
+            },
+            {
+              "section": "arch_config",
+              "parameter": "tile_logit_scale",
+              "before": 2.4,
+              "after": 2.6
+            },
+            {
+              "section": "arch_config",
+              "parameter": "reg_ent_tile_weight",
+              "before": 0.1,
+              "after": 0.08
+            },
+            {
+              "section": "arch_config",
+              "parameter": "reg_ent_type_weight",
+              "before": 2.4,
+              "after": 2.6
+            }
+          ],
+          "diff_summary": [
+            "arch_config.th_threat_weight: 8.6 \u2192 9.5",
+            "arch_config.breach_prior_weight: 10.6 \u2192 11.5",
+            "arch_config.spell_combat_prior_weight: 8.3 \u2192 9.1",
+            "arch_config.film_cond_scale: 0.8 \u2192 0.85",
+            "arch_config.tile_logit_scale: 2.4 \u2192 2.6",
+            "arch_config.reg_ent_tile_weight: 0.1 \u2192 0.08",
+            "arch_config.reg_ent_type_weight: 2.4 \u2192 2.6"
+          ],
+          "is_recommended": true
+        },
+        {
+          "solution_id": "sol_hyperparams_critic_and_round_robin_v10",
+          "rank": 2,
+          "category": "hyperparameters",
+          "title": "Critic Calibration Acceleration, Trust-Region Fine-Tuning & Round-Robin Sampling",
+          "target_problem": "Critic Baseline Lag & PPO Trust-Region Plateau",
+          "rationale": "Refines actor learning rate for fine-grained late-stage convergence while boosting `critic_lr_mult` and `vf_coef` to eliminate V(s\u2080) calibration lag, and enforces `round_robin` village sampling so every PPO batch receives equal gradient weight from the hardest TH18 layout.",
+          "config_patch": {
+            "hyperparams": {
+              "lr": 0.000184,
+              "critic_lr_mult": 4.0,
+              "vf_coef": 0.75,
+              "ent_coef": 0.0128,
+              "target_kl": 0.03,
+              "matchup_mode": "round_robin"
+            }
+          },
+          "expected_verification_criteria": "Reduce inter-village destruction gap, improve Critic Explained Variance, and resume positive destruction slope.",
+          "diffs": [
+            {
+              "section": "hyperparams",
+              "parameter": "lr",
+              "before": 0.000217,
+              "after": 0.000184
+            },
+            {
+              "section": "hyperparams",
+              "parameter": "critic_lr_mult",
+              "before": 3.8,
+              "after": 4.0
+            },
+            {
+              "section": "hyperparams",
+              "parameter": "vf_coef",
+              "before": 0.7,
+              "after": 0.75
+            },
+            {
+              "section": "hyperparams",
+              "parameter": "ent_coef",
+              "before": 0.0135,
+              "after": 0.0128
+            }
+          ],
+          "diff_summary": [
+            "hyperparams.lr: 0.000217 \u2192 0.000184",
+            "hyperparams.critic_lr_mult: 3.8 \u2192 4.0",
+            "hyperparams.vf_coef: 0.7 \u2192 0.75",
+            "hyperparams.ent_coef: 0.0135 \u2192 0.0128"
+          ],
+          "is_recommended": true
+        }
+      ],
+      "selected_solution": {
+        "solution_id": "sol_arch_spatial_breach_and_film_v10+sol_hyperparams_critic_and_round_robin_v10",
+        "selected_solution_ids": [
+          "sol_arch_spatial_breach_and_film_v10",
+          "sol_hyperparams_critic_and_round_robin_v10"
+        ],
+        "rank": 1,
+        "category": "combined",
+        "categories_combined": [
+          "architecture",
+          "hyperparameters"
+        ],
+        "title": "Multi-Solution Bundle (2): U-Net FiLM Conditioning & TH18 Spatial Breach Attraction Amplification + Critic Calibration Acceleration, Trust-Region Fine-Tuning & Round-Robin Sampling",
+        "target_problem": "Spatial Breach Focus & Factorized Head Conditioning Imbalance & Critic Baseline Lag & PPO Trust-Region Plateau",
+        "rationale": "Increases the U-Net decoder's FiLM multiplicative conditioning scale (`film_cond_scale`), strengthens the 15\u00d715 cascaded Town Hall 18 breach attraction field (`th_threat_weight`, `breach_prior_weight`) and mid-battle spell combat focus (`spell_combat_prior_weight`), and tightens spatial tile entropy regularization so troops funnel into a concentrated breach corridor. | Refines actor learning rate for fine-grained late-stage convergence while boosting `critic_lr_mult` and `vf_coef` to eliminate V(s\u2080) calibration lag, and enforces `round_robin` village sampling so every PPO batch receives equal gradient weight from the hardest TH18 layout.",
+        "config_patch": {
+          "arch_config": {
+            "th_threat_weight": 9.5,
+            "breach_prior_weight": 11.5,
+            "spell_combat_prior_weight": 9.1,
+            "film_cond_scale": 0.85,
+            "tile_logit_scale": 2.6,
+            "reg_ent_tile_weight": 0.08,
+            "reg_ent_type_weight": 2.6
+          },
+          "reward_config": {},
+          "hyperparams": {
+            "lr": 0.000184,
+            "critic_lr_mult": 4.0,
+            "vf_coef": 0.75,
+            "ent_coef": 0.0128,
+            "target_kl": 0.03,
+            "matchup_mode": "round_robin"
+          }
+        },
+        "diffs": [
+          {
+            "section": "arch_config",
+            "parameter": "th_threat_weight",
+            "before": 8.6,
+            "after": 9.5
+          },
+          {
+            "section": "arch_config",
+            "parameter": "breach_prior_weight",
+            "before": 10.6,
+            "after": 11.5
+          },
+          {
+            "section": "arch_config",
+            "parameter": "spell_combat_prior_weight",
+            "before": 8.3,
+            "after": 9.1
+          },
+          {
+            "section": "arch_config",
+            "parameter": "film_cond_scale",
+            "before": 0.8,
+            "after": 0.85
+          },
+          {
+            "section": "arch_config",
+            "parameter": "tile_logit_scale",
+            "before": 2.4,
+            "after": 2.6
+          },
+          {
+            "section": "arch_config",
+            "parameter": "reg_ent_tile_weight",
+            "before": 0.1,
+            "after": 0.08
+          },
+          {
+            "section": "arch_config",
+            "parameter": "reg_ent_type_weight",
+            "before": 2.4,
+            "after": 2.6
+          },
+          {
+            "section": "hyperparams",
+            "parameter": "lr",
+            "before": 0.000217,
+            "after": 0.000184
+          },
+          {
+            "section": "hyperparams",
+            "parameter": "critic_lr_mult",
+            "before": 3.8,
+            "after": 4.0
+          },
+          {
+            "section": "hyperparams",
+            "parameter": "vf_coef",
+            "before": 0.7,
+            "after": 0.75
+          },
+          {
+            "section": "hyperparams",
+            "parameter": "ent_coef",
+            "before": 0.0135,
+            "after": 0.0128
+          }
+        ],
+        "diff_summary": [
+          "arch_config.th_threat_weight: 8.6 \u2192 9.5",
+          "arch_config.breach_prior_weight: 10.6 \u2192 11.5",
+          "arch_config.spell_combat_prior_weight: 8.3 \u2192 9.1",
+          "arch_config.film_cond_scale: 0.8 \u2192 0.85",
+          "arch_config.tile_logit_scale: 2.4 \u2192 2.6",
+          "arch_config.reg_ent_tile_weight: 0.1 \u2192 0.08",
+          "arch_config.reg_ent_type_weight: 2.4 \u2192 2.6",
+          "hyperparams.lr: 0.000217 \u2192 0.000184",
+          "hyperparams.critic_lr_mult: 3.8 \u2192 4.0",
+          "hyperparams.vf_coef: 0.7 \u2192 0.75",
+          "hyperparams.ent_coef: 0.0135 \u2192 0.0128"
+        ],
+        "expected_verification_criteria": "Increase Top-5 Tile Probability Mass %, reduce perimeter scatter \u03c3, and improve 2\u2605+ TH18 breach rate. & Reduce inter-village destruction gap, improve Critic Explained Variance, and resume positive destruction slope.",
+        "requires_code_edit": false,
+        "target_files": [],
+        "code_edit_instructions": null,
+        "applied_at": "2026-10-31 17:38:09"
+      },
+      "code_agent_execution": null,
+      "verification_result": null
     }
-  ]
+  ],
+  "remaining_training_seconds": 600
 }

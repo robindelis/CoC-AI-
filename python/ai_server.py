@@ -188,15 +188,31 @@ class LoopApplySolutionRequest(BaseModel):
 
 
 _loop_state: Dict[str, Any] = load_recursive_loop_state()
+if "remaining_training_seconds" not in _loop_state:
+    _loop_state["remaining_training_seconds"] = int(_loop_state.get("interval_seconds", 600))
 
 
 def _get_loop_status_payload() -> Dict[str, Any]:
-    now_ts = time.time()
-    next_ts = float(_loop_state.get("next_check_ts") or (now_ts + 600))
-    rem_sec = max(0, int(round(next_ts - now_ts)))
+    interval = max(60, int(_loop_state.get("interval_seconds", 600)))
+    is_training_now = bool(_training_state.get("is_training", False))
+    rem_sec = max(
+        0,
+        min(
+            interval,
+            int(round(float(_loop_state.get("remaining_training_seconds", interval)))),
+        ),
+    )
     active_cfg = _loop_state.get("active_config") or load_active_experiment_config()
+    paused_waiting = bool(_loop_state.get("enabled", False) and not is_training_now and not _loop_state.get("is_running_cycle", False))
+    effective_phase = (
+        "standby_waiting_for_training"
+        if paused_waiting and _loop_state.get("phase") in ("idle", "monitoring")
+        else _loop_state.get("phase", "idle")
+    )
     return {
         **_loop_state,
+        "phase": effective_phase,
+        "paused_waiting_for_training": paused_waiting,
         "active_config": active_cfg,
         "reward_formula": format_reward_formula(active_cfg.get("reward_config")),
         "seconds_until_next_check": rem_sec,
@@ -577,6 +593,7 @@ def configure_recursive_loop(req: LoopConfigureRequest) -> Dict[str, Any]:
         if req.enabled:
             now_ts = time.time()
             interval = max(60, int(req.interval_seconds or _loop_state.get("interval_seconds", 600)))
+            _loop_state["remaining_training_seconds"] = interval
             _loop_state["next_check_ts"] = now_ts + interval
             _loop_state["next_check_at"] = time.strftime(
                 "%Y-%m-%d %H:%M:%S", time.localtime(now_ts + interval)
@@ -589,6 +606,7 @@ def configure_recursive_loop(req: LoopConfigureRequest) -> Dict[str, Any]:
     if req.interval_seconds is not None:
         interval = max(60, int(req.interval_seconds))
         _loop_state["interval_seconds"] = interval
+        _loop_state["remaining_training_seconds"] = interval
         now_ts = time.time()
         _loop_state["next_check_ts"] = now_ts + interval
         _loop_state["next_check_at"] = time.strftime(
@@ -773,16 +791,28 @@ def _init_and_start_recursive_loop_daemon() -> None:
             print(f"[recursive_loop] Initial audit note: {exc}")
 
     def _daemon() -> None:
+        last_tick = time.time()
         while True:
             time.sleep(2.0)
+            now_ts = time.time()
+            dt = max(0.0, min(10.0, now_ts - last_tick))
+            last_tick = now_ts
             try:
                 if not _loop_state.get("enabled", False):
                     continue
                 if _loop_state.get("is_running_cycle", False):
                     continue
-                now_ts = time.time()
-                next_ts = float(_loop_state.get("next_check_ts") or 0.0)
-                if now_ts >= next_ts:
+                # Only count down the 10-minute timer while training is actively running!
+                if not _training_state.get("is_training", False):
+                    continue
+
+                interval = max(60, int(_loop_state.get("interval_seconds", 600)))
+                rem = float(_loop_state.get("remaining_training_seconds", interval)) - dt
+                _loop_state["remaining_training_seconds"] = max(0.0, rem)
+                _loop_state["next_check_ts"] = now_ts + _loop_state["remaining_training_seconds"]
+
+                if rem <= 0.0:
+                    _loop_state["remaining_training_seconds"] = float(interval)
                     run_recursive_improvement_cycle(
                         loop_state=_loop_state,
                         training_state=_training_state,
@@ -795,6 +825,7 @@ def _init_and_start_recursive_loop_daemon() -> None:
                             else None
                         ),
                     )
+                    _loop_state["remaining_training_seconds"] = float(interval)
             except Exception as exc:
                 print(f"[recursive_loop] Daemon tick error: {exc}")
 

@@ -1368,14 +1368,14 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
             onClick={() => setTrainerTab('recursive_loop')}
           >
             ♾️ Recursive AI Loop (10m Self-Improver)
-            {serverStatus?.recursive_loop?.active_hypothesis ? (
+            {serverStatus?.recursive_loop?.active_hypothesis && isTraining ? (
               <span
                 className="ai-live-pulse-badge"
                 style={{ background: '#0284c7', color: '#fff' }}
               >
                 🧪 TESTING #{serverStatus.recursive_loop.active_hypothesis.cycle_id}
               </span>
-            ) : serverStatus?.recursive_loop?.enabled ? (
+            ) : serverStatus?.recursive_loop?.enabled && isTraining ? (
               <span className="ai-live-pulse-badge">
                 ● AUTO (
                 {Math.floor(
@@ -1383,6 +1383,16 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                     60
                 )}
                 m)
+              </span>
+            ) : serverStatus?.recursive_loop?.enabled ? (
+              <span
+                className="ai-live-pulse-badge"
+                style={{
+                  background: 'rgba(56, 189, 248, 0.16)',
+                  color: '#7dd3fc',
+                }}
+              >
+                ⏸ STANDBY (Start Training)
               </span>
             ) : (
               <span

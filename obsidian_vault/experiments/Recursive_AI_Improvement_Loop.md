@@ -7,9 +7,9 @@ tags:
   - ppo
   - architecture
   - reward-shaping
-updated: "2026-10-31 17:26:23"
-total_cycles: 8
-loop_enabled: true
+updated: "2026-10-31 17:46:16"
+total_cycles: 10
+loop_enabled: false
 interval_seconds: 600
 ---
 
@@ -23,11 +23,11 @@ Back to [[00_Index_MOC|Vault Index (MOC)]] • View [[01_Model_Architecture_and_
 
 The **Recursive AI Self-Improvement Loop** inspects training telemetry every **`10` minutes** (`600s`), determines whether training is healthy or plateaued, diagnoses root causes across **Network Architecture**, **Reward Shaping**, and **PPO Hyperparameters**, **documents the complete pre-change baseline state before every modification**, tests the selected solution, verifies whether the targeted bottleneck was solved, and logs the empirical outcome here for long-term institutional memory.
 
-- **Loop Status**: **`ENABLED (AUTONOMOUS 10m TIMER)`** • **Current Phase**: `MONITORING`
-- **Total Improvement Cycles Logged**: **`8`**
+- **Loop Status**: **`READY / ON-DEMAND`** • **Current Phase**: `IDLE`
+- **Total Improvement Cycles Logged**: **`10`**
 - **Active Reward Formula**: `R_t = 0.35·Δ%destr + 20.0·ΔHPratio + 12.0·Δstars + 21.0·I(TH18) + 0.14·C_funnel + 8.0·I(%≥75) + 10.0·I(%≥90) + 14.0·I(3★) - 0.05·I(invalid)`
-- **Active Architecture Config**: `th_threat=8.6`, `breach_prior=10.6`, `spell_prior=8.3`, `film_scale=0.8`, `tile_scale=2.4`
-- **Active Hyperparameters**: `lr=0.000217`, `critic_lr_mult=3.8`, `batch_episodes=12`, `ent_coef=0.0135`, `vf_coef=0.7`, `matchup_mode=round_robin`
+- **Active Architecture Config**: `th_threat=9.5`, `breach_prior=11.5`, `spell_prior=9.1`, `film_scale=0.85`, `tile_scale=2.6`
+- **Active Hyperparameters**: `lr=0.000184`, `critic_lr_mult=4.0`, `batch_episodes=12`, `ent_coef=0.0128`, `vf_coef=0.75`, `matchup_mode=round_robin`
 
 ![Recursive AI Improvement Loop Progression](../assets/charts/recursive_improvement_loop_tracker.png)
 
@@ -45,7 +45,141 @@ The **Recursive AI Self-Improvement Loop** inspects training telemetry every **`
 | **#6** | `8,664` | `HEALTHY_PROGRESSING` (84/100) | Critic Value Baseline Lag & High Gradient Norm After Milestone Reward Expansion | `baseline` | **Baseline Snapshot** (Baseline documented) | `84.3%` *(Testing...)* | `86.0%` *(Testing...)* | `38.0%` *(Testing...)* | `TESTING IN PROGRESS` |
 | **#7** | `13,883` | `PLATEAUED` (68/100) | Critic V(s₀) Calibration Lag & PPO Trust-Region Saturation | `hyperparameters` | **Critic Calibration Acceleration, Trust-Region Fine-Tuning & Round-Robin Sampling** (hyperparams.lr: 0.000255 → 0.000217; hyperparams.critic_lr_mult: 3.4 → 3.9; hyperparams.vf_coef: 0.6 → 0.7) | `75.9% → 80.8%` (**+4.90%**) | `94.0% → 86.0%` (**-8.0%**) | `14.0% → 42.0%` (**+28.0%**) | **`SOLVED`** (kept_and_promoted) |
 | **#8** | `15,192` | `PLATEAUED` (67/100) | High Cross-Village Performance Gap (16.1% Spread) | `combined` | **Multi-Solution Bundle (2): OpenCode Argon 4 Medium Surgical Code Upgrade (Spatial Prior & Reward Shaping) + High-Destruction Milestone & Core HP Shaping Boost** (arch_config.th_threat_weight: 7.8 → 8.6; arch_config.breach_prior_weight: 9.8 → 10.6; arch_config.film_cond_scale: 0.72 → 0.8) | `80.8% → 79.3%` (**-1.50%**) | `86.0% → 80.0%` (**-6.0%**) | `42.0% → 34.0%` (**-8.0%**) | **`PARTIAL`** (kept_and_continuing) |
+| **#9** | `15,528` | `PLATEAUED` (66/100) | 28.4% Inter-Village Destruction Gap on Offset Diamond (Hot Candle) | `combined` | **Multi-Solution Bundle (3): High-Destruction Milestone & Core HP Shaping Boost + U-Net FiLM Conditioning & TH18 Spatial Breach Attraction Amplification + Critic Calibration Acceleration, Trust-Region Fine-Tuning & Round-Robin Sampling** (arch_config.th_threat_weight: 8.6 → 9.5; arch_config.breach_prior_weight: 10.6 → 11.5; arch_config.spell_combat_prior_weight: 8.3 → 9.1) | `79.6% → 74.6%` (**-4.94%**) | `94.0% → 82.0%` (**-12.0%**) | `28.0% → 20.0%` (**-8.0%**) | **`NOT_SOLVED_ROLLED_BACK`** (rolled_back_to_baseline) |
+| **#10** | `15,672` | `PLATEAUED` (72/100) | 2★ → 3★ Back-End Cleanup Plateau | `combined` | **Multi-Solution Bundle (2): U-Net FiLM Conditioning & TH18 Spatial Breach Attraction Amplification + Critic Calibration Acceleration, Trust-Region Fine-Tuning & Round-Robin Sampling** (arch_config.th_threat_weight: 8.6 → 9.5; arch_config.breach_prior_weight: 10.6 → 11.5; arch_config.spell_combat_prior_weight: 8.3 → 9.1) | `74.6%` *(Testing...)* | `82.0%` *(Testing...)* | `20.0%` *(Testing...)* | `TESTING IN PROGRESS` |
 
+---
+
+### 🔄 Cycle #10 — Episode `15,672` (`2026-10-31 17:38:09`)
+
+- **Trigger**: `post_test_verification` • **Diagnostic Engine**: `deterministic_hybrid`
+- **Health Verdict**: **`PLATEAUED` (`72/100`)** — Training PLATEAUED at 74.6% recent destruction (+17.27%/100ep, 82.0% 2★ TH18, 20.0% 3★) — 2★ → 3★ Back-End Cleanup Plateau.
+- **Progression Summary**: At cumulative episode 15,672, recent 50-ep average destruction is 74.6% (peak rolling-50: 74.8% 6 eps ago; slope +17.27%/100ep). Star conversion funnel: 1★=98.0% → P(2★|1★)=83.7% → P(3★|2★)=24.4% (Worst village: Offset Diamond (Hot Candle) at 67.4%).
+
+#### A. Mandatory Pre-Change Baseline Snapshot (`snapshot_cycle_010_1793464689`)
+*Documented at `2026-10-31 17:38:09` on commit `945b7ba` (Checkpoint: `thrower_healer_totem_smash_ep15672_100pct_3star.pt`, Episode `15,672`) BEFORE applying any modification:*
+
+1. **Pre-Change Network Architecture (`CoCActorCritic` v`3.0-UNet`)**:
+   - **Backbone & Dimensions**: `in_channels=59`, `base_ch=32`, `spatial_dim=32`, `embed_dim=256`, `head_hidden_dim=128` (`2,480,440` trainable params)
+   - **Spatial Conditioning & Breach Field**: `th_threat_weight=8.6`, `defense_threat_weight=1.8`, `breach_prior_weight=10.6`, `spell_combat_prior_weight=8.3`, `film_cond_scale=0.8`, `tile_logit_scale=2.4`
+   - **Head Logit Temperatures & Per-Head Entropy Weights**: `logit_temp=(type:1.4, idx:1.6, frac:1.4)`, `reg_ent_weights=(type:2.4, idx:2.2, frac:2.2, tile:0.1)`
+2. **Pre-Change Reward Shaping Formulation**:
+   - **Formula**: `R_t = 0.35·Δ%destr + 20.0·ΔHPratio + 12.0·Δstars + 21.0·I(TH18) + 0.14·C_funnel + 8.0·I(%≥75) + 10.0·I(%≥90) + 14.0·I(3★) - 0.05·I(invalid)`
+   - **Weights**: `destr_weight=0.35`, `star_weight=12.0`, `th_bonus=21.0`, `damage_weight=20.0`, `funnel_weight=0.14`, `high_pct_milestone_75=8.0`, `high_pct_milestone_90=10.0`, `triple_wipe_bonus=14.0`
+3. **Pre-Change PPO Hyperparameters**:
+   - `lr=0.000217`, `critic_lr_mult=3.8`, `batch_episodes=12`, `minibatch_size=128`, `ppo_epochs=4`, `clip_coef=0.2`, `ent_coef=0.0135`, `vf_coef=0.7`, `target_kl=0.03`, `gamma=0.99`, `gae_lambda=0.95`, `matchup_mode=round_robin`
+4. **Pre-Change Baseline Telemetry**:
+   - `Mean Destr (50-ep)`: **`74.64%`** (Peak Rolling-50: `74.80%`, Slope: `+17.27%/100ep`)
+   - `Star Conversion Funnel`: `1★+ = 98.0%` • `2★+ TH18 = 82.0%` (`P(2★|1★) = 83.7%`) • `3★ Triple = 20.0%` (`P(3★|2★) = 24.4%`)
+   - `Critic & Pacing`: `V(s₀) = 60.07` (Gap `-33.12`), `Explained Var = 75.5%`, `NoOp = 37.5%`, `Top-5 Tile Mass = 17.7%`
+
+#### B. Plateau Root-Cause Diagnosis
+- **[WARNING • `reward_function`] 2★ → 3★ Back-End Cleanup Plateau**
+  - *Quantitative Evidence*: Policy achieves 82.0% 2★ TH18 takedowns, but only converts P(3★|2★) = 24.4% into full 3★ triples (20.0% overall; 8.0% near-miss finishes at 85–99%).
+  - *Mathematical Root Cause*: Once the 2nd star and TH18 bonus are secured around 65–75% destruction, marginal reward per surviving defense drops, giving insufficient late-battle gradient incentive to preserve spell/ability sustain for 75%→90%→100% back-end compartment cleanup.
+- **[WARNING • `architecture`] Spatial Breach Focus & Factorized Head Conditioning Imbalance**
+  - *Quantitative Evidence*: Tile pointer saturation is 96.7% (Top-5 tile mass 17.7%, spread σ=3.66t) while Action Type saturation is 88.8%.
+  - *Mathematical Root Cause*: Current spatial breach attraction (`th_threat_weight=8.6`, `breach_prior_weight=10.6`) and FiLM conditioning scale (`film_cond_scale=0.8`) allow troop drops to spread too widely along the border rather than concentrating on the shortest breach vector to TH18.
+- **[INFO • `hyperparameters`] Critic Baseline Lag & PPO Trust-Region Plateau**
+  - *Quantitative Evidence*: Critic calibration gap |V(s₀)−R̄| = 33.12 pts, Explained Variance = 75.5%, Approx KL = 0.0181 (Slope +17.27%/100ep, 6 eps since peak).
+  - *Mathematical Root Cause*: As policy returns shift into higher destruction regimes, the Critic value head lags behind the new return distribution, increasing GAE advantage noise and causing small policy updates to stall.
+
+#### C. Candidate Solutions Proposed & Action Taken
+1. **`[ARCHITECTURE]` U-Net FiLM Conditioning & TH18 Spatial Breach Attraction Amplification** *(✅ SELECTED FOR TESTING)*
+   - *Target Bottleneck*: Spatial Breach Focus & Factorized Head Conditioning Imbalance
+   - *Rationale*: Increases the U-Net decoder's FiLM multiplicative conditioning scale (`film_cond_scale`), strengthens the 15×15 cascaded Town Hall 18 breach attraction field (`th_threat_weight`, `breach_prior_weight`) and mid-battle spell combat focus (`spell_combat_prior_weight`), and tightens spatial tile entropy regularization so troops funnel into a concentrated breach corridor.
+   - *Exact Parameter Diff*: `arch_config.th_threat_weight: 8.6 → 9.5; arch_config.breach_prior_weight: 10.6 → 11.5; arch_config.spell_combat_prior_weight: 8.3 → 9.1; arch_config.film_cond_scale: 0.8 → 0.85; arch_config.tile_logit_scale: 2.4 → 2.6; arch_config.reg_ent_tile_weight: 0.1 → 0.08; arch_config.reg_ent_type_weight: 2.4 → 2.6`
+   - *Verification Criterion*: Increase Top-5 Tile Probability Mass %, reduce perimeter scatter σ, and improve 2★+ TH18 breach rate.
+2. **`[HYPERPARAMETERS]` Critic Calibration Acceleration, Trust-Region Fine-Tuning & Round-Robin Sampling** *(✅ SELECTED FOR TESTING)*
+   - *Target Bottleneck*: Critic Baseline Lag & PPO Trust-Region Plateau
+   - *Rationale*: Refines actor learning rate for fine-grained late-stage convergence while boosting `critic_lr_mult` and `vf_coef` to eliminate V(s₀) calibration lag, and enforces `round_robin` village sampling so every PPO batch receives equal gradient weight from the hardest TH18 layout.
+   - *Exact Parameter Diff*: `hyperparams.lr: 0.000217 → 0.000184; hyperparams.critic_lr_mult: 3.8 → 4.0; hyperparams.vf_coef: 0.7 → 0.75; hyperparams.ent_coef: 0.0135 → 0.0128`
+   - *Verification Criterion*: Reduce inter-village destruction gap, improve Critic Explained Variance, and resume positive destruction slope.
+3. **`[CODE_AGENT]` OpenCode Argon 4 Medium Surgical Code Upgrade (Spatial Prior & Reward Shaping)** 
+   - *Target Bottleneck*: 2★ → 3★ Back-End Cleanup Plateau
+   - *Rationale*: Invokes the OpenCode `google-vertex/gemini-4-argon#medium` coding agent directly on `python/coc_rl/networks.py` and `python/coc_rl/ppo.py` to refine the spatial breach/spell prior and reward shaping weights while combining synergistic architecture, reward, and critic calibration parameters.
+   - *Exact Parameter Diff*: `arch_config.th_threat_weight: 8.6 → 9.4; arch_config.breach_prior_weight: 10.6 → 11.0; reward_config.th_bonus: 21.0 → 20.0; reward_config.triple_wipe_bonus: 14.0 → 12.0`
+   - *Verification Criterion*: Simultaneously lift recent 50-ep Destruction %, 2★+ TH18 rate, and worst-village performance via code + config synergy.
+4. **`[REWARD_FUNCTION]` High-Destruction Milestone & Core HP Shaping Boost** 
+   - *Target Bottleneck*: 2★ → 3★ Back-End Cleanup Plateau
+   - *Rationale*: Adds explicit progressive milestone bonuses at ≥75% (+4.5 pts) and ≥90% (+6.0 pts) destruction plus a +8.0 pt 3★ wipe bonus and elevated Core HP & TH18 takedown weights so GAE advantages strongly reward pushing through the TH18 core into back-end cleanup.
+   - *Exact Parameter Diff*: `reward_config.th_bonus: 21.0 → 22.0; reward_config.damage_weight: 20.0 → 22.0; reward_config.funnel_weight: 0.14 → 0.16`
+   - *Verification Criterion*: Improve recent 50-ep Mean Destruction % by ≥ +0.5% or increase 2★+ TH18 / 3★ Triple conversion rate.
+
+#### D. Post-Test Verification Results
+- **Status**: `TESTING IN PROGRESS` — Awaiting completion of verification episode window / next 10-minute cycle check.
+---
+
+### 🔄 Cycle #9 — Episode `15,528` (`2026-10-31 17:36:05`)
+
+- **Trigger**: `scheduled_10m` • **Diagnostic Engine**: `google-vertex/gemini-4-argon#medium`
+- **Health Verdict**: **`PLATEAUED` (`66/100`)** — Policy has plateaued at 79.58% mean destruction (28.0% 3★ rate, -1.012%/100ep slope) due to a 28.4% inter-village gap on Offset Diamond (63.3%) and a -32.43 pt critic V(s₀) calibration lag.
+- **Progression Summary**: At episode 15,528, the policy reliably secures 1★ (100.0%) and 2★ TH18 takedowns (94.0%), but converts only 29.8% of 2★ runs into 3★ triples (28.0% overall 3★ rate, 10.0% near-miss 85–99% rate) with negative recent slopes (-1.012% destruction/100ep, -0.559 reward/100ep). While Anti-Fireball Wide Spread reaches 91.7% destruction (46.8% 3★), Offset Diamond (Hot Candle) lags at 63.3% (10.9% 3★), compounded by 74.0% KL saturation (approx KL 0.0253) and a -32.43 pt V(s₀) calibration gap (43.81 vs 76.24 mean return).
+
+#### A. Mandatory Pre-Change Baseline Snapshot (`snapshot_cycle_009_1793464565`)
+*Documented at `2026-10-31 17:36:05` on commit `945b7ba` (Checkpoint: `thrower_healer_totem_smash_ep15528_100pct_3star.pt`, Episode `15,528`) BEFORE applying any modification:*
+
+1. **Pre-Change Network Architecture (`CoCActorCritic` v`3.0-UNet`)**:
+   - **Backbone & Dimensions**: `in_channels=59`, `base_ch=32`, `spatial_dim=32`, `embed_dim=256`, `head_hidden_dim=128` (`2,480,440` trainable params)
+   - **Spatial Conditioning & Breach Field**: `th_threat_weight=8.6`, `defense_threat_weight=1.8`, `breach_prior_weight=10.6`, `spell_combat_prior_weight=8.3`, `film_cond_scale=0.8`, `tile_logit_scale=2.4`
+   - **Head Logit Temperatures & Per-Head Entropy Weights**: `logit_temp=(type:1.4, idx:1.6, frac:1.4)`, `reg_ent_weights=(type:2.4, idx:2.2, frac:2.2, tile:0.1)`
+2. **Pre-Change Reward Shaping Formulation**:
+   - **Formula**: `R_t = 0.35·Δ%destr + 20.0·ΔHPratio + 12.0·Δstars + 21.0·I(TH18) + 0.14·C_funnel + 8.0·I(%≥75) + 10.0·I(%≥90) + 14.0·I(3★) - 0.05·I(invalid)`
+   - **Weights**: `destr_weight=0.35`, `star_weight=12.0`, `th_bonus=21.0`, `damage_weight=20.0`, `funnel_weight=0.14`, `high_pct_milestone_75=8.0`, `high_pct_milestone_90=10.0`, `triple_wipe_bonus=14.0`
+3. **Pre-Change PPO Hyperparameters**:
+   - `lr=0.000217`, `critic_lr_mult=3.8`, `batch_episodes=12`, `minibatch_size=128`, `ppo_epochs=4`, `clip_coef=0.2`, `ent_coef=0.0135`, `vf_coef=0.7`, `target_kl=0.03`, `gamma=0.99`, `gae_lambda=0.95`, `matchup_mode=round_robin`
+4. **Pre-Change Baseline Telemetry**:
+   - `Mean Destr (50-ep)`: **`79.58%`** (Peak Rolling-50: `100.00%`, Slope: `-1.01%/100ep`)
+   - `Star Conversion Funnel`: `1★+ = 100.0%` • `2★+ TH18 = 94.0%` (`P(2★|1★) = 94.0%`) • `3★ Triple = 28.0%` (`P(3★|2★) = 29.8%`)
+   - `Critic & Pacing`: `V(s₀) = 43.81` (Gap `-32.43`), `Explained Var = 89.8%`, `NoOp = 16.1%`, `Top-5 Tile Mass = 16.6%`
+
+#### B. Plateau Root-Cause Diagnosis
+- **[CRITICAL • `architecture`] 28.4% Inter-Village Destruction Gap on Offset Diamond (Hot Candle)**
+  - *Quantitative Evidence*: Worst village Offset Diamond (Hot Candle) averages 63.3% destruction (1.95★, 10.9% 3★) vs Best village Anti-Fireball Wide Spread at 91.7% (2.44★, 46.8% 3★); top-5 tile mass is only 16.62% with spatial spread σ = 4.19.
+  - *Mathematical Root Cause*: Current spatial breach attraction (`th_threat_weight=8.6`, `breach_prior_weight=10.6`) and FiLM conditioning scale (`0.8`) under-concentrate troop and spell placement along narrow entry corridors, causing troops to split around Offset Diamond's asymmetric Hot Candle and Longshot compartments.
+- **[WARNING • `reward_function`] 2★ → 3★ Back-End Conversion Bottleneck**
+  - *Quantitative Evidence*: P(2★|1★) is 94.0%, but P(3★|2★) drops to 29.8% with a 10.0% near-miss rate (85–99% destruction) and a -1.012%/100ep destruction slope.
+  - *Mathematical Root Cause*: Once the Town Hall 18 is destroyed, marginal step-wise damage and funneling reward gradients (`damage_weight=20.0`, `funnel_weight=0.14`) are diluted across the remaining high-HP defenses, weakening late-episode GAE signals needed to sustain core push momentum.
+- **[WARNING • `hyperparameters`] Critic V(s₀) Underestimation Lag & High KL Saturation**
+  - *Quantitative Evidence*: Critic V(s₀) = 43.81 vs mean return R̄ = 76.24 (calibration gap = -32.43 pts), grad norm = 37.20, and KL saturation rate = 74.0% (approx KL = 0.0253 near target_kl = 0.03).
+  - *Mathematical Root Cause*: After cumulative milestone reward increases in prior cycles shifted empirical returns upward to 76.24, the value head baseline lagged behind, inflating positive GAE advantage magnitudes and causing 74% of PPO updates to hit the trust-region KL ceiling.
+
+#### C. Candidate Solutions Proposed & Action Taken
+1. **`[REWARD_FUNCTION]` High-Destruction Milestone & Core HP Shaping Boost** *(✅ SELECTED FOR TESTING)*
+   - *Target Bottleneck*: 2★ → 3★ Back-End Cleanup Plateau
+   - *Rationale*: Adds explicit progressive milestone bonuses at ≥75% (+4.5 pts) and ≥90% (+6.0 pts) destruction plus a +8.0 pt 3★ wipe bonus and elevated Core HP & TH18 takedown weights so GAE advantages strongly reward pushing through the TH18 core into back-end cleanup.
+   - *Exact Parameter Diff*: `reward_config.th_bonus: 21.0 → 22.0; reward_config.damage_weight: 20.0 → 22.0; reward_config.funnel_weight: 0.14 → 0.16`
+   - *Verification Criterion*: Improve recent 50-ep Mean Destruction % by ≥ +0.5% or increase 2★+ TH18 / 3★ Triple conversion rate.
+2. **`[ARCHITECTURE]` U-Net FiLM Conditioning & TH18 Spatial Breach Attraction Amplification** *(✅ SELECTED FOR TESTING)*
+   - *Target Bottleneck*: Spatial Breach Focus & Factorized Head Conditioning Imbalance
+   - *Rationale*: Increases the U-Net decoder's FiLM multiplicative conditioning scale (`film_cond_scale`), strengthens the 15×15 cascaded Town Hall 18 breach attraction field (`th_threat_weight`, `breach_prior_weight`) and mid-battle spell combat focus (`spell_combat_prior_weight`), and tightens spatial tile entropy regularization so troops funnel into a concentrated breach corridor.
+   - *Exact Parameter Diff*: `arch_config.th_threat_weight: 8.6 → 9.5; arch_config.breach_prior_weight: 10.6 → 11.5; arch_config.spell_combat_prior_weight: 8.3 → 9.1; arch_config.film_cond_scale: 0.8 → 0.85; arch_config.tile_logit_scale: 2.4 → 2.6; arch_config.reg_ent_tile_weight: 0.1 → 0.08; arch_config.reg_ent_type_weight: 2.4 → 2.6`
+   - *Verification Criterion*: Increase Top-5 Tile Probability Mass %, reduce perimeter scatter σ, and improve 2★+ TH18 breach rate.
+3. **`[HYPERPARAMETERS]` Critic Calibration Acceleration, Trust-Region Fine-Tuning & Round-Robin Sampling** *(✅ SELECTED FOR TESTING)*
+   - *Target Bottleneck*: High Cross-Village Performance Gap (28.4% Spread)
+   - *Rationale*: Refines actor learning rate for fine-grained late-stage convergence while boosting `critic_lr_mult` and `vf_coef` to eliminate V(s₀) calibration lag, and enforces `round_robin` village sampling so every PPO batch receives equal gradient weight from the hardest TH18 layout.
+   - *Exact Parameter Diff*: `hyperparams.lr: 0.000217 → 0.000184; hyperparams.critic_lr_mult: 3.8 → 4.0; hyperparams.vf_coef: 0.7 → 0.75; hyperparams.ent_coef: 0.0135 → 0.0128`
+   - *Verification Criterion*: Reduce inter-village destruction gap, improve Critic Explained Variance, and resume positive destruction slope.
+4. **`[CODE_AGENT]` OpenCode Argon 4 Medium Surgical Code Upgrade (Spatial Prior & Reward Shaping)** 
+   - *Target Bottleneck*: 2★ → 3★ Back-End Cleanup Plateau
+   - *Rationale*: Invokes the OpenCode `google-vertex/gemini-4-argon#medium` coding agent directly on `python/coc_rl/networks.py` and `python/coc_rl/ppo.py` to refine the spatial breach/spell prior and reward shaping weights while combining synergistic architecture, reward, and critic calibration parameters.
+   - *Exact Parameter Diff*: `arch_config.th_threat_weight: 8.6 → 9.4; arch_config.breach_prior_weight: 10.6 → 11.0; reward_config.th_bonus: 21.0 → 20.0; reward_config.triple_wipe_bonus: 14.0 → 12.0`
+   - *Verification Criterion*: Simultaneously lift recent 50-ep Destruction %, 2★+ TH18 rate, and worst-village performance via code + config synergy.
+
+#### D. Post-Test Verification Results (`NOT_SOLVED_ROLLED_BACK` • `rolled_back_to_baseline`)
+- **Verified At**: `2026-10-31 17:38:09` • **Episodes Tested**: `Ep 15,528 → Ep 15,672` (`+144` episodes)
+- **Target Problem Solved**: **`NO ❌`**
+- **Empirical Takeaway**: Tested `Multi-Solution Bundle (3): High-Destruction Milestone & Core HP Shaping Boost + U-Net FiLM Conditioning & TH18 Spatial Breach Attraction Amplification + Critic Calibration Acceleration, Trust-Region Fine-Tuning & Round-Robin Sampling` over +144 episodes (Ep 15,528 → 15,672). Mean destruction shifted by -4.94% (79.6% → 74.6%) and 2★+ TH18 rate by -12.0%. Rolled back to the pre-change baseline configuration and recorded this parameter combination to avoid in future cycles.
+
+| Verification Metric | Pre-Change Baseline | Post-Test Result | Verified Delta ($\Delta$) |
+| :--- | :---: | :---: | :---: |
+| **Recent 50-Ep Mean Destruction %** | `79.58%` | **`74.64%`** | **`-4.94%`** |
+| **2★+ Town Hall 18 Takedown Rate** | `94.0%` | **`82.0%`** | **`-12.0%`** |
+| **3★ Triple Wipe Rate** | `28.0%` | **`20.0%`** | **`-8.0%`** |
+| **Mean Episode Return ($R_50$)** | `76.24 pts` | **`93.19 pts`** | **`+16.95 pts`** |
+| **Destruction Slope (per 100 ep)** | `-1.01%` | **`+17.27%`** | **`+18.28%`** |
+| **Worst Village Destruction %** | `63.3%` | **`67.4%`** | **`+4.1%`** |
+| **Critic Explained Variance** | `89.8%` | **`75.5%`** | **`-14.3%`** |
 ---
 
 ### 🔄 Cycle #8 — Episode `15,192` (`2026-10-31 17:25:46`)

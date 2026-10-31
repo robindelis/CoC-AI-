@@ -265,12 +265,16 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
           <div className="rl-loop-title-group">
             <button
               type="button"
-              className={`clash-btn ${enabled ? 'green' : 'gold'}`}
+              className={`clash-btn ${
+                enabled && isTraining ? 'green' : 'gold'
+              }`}
               disabled={isBusy}
               onClick={() => void handleToggleLoop()}
             >
               {enabled
-                ? `🟢 10m Loop Active (${formatCountdown(countdownSec)})`
+                ? isTraining
+                  ? `🟢 10m Loop Active (${formatCountdown(countdownSec)})`
+                  : `⏸ 10m Loop Armed (Paused — Start Training • ${formatCountdown(countdownSec)})`
                 : '▶️ Enable 10m Auto-Loop'}
             </button>
 
