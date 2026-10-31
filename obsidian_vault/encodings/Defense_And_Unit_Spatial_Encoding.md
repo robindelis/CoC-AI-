@@ -8,12 +8,13 @@ tags:
   - non-offensive-buildings
   - army-context
   - coc-rl
-updated: 2026-10-30
+updated: 2026-10-31
 ---
 
 # 🛡️ 59-Channel Dedicated Spatial Grid (`Ch 0..58`) & Live Available Inventory (`64-D`)
 
-Back to [[00_Index_MOC|Vault Index (MOC)]] • Used in [[architectures/v3.0_31Ch_PerDefense_SingleArmy_ActorCritic|v3.0 Architecture]] • Decisions: [[decisions/Architecture_Decisions_And_System_Memory|System Memory & ADR-008]]
+Back to [[00_Index_MOC|Vault Index (MOC)]] • Used in [[architectures/v3.0_59Ch_UNet_SingleArmy_ActorCritic|v3.0 U-Net Architecture]] • Decisions: [[decisions/Architecture_Decisions_And_System_Memory|System Memory, ADR-008 & ADR-011]]
+
 
 ---
 

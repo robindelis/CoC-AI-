@@ -1,7 +1,7 @@
 {
-  "last_synced_commit": "91d24ed9c525b1dbf7893aad01546566f3e1af08",
-  "last_synced_commit_short": "91d24ed",
-  "last_synced_at": "2026-10-30T22:22:00.396795+00:00",
-  "last_synced_subject": "fix(vault): detect code drift based on relevant code file changes",
+  "last_synced_commit": "dd3852954646c255969494876288424bc5cd30ad",
+  "last_synced_commit_short": "dd38529",
+  "last_synced_at": "2026-10-31T11:12:50.666507+00:00",
+  "last_synced_subject": "docs(vault): sync long-term memory for v3.0 U-Net architecture & model-visualizer agent (ADR-011, ADR-012)",
   "branch": "main"
 }

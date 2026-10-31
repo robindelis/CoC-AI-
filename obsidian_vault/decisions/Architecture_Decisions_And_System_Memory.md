@@ -329,3 +329,50 @@ Defined in `CoCActorCritic` (`python/coc_rl/networks.py`), the policy parameteri
   - **Zero-Token No-Op Exits**: If no new commits or code changes occurred since the last sync, `scripts/vault_diff.py` exits immediately in <0.05 seconds with 0 tokens wasted.
   - **90%+ Reduction in Agent Context & Latency**: The agent only parses the exact modified lines (typically 20–200 lines) instead of full 6,500-line engine files.
   - **Deterministic Audit Trail**: Connects the Obsidian long-term memory ledger directly to the Git version control commit graph.
+
+### ADR-011: Multi-Scale U-Net Contracting-Expansive Spatial Backbone with High-Resolution Skip Connections & Branched Global Tower
+- **Date**: 2026-10-31
+- **Status**: Accepted (Supersedes the 3-block Dilated ResNet from ADR-008)
+- **Context**:
+  1. The 3-block Dilated ResNet (`DilatedResBlock` with dilations $d=1, 2, 4$ on 50×50 features) preserved spatial resolution but suffered from two major architectural limitations:
+     - **Fixed Receptive Field Ceiling**: Cascaded dilations expanded the receptive field to ~39×39 tiles, which was still short of full 50×50 board coverage without severe gridding artifacts (checkerboard receptive field holes).
+     - **Spatial-Global Decoupling**: The global tower downsampled directly from the final dilated 50×50 tensor, discarding multi-scale hierarchical features learned across intermediate spatial contexts.
+  2. For high-precision troop and spell placement on a 50×50 grid, the network needs both macro-scale base understanding (global village core, pathing funnels, defending hero locations) and pixel-perfect micro-scale positioning (1-tile gap openings in walls, exact defense range boundaries, trap proximity).
+- **Decision**:
+  1. Replace the Dilated ResNet backbone with a **Multi-Scale U-Net Contracting-Expansive Spatial Backbone (`UNetConvBlock` & `UNetUpBlock`)**:
+     - **Stage 1 (Contracting / Downsampling Pathway)**:
+       - `enc1`: `UNetConvBlock(59 -> 32)` at full $50 \times 50$ resolution.
+       - `pool1`: `MaxPool2d(2, 2)` -> $25 \times 25$.
+       - `enc2`: `UNetConvBlock(32 -> 64)` at $25 \times 25$ resolution.
+       - `pool2`: `MaxPool2d(2, 2)` -> $12 \times 12$.
+       - `enc3`: `UNetConvBlock(64 -> 128)` at $12 \times 12$ resolution.
+       - `pool3`: `MaxPool2d(2, 2)` -> $6 \times 6$.
+       - `bottleneck`: `UNetConvBlock(128 -> 256)` at $6 \times 6$ resolution (encompassing base-wide context).
+     - **Stage 2 (Expansive / Upsampling Pathway)**:
+       - `up3`: `UNetUpBlock(256 -> 128)` upsamples $6 \times 6 \to 12 \times 12$, concatenated with skip connection from `enc3` (128 channels) and processed via `UNetConvBlock(256 -> 128)`.
+       - **Global Tower Branching**: Strategic choices (`slot_type`, `slot_idx`, `deploy_fraction`, and value critic) branch directly off the partially upscaled $12 \times 12$ feature map `d3` via `Conv2d(128, 128, stride=2, padding=1) -> GroupNorm(8) -> SiLU -> AdaptiveAvgPool2d((1, 1)) -> Linear(128, 256) -> LayerNorm -> SiLU`, fusing high-level abstract base representations without wasting parameters on 50×50 dense projections.
+       - `up2`: `UNetUpBlock(128 -> 64)` upsamples $12 \times 12 \to 25 \times 25$, concatenated with skip connection from `enc2` (64 channels) and processed via `UNetConvBlock(128 -> 64)`.
+       - `up1`: `UNetUpBlock(64 -> 32)` upsamples $25 \times 25 \to 50 \times 50$, concatenated with skip connection from `enc1` (32 channels) and processed via `UNetConvBlock(64 -> 32)`.
+  2. **High-Resolution Spatial Tile Pointer Head**:
+     - The spatial features `spatial_features` at $50 \times 50 \times 32$ retain exact 1-tile details via the `up1` skip connection.
+     - FiLM conditioning: projects the conditioned categorical choices (`global_emb + type_onehot + idx_onehot`, 273-D) via `tile_cond_proj: Linear(273, 32)` and adds it channel-wise to `spatial_features`.
+     - Logit generation: `Conv2d(32, 32, 3, padding=1) -> SiLU -> Conv2d(32, 1, 1)` producing fine-grained $(B, 2500)$ deployment distribution over the 50×50 battlefield.
+  3. Total network parameter count: 2,480,440 weights (100% trainable).
+- **Consequences**:
+  - Receptive field encompasses the entire 50×50 grid through the $6 \times 6$ bottleneck.
+  - Skip connections preserve pixel-level wall breaches and deployment halos, eliminating spatial blurring in tile selection.
+  - Reconciled across production RL (`python/coc_rl/networks.py`), RL educational curriculum (`learning/rl_labs/reference_solution.py`, `student_lab.py`), and interactive web tools (`web/src/ai/NetworkBuilderPanel.tsx`).
+
+### ADR-012: Specialist Model Visualizer Agent & Visual Architecture Invariant Policy
+- **Date**: 2026-10-31
+- **Status**: Accepted
+- **Context**:
+  - The neural architecture has grown in complexity (U-Net multi-scale contracting-expansive paths, dual-branch routing, factorized autoregressive heads, MAC/FLOP calculations, layer telemetry, and SVG/PNG computation graphs).
+  - Manual maintenance of visual architecture artifacts (`docs/architecture/`, `python/coc_rl/visualize.py`, `python/visualize_model.py`, and Web AI Studio visualizers) led to drift between the running PyTorch model graph and visual documentation.
+- **Decision**:
+  - Register a dedicated, persistent specialist agent `model-visualizer` (`.agents/agents/model-visualizer/agent.md`, Gemini 3.8 Flash Medium) in the Antigravity agent catalog.
+  - Enforce a strict architectural policy in `AGENTS.md`: all modifications, layer telemetry updates, receptive field calculations, and computation graph generation (`torchview` SVGs/PNGs and `docs/architecture/manifest.json`) are delegated exclusively to `model-visualizer`.
+- **Consequences**:
+  - Automated synchronization between PyTorch module definitions and visual graph artifacts.
+  - Strict separation of concerns between training/simulation engineering, long-term memory governance (`vault-updater`), and visual architecture inspection (`model-visualizer`).
+

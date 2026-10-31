@@ -100,3 +100,4 @@ Thumbs.db
 # --- AI Agents / Scratch Workspaces ---
 .hermes/
 .gemini/
+.logs/
