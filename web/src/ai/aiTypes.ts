@@ -510,7 +510,13 @@ export interface AIConfigDiffItem {
 export interface AICandidateSolution {
   solution_id: string;
   rank: number;
-  category: 'architecture' | 'reward_function' | 'hyperparameters' | 'combined' | string;
+  category:
+    | 'architecture'
+    | 'reward_function'
+    | 'hyperparameters'
+    | 'combined'
+    | 'code_agent'
+    | string;
   title: string;
   target_problem: string;
   rationale: string;
@@ -523,6 +529,23 @@ export interface AICandidateSolution {
   diff_summary?: string[];
   expected_verification_criteria: string;
   applied_at?: string;
+  is_recommended?: boolean;
+  selected_solution_ids?: string[];
+  requires_code_edit?: boolean;
+  target_files?: string[];
+  code_edit_instructions?: string;
+}
+
+export interface AICodeAgentExecution {
+  executed: boolean;
+  success: boolean;
+  model: string;
+  target_files: string[];
+  instructions: string;
+  agent_summary: string;
+  git_diff?: string;
+  error?: string | null;
+  duration_sec: number;
 }
 
 export interface AICompactBaselineMetrics {
@@ -649,7 +672,10 @@ export interface AIRecursiveLoopCycle {
   };
   pre_change_snapshot: AIPreChangeSnapshot;
   candidate_solutions: AICandidateSolution[];
+  recommended_solution_ids?: string[];
+  selected_solutions?: AICandidateSolution[];
   selected_solution: AICandidateSolution | null;
+  code_agent_execution?: AICodeAgentExecution | null;
   verification_result: AISolutionVerificationResult | null;
 }
 

@@ -3,10 +3,10 @@ title: "v3.0 — 50-Channel Dedicated CNN & Single-Army Specialist Actor-Critic"
 model_id: "v3_per_defense_31ch"
 arch_version: "3.0"
 status: "active"
-total_episodes: 9132
+total_episodes: 15264
 best_pct: 100
 best_stars: 3
-updated_at: "2026-10-31 15:00:39"
+updated_at: "2026-10-31 17:26:22"
 tags:
   - coc-rl
   - ppo
@@ -26,9 +26,9 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 - **Architecture Version**: `v3.0` (`1,375,288` Trainable Parameters)
 - **Dedicated Army Composition**: **`TH18 Thrower + Healer + Totem Smash (Meta)`** (Exported in `.pt` checkpoint metadata for testing)
 - **Active Status**: **ACTIVE**
-- **Total Episodes Trained**: **`9,132`** (Cumulative across **15** training sessions)
-- **Peak Combat Performance**: **`100%` (3★)** (Best dense return: `+112.1146957790479`)
-- **Latest Checkpoint**: `trained_models/thrower_healer_totem_smash_ep9132_100pct_3star.pt`
+- **Total Episodes Trained**: **`15,264`** (Cumulative across **16** training sessions)
+- **Peak Combat Performance**: **`100%` (3★)** (Best dense return: `+139.8900466511647`)
+- **Latest Checkpoint**: `trained_models/thrower_healer_totem_smash_ep15264_100pct_3star.pt`
 
 ### 🔄 Resumed Training Sessions History
 | Session # | Start Ep | End Ep | Episodes Added | Checkpoint File | Peak % | Stars | Notes |
@@ -48,6 +48,7 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 | **#13** | `0` | `2` | `+2` | `thrower_healer_totem_smash_ep2_53pct_2star.pt` | `0%` | `0★` | Initial training (2 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
 | **#14** | `9,084` | `9,108` | `+24` | `thrower_healer_totem_smash_ep9108_100pct_3star.pt` | `100%` | `3★` | Resumed training (+24 ep from thrower_healer_totem_smash_ep9084_100pct_3star.pt) on TH18 Thrower + Healer + Totem Smash (Meta) |
 | **#15** | `9,108` | `9,132` | `+24` | `thrower_healer_totem_smash_ep9132_100pct_3star.pt` | `100%` | `3★` | Resumed training (+24 ep from thrower_healer_totem_smash_ep9108_100pct_3star.pt) on TH18 Thrower + Healer + Totem Smash (Meta) |
+| **#16** | `15,240` | `15,264` | `+24` | `thrower_healer_totem_smash_ep15264_100pct_3star.pt` | `100%` | `3★` | Resumed training (+24 ep from thrower_healer_totem_smash_ep15192_100pct_3star.pt) on TH18 Thrower + Healer + Totem Smash (Meta) |
 
 ---
 
@@ -156,8 +157,8 @@ $$R_t = 0.35 \cdot \Delta \%_{\text{destr}} + 15.0 \cdot \Delta \text{HP}_{\text
 
 | Attack Composition | **Central Box** | **Offset Diamond** | **Anti-Hydra Ring** | **Anti-Fireball** | **Compact Teaser** | **Avg Destruction** | **3★ Rate** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **TH18 Thrower + Healer + Totem Smash** | `52% (2★)` | `72% (2★)` | `91% (2★)` | `97% (2★)` | `79% (2★)` | **78.2%** | **0.0%** |
-| **Base Defense Rate (Avg)** | **52.0% (2.0★)** | **72.0% (2.0★)** | **91.0% (2.0★)** | **97.0% (2.0★)** | **79.0% (2.0★)** | **Overall: 78.2%** | — |
+| **TH18 Thrower + Healer + Totem Smash** | `62% (2★)` | `100% (3★)` | `100% (3★)` | `45% (1★)` | `100% (3★)` | **81.4%** | **60.0%** |
+| **Base Defense Rate (Avg)** | **62.0% (2.0★)** | **100.0% (3.0★)** | **100.0% (3.0★)** | **45.0% (1.0★)** | **100.0% (3.0★)** | **Overall: 81.4%** | — |
 
 ---
 
@@ -179,7 +180,7 @@ See [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Tel
 | :--- | :--- | :--- |
 | **Trained Army Composition** | `TH18 Thrower + Healer + Totem Smash (Meta)` | Single dedicated army composition per model |
 | **Default Checkpoint Pattern** | `thrower_healer_totem_smash_ep{N}_{pct}pct_{stars}star.pt` | Army-prefixed checkpoint naming convention |
-| **Learning Rate (`lr`)** | `0.0003` | Adam optimizer learning rate (Critic `2.5x`) |
+| **Learning Rate (`lr`)** | `0.000217` | Adam optimizer learning rate (Critic `2.5x`) |
 | **Batch Episodes** | `12` | Trajectories collected per PPO update |
 | **Minibatch Size** | `128` | SGD transition batch size |
 | **PPO Epochs** | `4` | Optimization passes over collected rollout |
@@ -188,4 +189,4 @@ See [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Tel
 | **GAE ($\lambda$)** | `0.95` | Generalized Advantage Estimation smoothing |
 | **Clip Coefficient** | `0.2` | PPO surrogate objective clipping range |
 | **Entropy Coefficient** | `0.015` | Normalized per-head exploration policy entropy bonus |
-| **Total Training Episodes** | **`9,132`** | **Cumulative episodes across all resumed sessions** |
+| **Total Training Episodes** | **`15,264`** | **Cumulative episodes across all resumed sessions** |

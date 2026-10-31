@@ -250,11 +250,11 @@ DEFAULT_ARCH_CONFIG: Dict[str, Any] = {
     "logit_temp_idx": 1.6,
     "logit_temp_frac": 1.4,
     "tile_logit_scale": 2.2,
-    "th_threat_weight": 6.0,
+    "th_threat_weight": 8.6,
     "defense_threat_weight": 1.8,
-    "breach_prior_weight": 8.0,
+    "breach_prior_weight": 10.6,
     "spell_combat_prior_weight": 7.5,
-    "film_cond_scale": 0.5,
+    "film_cond_scale": 0.8,
     "reg_ent_type_weight": 2.2,
     "reg_ent_idx_weight": 2.2,
     "reg_ent_frac_weight": 2.2,
@@ -318,11 +318,11 @@ class CoCActorCritic(nn.Module):
         self.logit_temp_idx: float = float(cfg.get("logit_temp_idx", 1.6))
         self.logit_temp_frac: float = float(cfg.get("logit_temp_frac", 1.4))
         self.tile_logit_scale: float = float(cfg.get("tile_logit_scale", 2.2))
-        self.th_threat_weight: float = float(cfg.get("th_threat_weight", 6.0))
+        self.th_threat_weight: float = float(cfg.get("th_threat_weight", 8.6))
         self.defense_threat_weight: float = float(cfg.get("defense_threat_weight", 1.8))
-        self.breach_prior_weight: float = float(cfg.get("breach_prior_weight", 8.0))
+        self.breach_prior_weight: float = float(cfg.get("breach_prior_weight", 10.6))
         self.spell_combat_prior_weight: float = float(cfg.get("spell_combat_prior_weight", 7.5))
-        self.film_cond_scale: float = float(cfg.get("film_cond_scale", 0.5))
+        self.film_cond_scale: float = float(cfg.get("film_cond_scale", 0.8))
         self.reg_ent_type_weight: float = float(cfg.get("reg_ent_type_weight", 2.2))
         self.reg_ent_idx_weight: float = float(cfg.get("reg_ent_idx_weight", 2.2))
         self.reg_ent_frac_weight: float = float(cfg.get("reg_ent_frac_weight", 2.2))

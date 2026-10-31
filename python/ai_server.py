@@ -30,6 +30,7 @@ from coc_rl import (
     decompress_training_history,
     diagnose_and_propose_solutions,
     ensure_architecture_diagrams,
+    execute_opencode_argon_code_edit,
     format_reward_formula,
     gather_training_telemetry,
     generate_ai_training_feedback,
@@ -37,6 +38,7 @@ from coc_rl import (
     load_active_experiment_config,
     load_cached_ai_feedback,
     load_recursive_loop_state,
+    merge_selected_solutions,
     run_recursive_improvement_cycle,
     save_active_experiment_config,
     save_recursive_loop_state,
@@ -169,6 +171,8 @@ class LoopConfigureRequest(BaseModel):
 
 class LoopRunCycleRequest(BaseModel):
     selected_solution_id: Optional[str] = None
+    selected_solution_ids: Optional[List[str]] = None
+    run_code_agent: bool = True
     auto_test: bool = True
     use_llm: bool = True
     trigger: str = "manual_trigger"
@@ -176,7 +180,9 @@ class LoopRunCycleRequest(BaseModel):
 
 class LoopApplySolutionRequest(BaseModel):
     cycle_id: Optional[int] = None
-    solution_id: str
+    solution_id: Optional[str] = None
+    solution_ids: Optional[List[str]] = None
+    run_code_agent: bool = True
     auto_test: bool = True
     test_episodes: Optional[int] = None
 
@@ -611,6 +617,8 @@ def trigger_recursive_loop_cycle(req: LoopRunCycleRequest) -> Dict[str, Any]:
             device=DEVICE,
             trigger=req.trigger or "manual_trigger",
             selected_solution_id=req.selected_solution_id,
+            selected_solution_ids=req.selected_solution_ids,
+            run_code_agent=req.run_code_agent,
             use_llm=req.use_llm,
             start_training_callback=(
                 (lambda cfg: _launch_verification_training(cfg))
@@ -627,11 +635,13 @@ def trigger_recursive_loop_cycle(req: LoopRunCycleRequest) -> Dict[str, Any]:
 @app.post("/api/ai/loop/apply-solution")
 def apply_specific_loop_solution(req: LoopApplySolutionRequest) -> Dict[str, Any]:
     """
-    Applies a specific candidate solution from the specified or latest cycle
-    (ensuring the Pre-Change Baseline Snapshot is documented first), updates
-    `active_experiment_config.json`, logs to the Obsidian Vault, and optionally
-    launches a verification training run.
+    Applies 1 or MORE candidate solutions from the specified or latest cycle
+    (ensuring the Pre-Change Baseline Snapshot is documented first), merges
+    their config patches, invokes the OpenCode `google-vertex/gemini-4-argon#medium`
+    code agent if any selected solution requires code edits, logs to the Obsidian
+    Vault, and optionally launches a verification training run.
     """
+    req_ids = list(req.solution_ids or ([] if not req.solution_id else [req.solution_id]))
     cycles = list(_loop_state.get("cycles") or [])
     if not cycles:
         run_recursive_improvement_cycle(
@@ -639,7 +649,8 @@ def apply_specific_loop_solution(req: LoopApplySolutionRequest) -> Dict[str, Any
             training_state=_training_state,
             device=DEVICE,
             trigger="manual_trigger",
-            selected_solution_id=req.solution_id,
+            selected_solution_ids=req_ids or None,
+            run_code_agent=req.run_code_agent,
             use_llm=False,
             start_training_callback=(
                 (lambda cfg: _launch_verification_training(cfg, req.test_episodes))
@@ -656,38 +667,54 @@ def apply_specific_loop_solution(req: LoopApplySolutionRequest) -> Dict[str, Any
             target_cycle = found
 
     candidates = target_cycle.get("candidate_solutions", [])
-    chosen = next(
-        (c for c in candidates if c.get("solution_id") == req.solution_id),
-        candidates[0] if candidates else None,
-    )
-    if not chosen:
+    id_set = set(req_ids)
+    chosen_list = [c for c in candidates if c.get("solution_id") in id_set]
+    if not chosen_list and candidates:
+        chosen_list = [candidates[0]]
+    if not chosen_list:
         return _get_loop_status_payload()
+
+    cycle_num = int(target_cycle.get("cycle_id", len(cycles)))
 
     # Ensure pre-change baseline snapshot is documented before applying change
     active_config = load_active_experiment_config()
     telemetry = gather_training_telemetry(_training_state, DEVICE)
     pre_snap = capture_pre_change_snapshot(
-        cycle_id=target_cycle.get("cycle_id", len(cycles)),
+        cycle_id=cycle_num,
         telemetry=telemetry,
         active_config=active_config,
     )
     target_cycle["pre_change_snapshot"] = pre_snap
 
-    new_cfg, applied_diffs = apply_config_patch(
-        active_config, chosen.get("config_patch", {})
+    new_cfg, _, composite_sol = merge_selected_solutions(
+        active_config, chosen_list
     )
     active_config = save_active_experiment_config(new_cfg)
-    chosen["applied_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    chosen["diffs"] = applied_diffs
-    target_cycle["selected_solution"] = chosen
+    composite_sol["applied_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    target_cycle["selected_solutions"] = chosen_list
+    target_cycle["selected_solution"] = composite_sol
     target_cycle["verification_result"] = None
+
+    if (
+        req.run_code_agent
+        and composite_sol.get("requires_code_edit")
+        and composite_sol.get("code_edit_instructions")
+    ):
+        target_cycle["code_agent_execution"] = execute_opencode_argon_code_edit(
+            instructions=str(composite_sol["code_edit_instructions"]),
+            target_files=list(
+                composite_sol.get("target_files")
+                or ["python/coc_rl/networks.py", "python/coc_rl/ppo.py"]
+            ),
+            cycle_id=cycle_num,
+        )
 
     test_eps = int(req.test_episodes or _loop_state.get("test_episodes_per_cycle", 48))
     _loop_state["active_config"] = active_config
     _loop_state["phase"] = "testing_solution"
     _loop_state["active_hypothesis"] = {
-        "cycle_id": target_cycle.get("cycle_id", len(cycles)),
-        "solution": chosen,
+        "cycle_id": cycle_num,
+        "solution": composite_sol,
         "baseline_episode": pre_snap["cumulative_episode"],
         "target_episodes": test_eps,
         "baseline_metrics": pre_snap["baseline_metrics"],

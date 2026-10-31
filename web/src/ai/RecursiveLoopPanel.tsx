@@ -47,6 +47,12 @@ const CATEGORY_COLORS: Record<
     text: '#86efac',
     label: 'COMBINED SYNERGY',
   },
+  code_agent: {
+    bg: 'rgba(249, 115, 22, 0.16)',
+    border: '#f97316',
+    text: '#fdba74',
+    label: 'ARGON 4 CODE AGENT',
+  },
 };
 
 const PIPELINE_STAGES = [
@@ -74,6 +80,8 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
   const [snapshotTab, setSnapshotTab] = useState<
     'arch' | 'reward' | 'hyperparams' | 'telemetry'
   >('arch');
+  const [checkedSolutionIds, setCheckedSolutionIds] = useState<string[]>([]);
+  const [allowCodeAgent, setAllowCodeAgent] = useState<boolean>(true);
   const [isBusy, setIsBusy] = useState<boolean>(false);
 
   const cycles = useMemo(() => loopState?.cycles ?? [], [loopState?.cycles]);
@@ -92,6 +100,28 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
     }
     return cycles[cycles.length - 1];
   }, [cycles, selectedCycleId]);
+
+  useEffect(() => {
+    if (!activeCycle) return;
+    const appliedIds =
+      activeCycle.selected_solution?.selected_solution_ids ??
+      (activeCycle.selected_solutions ?? []).map((s) => s.solution_id) ??
+      (activeCycle.selected_solution?.solution_id
+        ? [activeCycle.selected_solution.solution_id]
+        : []);
+    if (appliedIds.length > 0) {
+      setCheckedSolutionIds(appliedIds);
+      return;
+    }
+    const recIds = activeCycle.recommended_solution_ids ?? [];
+    if (recIds.length > 0) {
+      setCheckedSolutionIds(recIds);
+      return;
+    }
+    if (activeCycle.candidate_solutions.length > 0) {
+      setCheckedSolutionIds([activeCycle.candidate_solutions[0].solution_id]);
+    }
+  }, [activeCycle]);
 
   const enabled = Boolean(loopState?.enabled);
   const intervalSec = loopState?.interval_seconds ?? 600;
@@ -159,6 +189,14 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
     }
   };
 
+  const handleToggleSolutionCheck = (solId: string) => {
+    setCheckedSolutionIds((prev) =>
+      prev.includes(solId)
+        ? prev.filter((id) => id !== solId)
+        : [...prev, solId]
+    );
+  };
+
   const handleApplyCandidate = async (
     cycleId: number,
     sol: AICandidateSolution
@@ -167,7 +205,25 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
     try {
       await applyRecursiveLoopSolution({
         cycle_id: cycleId,
-        solution_id: sol.solution_id,
+        solution_ids: [sol.solution_id],
+        run_code_agent: allowCodeAgent,
+        auto_test: true,
+        test_episodes: testEps,
+      });
+      await onRefreshStatus();
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleApplyCheckedSolutions = async (cycleId: number) => {
+    if (checkedSolutionIds.length === 0) return;
+    setIsBusy(true);
+    try {
+      await applyRecursiveLoopSolution({
+        cycle_id: cycleId,
+        solution_ids: checkedSolutionIds,
+        run_code_agent: allowCodeAgent,
         auto_test: true,
         test_episodes: testEps,
       });
@@ -611,21 +667,58 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
             </div>
           </section>
 
-          {/* COLUMN 3: CANDIDATE SOLUTIONS (ARCH / REWARD / HYPERPARAMS) */}
+          {/* COLUMN 3: CANDIDATE SOLUTIONS (MULTI-SELECT + ARGON 4 CODE AGENT) */}
           <section className="ai-card rl-col-card">
             <div className="ai-card-header">
               <h3>
                 🧪 3. Proposed Solutions ({activeCycle.candidate_solutions.length})
               </h3>
-              <span className="ai-feedback-meta-tag">
-                Select to Snapshot &amp; Test
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <label
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    fontSize: '0.68rem',
+                    color: '#fdba74',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={allowCodeAgent}
+                    onChange={(e) => setAllowCodeAgent(e.target.checked)}
+                  />
+                  🤖 Argon 4 Code Agent
+                </label>
+
+                <button
+                  type="button"
+                  className="clash-btn gold"
+                  style={{ padding: '3px 9px', fontSize: '0.7rem' }}
+                  disabled={isBusy || checkedSolutionIds.length === 0}
+                  onClick={() =>
+                    void handleApplyCheckedSolutions(activeCycle.cycle_id)
+                  }
+                >
+                  🚀 Apply &amp; Test Selected ({checkedSolutionIds.length})
+                </button>
+              </div>
             </div>
 
             <div className="rl-solutions-list">
               {activeCycle.candidate_solutions.map((sol) => {
-                const isSelected =
-                  activeCycle.selected_solution?.solution_id === sol.solution_id;
+                const appliedSet = new Set(
+                  activeCycle.selected_solution?.selected_solution_ids ??
+                    (activeCycle.selected_solutions ?? []).map(
+                      (s) => s.solution_id
+                    ) ??
+                    (activeCycle.selected_solution?.solution_id
+                      ? [activeCycle.selected_solution.solution_id]
+                      : [])
+                );
+                const isSelected = appliedSet.has(sol.solution_id);
+                const isChecked = checkedSolutionIds.includes(sol.solution_id);
                 const catStyle =
                   CATEGORY_COLORS[sol.category] ?? CATEGORY_COLORS.combined;
 
@@ -634,7 +727,11 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
                     key={sol.solution_id}
                     className={`rl-solution-card ${isSelected ? 'selected' : ''}`}
                     style={{
-                      borderColor: isSelected ? '#4ade80' : '#253654',
+                      borderColor: isSelected
+                        ? '#4ade80'
+                        : isChecked
+                        ? '#facc15'
+                        : '#253654',
                     }}
                   >
                     <div className="rl-sol-top">
@@ -646,6 +743,14 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
                           flexWrap: 'wrap',
                         }}
                       >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() =>
+                            handleToggleSolutionCheck(sol.solution_id)
+                          }
+                          style={{ cursor: 'pointer' }}
+                        />
                         <span className="rl-rank-badge">#{sol.rank}</span>
                         <span
                           className="rl-cat-chip"
@@ -657,6 +762,18 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
                         >
                           {catStyle.label}
                         </span>
+                        {sol.requires_code_edit && (
+                          <span
+                            className="rl-cat-chip"
+                            style={{
+                              background: 'rgba(249, 115, 22, 0.18)',
+                              borderColor: '#f97316',
+                              color: '#fdba74',
+                            }}
+                          >
+                            🤖 OpenCode Argon 4
+                          </span>
+                        )}
                         <strong style={{ fontSize: '0.78rem', color: '#f8fafc' }}>
                           {sol.title}
                         </strong>
@@ -670,11 +787,25 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
                           void handleApplyCandidate(activeCycle.cycle_id, sol)
                         }
                       >
-                        {isSelected ? '✓ Applied & Testing' : '🧪 Apply & Test'}
+                        {isSelected ? '✓ Applied' : '🧪 Apply 1'}
                       </button>
                     </div>
 
                     <p className="rl-sol-rationale">{sol.rationale}</p>
+
+                    {sol.requires_code_edit && sol.target_files && (
+                      <div className="rl-diff-pills">
+                        {sol.target_files.map((tf) => (
+                          <code
+                            key={tf}
+                            className="rl-diff-pill"
+                            style={{ borderColor: '#f97316', color: '#fdba74' }}
+                          >
+                            ✏️ {tf}
+                          </code>
+                        ))}
+                      </div>
+                    )}
 
                     <div className="rl-diff-pills">
                       {(sol.diff_summary ?? []).map((dStr, i) => (
@@ -693,6 +824,63 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
             </div>
           </section>
         </div>
+      )}
+
+      {/* OPENCODE ARGON 4 MEDIUM CODE AGENT EXECUTION & GIT DIFF */}
+      {activeCycle?.code_agent_execution?.executed && (
+        <section className="ai-card">
+          <div className="ai-card-header">
+            <h3>
+              🤖 OpenCode Argon 4 Medium Code Agent — Cycle #{activeCycle.cycle_id}
+            </h3>
+            <span
+              className="ai-health-badge"
+              style={{
+                background: activeCycle.code_agent_execution.success
+                  ? 'rgba(34, 197, 94, 0.18)'
+                  : 'rgba(239, 68, 68, 0.18)',
+                borderColor: activeCycle.code_agent_execution.success
+                  ? '#22c55e'
+                  : '#ef4444',
+                color: activeCycle.code_agent_execution.success
+                  ? '#4ade80'
+                  : '#fca5a5',
+              }}
+            >
+              {activeCycle.code_agent_execution.model} •{' '}
+              {activeCycle.code_agent_execution.success
+                ? 'SMOKE TEST PASSED ✅'
+                : 'ROLLED BACK ❌'}{' '}
+              ({activeCycle.code_agent_execution.duration_sec}s)
+            </span>
+          </div>
+
+          <div style={{ fontSize: '0.76rem', color: '#e2e8f0' }}>
+            <strong>Files Edited:</strong>{' '}
+            <code>
+              {activeCycle.code_agent_execution.target_files.join(', ')}
+            </code>{' '}
+            — {activeCycle.code_agent_execution.agent_summary}
+          </div>
+
+          {activeCycle.code_agent_execution.git_diff && (
+            <pre
+              style={{
+                margin: 0,
+                background: '#060b16',
+                border: '1px solid #1e293b',
+                borderRadius: 8,
+                padding: '8px 10px',
+                fontSize: '0.68rem',
+                color: '#7dd3fc',
+                overflowX: 'auto',
+                maxHeight: 220,
+              }}
+            >
+              {activeCycle.code_agent_execution.git_diff}
+            </pre>
+          )}
+        </section>
       )}
 
       {/* 4. VERIFICATION OUTCOME & BEFORE-VS-AFTER EMPIRICAL COMPARISON */}

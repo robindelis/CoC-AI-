@@ -20,8 +20,11 @@ Every 10 minutes (configurable), or on demand / after a verification burst:
 from __future__ import annotations
 
 import copy
+import hashlib
+import importlib
 import json
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -153,6 +156,275 @@ def apply_config_patch(
     return next_cfg, diffs
 
 
+CODE_BACKUPS_DIR = os.path.join(TRAINED_MODELS_DIR, "code_backups")
+
+
+def merge_selected_solutions(
+    base_cfg: Dict[str, Any],
+    chosen_solutions: List[Dict[str, Any]],
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    Merges 1 or more selected candidate solutions into a single combined configuration
+    and returns `(merged_config, all_diffs, composite_solution_record)`.
+    """
+    working_cfg = copy.deepcopy(base_cfg)
+    merged_patch: Dict[str, Dict[str, Any]] = {
+        "arch_config": {},
+        "reward_config": {},
+        "hyperparams": {},
+    }
+    for sol in chosen_solutions:
+        patch = sol.get("config_patch", {})
+        if not isinstance(patch, dict):
+            continue
+        for sec in ("arch_config", "reward_config", "hyperparams"):
+            if isinstance(patch.get(sec), dict):
+                merged_patch[sec].update(patch[sec])
+
+    final_cfg, all_diffs = apply_config_patch(working_cfg, merged_patch)
+    diff_summary = [
+        f"{d['section']}.{d['parameter']}: {d['before']} → {d['after']}"
+        for d in all_diffs
+    ]
+
+    if len(chosen_solutions) == 1:
+        comp = copy.deepcopy(chosen_solutions[0])
+        comp["diffs"] = all_diffs
+        comp["diff_summary"] = diff_summary
+        comp["selected_solution_ids"] = [comp.get("solution_id", "")]
+        return final_cfg, all_diffs, comp
+
+    titles = [str(s.get("title", "Solution")) for s in chosen_solutions]
+    cats = list(dict.fromkeys(str(s.get("category", "combined")) for s in chosen_solutions))
+    target_problems = list(dict.fromkeys(str(s.get("target_problem", "")) for s in chosen_solutions if s.get("target_problem")))
+    code_instructions = [
+        str(s.get("code_edit_instructions"))
+        for s in chosen_solutions
+        if s.get("requires_code_edit") and s.get("code_edit_instructions")
+    ]
+    code_files: List[str] = []
+    for s in chosen_solutions:
+        for tf in s.get("target_files") or []:
+            if tf not in code_files:
+                code_files.append(tf)
+
+    composite = {
+        "solution_id": "+".join(str(s.get("solution_id", "")) for s in chosen_solutions),
+        "selected_solution_ids": [str(s.get("solution_id", "")) for s in chosen_solutions],
+        "rank": 1,
+        "category": "combined" if len(cats) > 1 else (cats[0] if cats else "combined"),
+        "categories_combined": cats,
+        "title": f"Multi-Solution Bundle ({len(chosen_solutions)}): " + " + ".join(titles),
+        "target_problem": " & ".join(target_problems),
+        "rationale": " | ".join(str(s.get("rationale", "")) for s in chosen_solutions),
+        "config_patch": merged_patch,
+        "diffs": all_diffs,
+        "diff_summary": diff_summary,
+        "expected_verification_criteria": " & ".join(
+            list(dict.fromkeys(str(s.get("expected_verification_criteria", "")) for s in chosen_solutions))
+        ),
+        "requires_code_edit": bool(code_instructions),
+        "target_files": code_files,
+        "code_edit_instructions": "\n".join(code_instructions) if code_instructions else None,
+    }
+    return final_cfg, all_diffs, composite
+
+
+def backup_code_files_before_change(
+    cycle_id: int,
+    target_files: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Captures exact pre-change file backups and SHA-256 digests in
+    `trained_models/code_backups/cycle_NNN/` before any OpenCode Argon 4 code edit.
+    """
+    files = target_files or [
+        "python/coc_rl/networks.py",
+        "python/coc_rl/ppo.py",
+        "python/train_ai.py",
+    ]
+    backup_dir = os.path.join(CODE_BACKUPS_DIR, f"cycle_{cycle_id:03d}")
+    os.makedirs(backup_dir, exist_ok=True)
+    manifest: Dict[str, Any] = {
+        "cycle_id": cycle_id,
+        "backup_dir": backup_dir,
+        "files": {},
+    }
+    for rel_path in files:
+        abs_src = os.path.join(REPO_ROOT, rel_path)
+        if not os.path.exists(abs_src):
+            continue
+        with open(abs_src, "rb") as f:
+            raw = f.read()
+        sha = hashlib.sha256(raw).hexdigest()[:12]
+        safe_name = rel_path.replace("/", "__")
+        abs_dst = os.path.join(backup_dir, safe_name)
+        with open(abs_dst, "wb") as f:
+            f.write(raw)
+        manifest["files"][rel_path] = {
+            "sha256_short": sha,
+            "backup_file": abs_dst,
+            "lines": raw.decode("utf-8", errors="ignore").count("\n") + 1,
+        }
+    return manifest
+
+
+def restore_code_files_from_backup(cycle_id: int) -> List[str]:
+    """Restores backed-up source files for `cycle_id` if a code edit fails smoke test or rolls back."""
+    backup_dir = os.path.join(CODE_BACKUPS_DIR, f"cycle_{cycle_id:03d}")
+    restored: List[str] = []
+    if not os.path.isdir(backup_dir):
+        return restored
+    for fname in os.listdir(backup_dir):
+        rel_path = fname.replace("__", "/")
+        abs_src = os.path.join(backup_dir, fname)
+        abs_dst = os.path.join(REPO_ROOT, rel_path)
+        if os.path.isfile(abs_src) and os.path.exists(os.path.dirname(abs_dst)):
+            shutil.copyfile(abs_src, abs_dst)
+            restored.append(rel_path)
+    return restored
+
+
+def _smoke_test_rl_modules() -> Tuple[bool, Optional[str]]:
+    """
+    Reloads `coc_rl.networks` and `coc_rl.ppo` and runs a live forward-pass & reward
+    smoke check to guarantee that code edits made by the OpenCode Argon 4 agent are valid.
+    """
+    try:
+        import coc_rl.networks as net_mod
+        import coc_rl.ppo as ppo_mod
+
+        importlib.reload(net_mod)
+        importlib.reload(ppo_mod)
+        m = net_mod.CoCActorCritic(in_channels=59, army_context_dim=64)
+        obs = torch.zeros((1, 59, 50, 50), dtype=torch.float32)
+        ctx = torch.zeros((1, 64), dtype=torch.float32)
+        with torch.no_grad():
+            out = m(obs, ctx)
+            assert "type_logits" in out and "tile_logits" in out and "value" in out
+            act, lp, ent, val, diag = m.get_action_and_value(obs, army_context=ctx)
+            assert act.shape == (1, 5)
+        tot, rd, rs, rdm = ppo_mod.compute_custom_reward_components(
+            {"delta_pct": 5, "delta_stars": 1, "delta_damage_ratio": 0.05, "th_just_destroyed": False, "funnel_cohesion": 1.0}
+        )
+        assert isinstance(tot, float)
+        return True, None
+    except Exception as exc:
+        return False, str(exc)
+
+
+def execute_opencode_argon_code_edit(
+    instructions: str,
+    target_files: List[str],
+    cycle_id: int,
+    timeout_sec: int = 150,
+) -> Dict[str, Any]:
+    """
+    Invokes the OpenCode CLI (`google-vertex/gemini-4-argon#medium`) inside `REPO_ROOT`
+    to perform surgical code improvements in `target_files`, validates the result with
+    `_smoke_test_rl_modules()`, captures the exact `git diff`, and automatically rolls
+    back to the pre-change backup if any validation check fails.
+    """
+    t0 = time.perf_counter()
+    backup_manifest = backup_code_files_before_change(cycle_id, target_files)
+
+    opencode_bin = "/home/robin/.opencode/bin/opencode"
+    if not os.path.exists(opencode_bin):
+        opencode_bin = shutil.which("opencode") or "opencode"
+
+    files_str = ", ".join(target_files)
+    agent_prompt = (
+        f"You are executing Cycle #{cycle_id} of the CoC TH18 Recursive Self-Improvement Loop.\n"
+        f"Perform the following targeted code modification in `{files_str}`:\n"
+        f"{instructions}\n\n"
+        "CRITICAL INVARIANTS:\n"
+        "1. Preserve all existing class/function signatures (`CoCActorCritic`, `CoCSpatialEncoder`, "
+        "`compute_custom_reward_components`, `ppo_minibatch_update`) and state_dict key names so saved `.pt` checkpoints load without error.\n"
+        "2. Edit ONLY the specified target file(s) using the `edit` tool, and DO NOT run git commit or background scripts.\n"
+        "3. Reply with a concise 2-sentence summary of the exact code change applied."
+    )
+
+    cmd = [
+        opencode_bin,
+        "run",
+        "-m",
+        "google-vertex/gemini-4-argon#medium",
+        "--format",
+        "json",
+        agent_prompt,
+    ]
+
+    agent_summary = ""
+    error_msg: Optional[str] = None
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=REPO_ROOT,
+            timeout=timeout_sec,
+        )
+        text_parts: List[str] = []
+        for line in (proc.stdout or "").splitlines():
+            line = line.strip()
+            if not line or not line.startswith("{"):
+                continue
+            try:
+                evt = json.loads(line)
+                if evt.get("type") == "text" and isinstance(evt.get("part"), dict):
+                    txt = evt["part"].get("text", "")
+                    if txt:
+                        text_parts.append(txt)
+            except Exception:
+                continue
+        agent_summary = "".join(text_parts).strip()
+        if proc.returncode != 0 and not agent_summary:
+            error_msg = f"opencode exited with {proc.returncode}: {(proc.stderr or '')[:300]}"
+    except Exception as exc:
+        error_msg = str(exc)
+
+    smoke_ok, smoke_err = _smoke_test_rl_modules()
+    if not smoke_ok:
+        restore_code_files_from_backup(cycle_id)
+        _smoke_test_rl_modules()
+        return {
+            "executed": True,
+            "success": False,
+            "model": "google-vertex/gemini-4-argon#medium",
+            "target_files": target_files,
+            "instructions": instructions,
+            "error": f"Smoke test failed ({smoke_err}); restored pre-change backup.",
+            "agent_summary": agent_summary,
+            "git_diff": "",
+            "duration_sec": round(time.perf_counter() - t0, 2),
+        }
+
+    git_diff_txt = ""
+    try:
+        git_diff_txt = subprocess.check_output(
+            ["git", "diff", "--"] + target_files,
+            cwd=REPO_ROOT,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=5,
+        ).strip()
+    except Exception:
+        pass
+
+    return {
+        "executed": True,
+        "success": error_msg is None and smoke_ok,
+        "model": "google-vertex/gemini-4-argon#medium",
+        "target_files": target_files,
+        "instructions": instructions,
+        "agent_summary": agent_summary or "Applied surgical code update and verified forward/reward smoke test.",
+        "git_diff": git_diff_txt[:4000],
+        "backup_manifest": backup_manifest,
+        "error": error_msg,
+        "duration_sec": round(time.perf_counter() - t0, 2),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Pre-Change Baseline Snapshot Builder
 # ---------------------------------------------------------------------------
@@ -248,6 +520,7 @@ def capture_pre_change_snapshot(
     )
     arch_spec = model_tmp.get_arch_config()
     baseline_metrics = extract_compact_metrics_from_telemetry(telemetry)
+    code_backup_manifest = backup_code_files_before_change(cycle_id)
 
     return {
         "snapshot_id": f"snapshot_cycle_{cycle_id:03d}_{int(time.time())}",
@@ -260,6 +533,7 @@ def capture_pre_change_snapshot(
         "reward_config": rew_cfg,
         "reward_formula": format_reward_formula(rew_cfg),
         "hyperparams": hp_cfg,
+        "code_backups": code_backup_manifest.get("files", {}),
         "baseline_metrics": baseline_metrics,
         "detected_signals": telemetry.get("detected_signals", []),
     }
@@ -538,16 +812,27 @@ def _build_deterministic_diagnosis_and_solutions(
             ),
         },
         {
-            "solution_id": f"sol_combined_synergy_breakthrough_v{len(past_cycles)+1}",
+            "solution_id": f"sol_code_agent_argon_spatial_reward_v{len(past_cycles)+1}",
             "rank": 4,
-            "category": "combined",
-            "title": "Synergistic Architecture + Milestone Reward + Critic Calibration Upgrade",
+            "category": "code_agent",
+            "title": "OpenCode Argon 4 Medium Surgical Code Upgrade (Spatial Prior & Reward Shaping)",
             "target_problem": reasons[0]["title"],
             "rationale": (
-                "Combines sharper U-Net TH18 breach conditioning (`th_threat_weight`, `film_cond_scale`), "
-                "progressive 75%/90%/3★ reward milestones (`high_pct_milestone_75`, `high_pct_milestone_90`), "
-                "and Critic LR calibration (`critic_lr_mult`, `round_robin` village balance) to simultaneously "
-                "improve spatial entry, core sustain, and value baseline accuracy."
+                "Invokes the OpenCode `google-vertex/gemini-4-argon#medium` coding agent directly on "
+                "`python/coc_rl/networks.py` and `python/coc_rl/ppo.py` to refine the spatial breach/spell "
+                "prior and reward shaping weights while combining synergistic architecture, reward, and "
+                "critic calibration parameters."
+            ),
+            "requires_code_edit": True,
+            "target_files": ["python/coc_rl/networks.py", "python/coc_rl/ppo.py"],
+            "code_edit_instructions": (
+                f"In `python/coc_rl/networks.py` (`DEFAULT_ARCH_CONFIG`) and `python/coc_rl/ppo.py` "
+                f"(`DEFAULT_REWARD_CONFIG`), update default spatial conditioning and late-battle milestone "
+                f"shaping to address `{reasons[0]['title']}` (Worst village: `{worst_v.get('name')}` at "
+                f"`{worst_v.get('recent_avg_pct')}%`, 3★ rate: `{triple_rate:.1f}%`): set default "
+                f"`th_threat_weight` to `{round(min(9.5, cur_th_threat + 0.8), 2)}`, `breach_prior_weight` to "
+                f"`{round(min(11.0, cur_breach_w + 0.8), 2)}`, `film_cond_scale` to `{round(min(0.80, cur_film + 0.10), 2)}`, "
+                f"and in `DEFAULT_REWARD_CONFIG` set `th_bonus` to `{round(min(20.0, cur_th_bonus + 2.0), 2)}`."
             ),
             "config_patch": {
                 "arch_config": {
@@ -567,7 +852,7 @@ def _build_deterministic_diagnosis_and_solutions(
                 },
             },
             "expected_verification_criteria": (
-                "Simultaneously lift recent 50-ep Destruction %, 2★+ TH18 rate, and worst-village performance."
+                "Simultaneously lift recent 50-ep Destruction %, 2★+ TH18 rate, and worst-village performance via code + config synergy."
             ),
         },
     ]
@@ -583,6 +868,15 @@ def _build_deterministic_diagnosis_and_solutions(
     candidates.sort(key=lambda c: (1 if c["solution_id"] in failed_ids else 0, c["rank"]))
     for idx, c in enumerate(candidates):
         c["rank"] = idx + 1
+
+    # Recommend multiple complementary solutions at once when multiple bottlenecks are active
+    rec_ids = [candidates[0]["solution_id"]]
+    if len(reasons) >= 2 and len(candidates) >= 2:
+        first_cat = candidates[0].get("category")
+        for cand in candidates[1:]:
+            if cand.get("category") != first_cat and cand["solution_id"] not in failed_ids:
+                rec_ids.append(cand["solution_id"])
+                break
 
     headline = (
         f"Training {'PLATEAUED' if is_plateaued else 'PROGRESSING'} at {mean_pct:.1f}% recent destruction "
@@ -603,6 +897,7 @@ def _build_deterministic_diagnosis_and_solutions(
         ),
         "reasons": reasons,
         "candidate_solutions": candidates,
+        "recommended_solution_ids": rec_ids,
     }
 
 
@@ -635,7 +930,8 @@ def _build_recursive_loop_llm_prompt(
     return f"""CRITICAL INSTRUCTION: Respond immediately in a single turn with ZERO tool calls. Output ONLY the raw JSON object (no markdown fences).
 
 You are the Autonomous Recursive Self-Improvement Architect for the Clash of Clans Town Hall 18 (TH18) Deep RL Attacker (`CoCActorCritic` + PPO + GAE).
-Every 10 minutes you analyze training telemetry, determine if training is healthy or plateaued, identify quantitative root causes, and propose 3–4 concrete candidate solutions across `architecture`, `reward_function`, `hyperparameters`, and `combined`.
+Every 10 minutes you analyze training telemetry, determine if training is healthy or plateaued, identify quantitative root causes, and propose 3–4 concrete candidate solutions across `architecture`, `reward_function`, `hyperparameters`, and `code_agent`.
+You may select MULTIPLE solutions at once in `recommended_solution_indices` (e.g. `[0, 1]` or `[0, 1, 2]`) whenever combining them will have a positive synergistic impact!
 
 ### Live Telemetry, Active Configuration & Past Cycles Memory
 {json.dumps(payload, indent=2)}
@@ -658,7 +954,7 @@ Return ONLY a raw JSON object with this structure:
       "root_cause": "<why this happens mathematically in the network, reward shaping, or PPO update>"
     }}
   ],
-  "recommended_solution_index": <int 0..3 choosing the best candidate from candidate_solutions_baseline>
+  "recommended_solution_indices": [<int 0..3>, ...]
 }}"""
 
 
@@ -672,6 +968,7 @@ def diagnose_and_propose_solutions(
     """
     Runs quantitative + LLM root-cause diagnosis and generates ranked candidate solutions
     with exact `diff_summary` previews against `active_config`.
+    Supports recommending multiple solutions at once (`recommended_solution_ids`).
     """
     draft = _build_deterministic_diagnosis_and_solutions(
         telemetry=telemetry,
@@ -711,12 +1008,31 @@ def diagnose_and_propose_solutions(
                     ]
                     if valid_reasons:
                         draft["reasons"] = valid_reasons
-                rec_idx = parsed.get("recommended_solution_index")
-                if isinstance(rec_idx, int) and 0 <= rec_idx < len(draft["candidate_solutions"]):
-                    chosen = draft["candidate_solutions"].pop(rec_idx)
-                    draft["candidate_solutions"].insert(0, chosen)
-                    for i, c in enumerate(draft["candidate_solutions"]):
+
+                rec_indices: List[int] = []
+                if isinstance(parsed.get("recommended_solution_indices"), list):
+                    for idx_val in parsed["recommended_solution_indices"]:
+                        if isinstance(idx_val, int) and 0 <= idx_val < len(draft["candidate_solutions"]) and idx_val not in rec_indices:
+                            rec_indices.append(idx_val)
+                elif isinstance(parsed.get("recommended_solution_index"), int):
+                    idx_val = parsed["recommended_solution_index"]
+                    if 0 <= idx_val < len(draft["candidate_solutions"]):
+                        rec_indices.append(idx_val)
+
+                if rec_indices:
+                    rec_ids = [
+                        draft["candidate_solutions"][idx_val]["solution_id"]
+                        for idx_val in rec_indices
+                    ]
+                    draft["recommended_solution_ids"] = rec_ids
+                    # Reorder so recommended solutions appear first
+                    rec_set = set(rec_ids)
+                    ordered = [c for c in draft["candidate_solutions"] if c["solution_id"] in rec_set] + [
+                        c for c in draft["candidate_solutions"] if c["solution_id"] not in rec_set
+                    ]
+                    for i, c in enumerate(ordered):
                         c["rank"] = i + 1
+                    draft["candidate_solutions"] = ordered
         except Exception:
             pass
 
@@ -728,6 +1044,7 @@ def diagnose_and_propose_solutions(
             f"{d['section']}.{d['parameter']}: {d['before']} → {d['after']}"
             for d in diffs
         ]
+        cand["is_recommended"] = cand.get("solution_id") in set(draft.get("recommended_solution_ids") or [])
 
     draft["model_used"] = llm_used
     return draft
@@ -793,7 +1110,10 @@ def verify_solution_outcome(
         verdict = "NOT_SOLVED_ROLLED_BACK"
         problem_solved = False
         decision_taken = "rolled_back_to_baseline"
-        # Roll back to pre-change snapshot config
+        # Roll back to pre-change snapshot config & restore any code backups
+        if cycle.get("code_agent_execution"):
+            restore_code_files_from_backup(int(cycle.get("cycle_id", 1)))
+            _smoke_test_rl_modules()
         next_active_cfg = {
             "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             "arch_config": copy.deepcopy(pre_snap.get("arch_config", DEFAULT_ARCH_CONFIG)),
@@ -1065,8 +1385,10 @@ def sync_recursive_loop_to_vault(loop_state: Dict[str, Any]) -> str:
         s_m = snap.get("baseline_metrics", {})
         hv = c.get("health_verdict", {})
         sol = c.get("selected_solution") or {}
+        selected_ids_set = set(sol.get("selected_solution_ids") or ([sol.get("solution_id")] if sol.get("solution_id") else []))
         cands = c.get("candidate_solutions", [])
         ver = c.get("verification_result")
+        code_exec = c.get("code_agent_execution")
 
         reasons_md = "\n".join(
             [
@@ -1080,7 +1402,7 @@ def sync_recursive_loop_to_vault(loop_state: Dict[str, Any]) -> str:
         cands_md = "\n".join(
             [
                 f"{idx+1}. **`[{cand.get('category', '').upper()}]` {cand.get('title')}** "
-                f"{'*(✅ SELECTED FOR TESTING)*' if cand.get('solution_id') == sol.get('solution_id') else ''}\n"
+                f"{'*(✅ SELECTED FOR TESTING)*' if cand.get('solution_id') in selected_ids_set else ''}\n"
                 f"   - *Target Bottleneck*: {cand.get('target_problem')}\n"
                 f"   - *Rationale*: {cand.get('rationale')}\n"
                 f"   - *Exact Parameter Diff*: `{'; '.join(cand.get('diff_summary', [])) or 'No diff'}`\n"
@@ -1088,6 +1410,13 @@ def sync_recursive_loop_to_vault(loop_state: Dict[str, Any]) -> str:
                 for idx, cand in enumerate(cands)
             ]
         )
+        if isinstance(code_exec, dict) and code_exec.get("executed"):
+            diff_block = f"\n```diff\n{code_exec.get('git_diff')}\n```" if code_exec.get("git_diff") else ""
+            cands_md += (
+                f"\n\n#### 🤖 OpenCode `google-vertex/gemini-4-argon#medium` Code Agent Execution\n"
+                f"- **Target Files**: `{', '.join(code_exec.get('target_files', []))}` • **Duration**: `{code_exec.get('duration_sec', 0)}s` • **Smoke Check**: `{'PASSED ✅' if code_exec.get('success') else 'ROLLED BACK ❌'}`\n"
+                f"- **Agent Summary**: {code_exec.get('agent_summary', '')}{diff_block}"
+            )
 
         if isinstance(ver, dict) and ver.get("post_change_metrics"):
             pm = ver["post_change_metrics"]
@@ -1251,6 +1580,8 @@ def run_recursive_improvement_cycle(
     device: torch.device,
     trigger: str = "scheduled_10m",
     selected_solution_id: Optional[str] = None,
+    selected_solution_ids: Optional[List[str]] = None,
+    run_code_agent: bool = True,
     use_llm: bool = True,
     start_training_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> Dict[str, Any]:
@@ -1260,9 +1591,10 @@ def run_recursive_improvement_cycle(
       2. If a previous cycle has an unverified `active_hypothesis` and training has advanced
          (or the user triggered verification), verifies the outcome (Before vs After),
          keeps or rolls back the config, and records the result.
-      3. Runs plateau & root-cause diagnosis and proposes 3–4 solutions (Architecture, Reward, Hyperparams).
+      3. Runs plateau & root-cause diagnosis and proposes 3–4 solutions (Architecture, Reward, Hyperparams, Code Agent).
       4. Captures the mandatory Pre-Change Baseline Snapshot BEFORE making any change.
-      5. Applies the chosen solution (if plateaued and `auto_apply_and_test` or `selected_solution_id` is set)
+      5. Applies 1 or MORE chosen solutions at once (merging config patches + invoking the OpenCode
+         `google-vertex/gemini-4-argon#medium` code agent if a selected solution requires code edits)
          and optionally triggers/updates training to verify the solution.
       6. Syncs all snapshots, actions, and verification results to the Obsidian Vault.
     """
@@ -1297,7 +1629,6 @@ def run_recursive_improvement_cycle(
                 telemetry.get("session", {}).get("cumulative_episode")
                 or telemetry.get("session", {}).get("history_length", 0)
             )
-            # Verify if episodes advanced or if explicitly requested
             if cur_ep > pre_ep or trigger in ("verify_now", "post_test_verification", "scheduled_10m"):
                 loop_state["phase"] = "verifying_solution"
                 ver_res, active_config = verify_solution_outcome(
@@ -1343,27 +1674,45 @@ def run_recursive_improvement_cycle(
             active_config=active_config,
         )
 
-        # Step 4: Select & Apply Solution if plateaued (or if a specific solution was requested)
+        # Step 4: Select & Apply 1 or MORE Solutions if plateaued (or if specific solution IDs were requested)
         candidates = diag.get("candidate_solutions", [])
-        chosen_solution: Optional[Dict[str, Any]] = None
-        if selected_solution_id:
-            chosen_solution = next(
-                (c for c in candidates if c.get("solution_id") == selected_solution_id),
-                candidates[0] if candidates else None,
-            )
-        elif (diag.get("is_plateaued") or trigger == "manual_trigger") and loop_state.get("auto_apply_and_test", True):
-            chosen_solution = candidates[0] if candidates else None
+        chosen_solutions_list: List[Dict[str, Any]] = []
+        target_ids = list(selected_solution_ids or ([] if not selected_solution_id else [selected_solution_id]))
 
-        applied_diffs: List[Dict[str, Any]] = []
-        if chosen_solution:
+        if target_ids:
+            id_set = set(target_ids)
+            chosen_solutions_list = [c for c in candidates if c.get("solution_id") in id_set]
+            if not chosen_solutions_list and candidates:
+                chosen_solutions_list = [candidates[0]]
+        elif (diag.get("is_plateaued") or trigger == "manual_trigger") and loop_state.get("auto_apply_and_test", True):
+            rec_ids = set(diag.get("recommended_solution_ids") or [])
+            if rec_ids:
+                chosen_solutions_list = [c for c in candidates if c.get("solution_id") in rec_ids]
+            if not chosen_solutions_list and candidates:
+                chosen_solutions_list = [candidates[0]]
+
+        chosen_solution: Optional[Dict[str, Any]] = None
+        code_agent_exec: Optional[Dict[str, Any]] = None
+        if chosen_solutions_list:
             loop_state["phase"] = "applying_solution"
-            new_cfg, applied_diffs = apply_config_patch(
-                active_config, chosen_solution.get("config_patch", {})
+            new_cfg, _, composite_sol = merge_selected_solutions(
+                active_config, chosen_solutions_list
             )
             active_config = save_active_experiment_config(new_cfg)
             loop_state["active_config"] = active_config
-            chosen_solution["applied_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-            chosen_solution["diffs"] = applied_diffs
+            composite_sol["applied_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            chosen_solution = composite_sol
+
+            if (
+                run_code_agent
+                and composite_sol.get("requires_code_edit")
+                and composite_sol.get("code_edit_instructions")
+            ):
+                code_agent_exec = execute_opencode_argon_code_edit(
+                    instructions=str(composite_sol["code_edit_instructions"]),
+                    target_files=list(composite_sol.get("target_files") or ["python/coc_rl/networks.py", "python/coc_rl/ppo.py"]),
+                    cycle_id=next_cycle_id,
+                )
 
         cycle_record: Dict[str, Any] = {
             "cycle_id": next_cycle_id,
@@ -1382,7 +1731,10 @@ def run_recursive_improvement_cycle(
             },
             "pre_change_snapshot": pre_snapshot,
             "candidate_solutions": candidates,
+            "recommended_solution_ids": diag.get("recommended_solution_ids", []),
+            "selected_solutions": chosen_solutions_list,
             "selected_solution": chosen_solution,
+            "code_agent_execution": code_agent_exec,
             "verification_result": None,
         }
 

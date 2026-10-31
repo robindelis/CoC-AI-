@@ -21,10 +21,14 @@ from .ppo import (
 )
 from .recursive_loop import (
     apply_config_patch,
+    backup_code_files_before_change,
     capture_pre_change_snapshot,
     diagnose_and_propose_solutions,
+    execute_opencode_argon_code_edit,
     load_active_experiment_config,
     load_recursive_loop_state,
+    merge_selected_solutions,
+    restore_code_files_from_backup,
     run_recursive_improvement_cycle,
     save_active_experiment_config,
     save_recursive_loop_state,

@@ -14,7 +14,7 @@ from .networks import CoCActorCritic
 DEFAULT_REWARD_CONFIG: Dict[str, float] = {
     "destr_weight": 0.35,
     "star_weight": 12.0,
-    "th_bonus": 14.0,
+    "th_bonus": 20.0,
     "damage_weight": 15.0,
     "funnel_weight": 0.08,
     "invalid_penalty": 0.05,
