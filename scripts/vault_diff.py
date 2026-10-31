@@ -38,7 +38,6 @@ RELEVANT_CODE_PATHS = [
     "python/train_ai.py",
     "python/ai_server.py",
     "python/generate_vault.py",
-    "learning",
     "scripts",
     "web/src",
 ]
@@ -259,8 +258,6 @@ def categorize_file(path: str) -> str:
         return "Simulation Core & Observation Channels"
     elif path.startswith("crates/coc-py") or path.startswith("python/coc_rl") or path.startswith("python/train_ai") or path.startswith("python/ai_server"):
         return "Python Deep RL & PyO3 Bindings"
-    elif path.startswith("learning/"):
-        return "Educational RL Curriculum & Labs"
     elif path.startswith("crates/coc-wasm") or path.startswith("web/"):
         return "Web Sandbox & Visualizer"
     elif path.startswith("scripts/"):

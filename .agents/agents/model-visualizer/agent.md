@@ -60,15 +60,7 @@ When analyzing, modifying, or reflecting neural architectures in visualization a
 - **`DilatedResBlock`**:
   - Legacy dilated residual block preserving 50×50 grid resolution.
 
-### 2. Educational & Lab Model Implementations (`learning/`)
-- **`learning/rl_labs/reference_solution.py`**:
-  - Complete, standalone reference implementation of `UNetConvBlock`, `UNetUpBlock`, `CoCSpatialEncoder`, and `CoCActorCritic`.
-- **`learning/rl_labs/student_lab.py`**:
-  - Student workbook containing identical class signatures and architectural definitions for Labs 1–4.
-- **`learning/pytorch_bootcamp/bootcamp_exercises.py` & `bootcamp_solutions.py`**:
-  - Introductory PyTorch neural network modules: `TinyMLP` / `SolTinyMLP` and `MiniGridCNN` / `SolMiniGridCNN`.
-
-### 3. Downstream Consumers of Model Representations
+### 2. Downstream Consumers of Model Representations
 - **`python/ai_server.py`**:
   - Endpoint `/api/ai/model-architecture`: Calls `extract_live_layer_specs(model)` from `coc_rl.visualize` to return live layer dimensions, MACs, parameter counts, receptive fields, and PyTorch source code to the browser.
 - **`python/coc_rl/vault_generator.py`**:

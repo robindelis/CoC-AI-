@@ -361,7 +361,7 @@ Defined in `CoCActorCritic` (`python/coc_rl/networks.py`), the policy parameteri
 - **Consequences**:
   - Receptive field encompasses the entire 50×50 grid through the $6 \times 6$ bottleneck.
   - Skip connections preserve pixel-level wall breaches and deployment halos, eliminating spatial blurring in tile selection.
-  - Reconciled across production RL (`python/coc_rl/networks.py`), RL educational curriculum (`learning/rl_labs/reference_solution.py`, `student_lab.py`), and interactive web tools (`web/src/ai/NetworkBuilderPanel.tsx`).
+  - Reconciled across production RL (`python/coc_rl/networks.py`) and interactive web tools (`web/src/ai/NetworkBuilderPanel.tsx`).
 
 ### ADR-012: Specialist Model Visualizer Agent & Visual Architecture Invariant Policy
 - **Date**: 2026-10-31

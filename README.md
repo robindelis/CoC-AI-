@@ -1,6 +1,5 @@
-# CoC-AI: Learning Deep Reinforcement Learning with Clash of Clans
+# CoC-AI: Deep Reinforcement Learning with Clash of Clans
 
-[![Focus: Personal Educational Project](https://img.shields.io/badge/Project-Personal%20AI%20Curriculum-blue?style=flat-square)](learning/rl_labs/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-Deep%20RL-EE4C2C?logo=pytorch&logoColor=white&style=flat-square)](https://pytorch.org/)
 [![Rust Engine](https://img.shields.io/badge/Rust-Fast%20Simulation-DEA584?logo=rust&logoColor=white&style=flat-square)](https://www.rust-lang.org/)
 [![Vite + React](https://img.shields.io/badge/Frontend-Interactive%20Sandbox-61DAFB?logo=react&logoColor=black&style=flat-square)](https://react.dev/)
@@ -90,49 +89,22 @@ Interactive 2.5D battlefield for testing and validating trained checkpoints:
 
 ---
 
-## 📚 Hands-on Learning Path
-
-The repository is organized into simple, self-contained stages:
-
-* **Level 1 — PyTorch Warmup** (`learning/pytorch_bootcamp/`):
-  Short, zero-complexity exercises covering pure PyTorch basics (tensors, layers, loss functions, and action sampling).
-  ```bash
-  python learning/pytorch_bootcamp/verify_bootcamp.py
-  ```
-
-* **Level 2 — Guided Deep RL Labs** (`learning/rl_labs/`):
-  A 4-step hands-on workbook where you build the AI attacker step by step (CNN map encoder, actor-critic policy, reward calculations, and PPO update loop).
-  ```bash
-  python learning/rl_labs/verify_labs.py
-  ```
-
-* **Level 3 — Visual Web Sandbox & AI Studio** (`web/`, `python/`):
-  An interactive React and Canvas interface with separated **Game** (`web/src/game/`) and **AI Studio** (`web/src/ai/`) workspaces.
-
----
-
 ## 🚀 Quickstart
 
-### 1. Run the Python Labs & Verifiers
+### 1. Run Deep RL Training Experiments
 
 ```bash
-# Verify the PyTorch basics
-python learning/pytorch_bootcamp/verify_bootcamp.py
-
-# Verify the Deep RL exercises
-python learning/rl_labs/verify_labs.py
-
-# Run a quick training experiment
+# Run a quick training experiment via CLI
 python python/train_ai.py --train-ppo --episodes 20
 ```
 
 ### 2. Run the Interactive Web Sandbox & AI Studio
 
 ```bash
-# Start the AI backend server
+# Start the AI backend server (FastAPI on port 8000)
 python python/ai_server.py
 
-# In another terminal, run the web UI
+# In another terminal, run the web UI (Vite on port 5173)
 cd web
 npm install
 npm run dev

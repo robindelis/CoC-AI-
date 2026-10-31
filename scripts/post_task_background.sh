@@ -26,7 +26,7 @@ echo "==========================================================================
 
 # 1. Check if model or visualization files changed
 MODEL_DIFF=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git status --porcelain)
-if echo "$MODEL_DIFF" | grep -E -q "networks\.py|visualize\.py|visualize_model\.py|rl_labs|bootcamp"; then
+if echo "$MODEL_DIFF" | grep -E -q "networks\.py|visualize\.py|visualize_model\.py"; then
     echo "🎨 Model/visualization changes detected. Running model-visualizer..." >> "$LOG_FILE"
     if command -v agy >/dev/null 2>&1; then
         agy --agent model-visualizer --model gemini-3.8-flash-medium --dangerously-skip-permissions -p "Reconcile model architecture visualizations and manifest with latest codebase" >> "$LOG_FILE" 2>&1 || {

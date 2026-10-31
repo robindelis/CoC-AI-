@@ -33,9 +33,6 @@ A Clash of Clans Town Hall 18 combat simulator, village layout editor, and reinf
 │   ├── coc-engine/                   # Deterministic simulation engine (src/lib.rs, grid.rs, sim.rs)
 │   ├── coc-wasm/                     # WebAssembly bindings for browser canvas (src/lib.rs)
 │   └── coc-py/                       # PyO3 native Python extension & Rayon parallel rollout env (src/lib.rs)
-├── learning/                         # Educational curriculum (PyTorch warmup & Deep RL labs)
-│   ├── pytorch_bootcamp/             # Bootcamp exercises, solutions, and verification
-│   └── rl_labs/                      # 4-stage PyTorch Deep RL workbook (student_lab.py, reference_solution.py, verify_labs.py)
 ├── python/                           # Production AI / RL runtime, GPU trainer, and FastAPI AI bridge
 │   ├── coc_rl/                       # Envs, networks.py, visualize.py, ppo.py, vault_generator.py
 │   ├── train_ai.py                   # PyTorch GPU PPO trainer & layout benchmark CLI
@@ -166,10 +163,7 @@ The agent is aware of where neural network architectures and model implementatio
    - `CoCSpatialEncoder`: Dual-pathway 50×50 spatial CNN / U-Net backbone (`enc1`, `enc2`, `enc3`, `bottleneck`, `up3`, `up2`, `up1`, `global_tower`).
    - `UNetConvBlock` & `UNetUpBlock`: Convolutional downsampling/upsampling blocks with GroupNorm and SiLU.
    - `DilatedResBlock`: Residual context block preserving exact 50×50 spatial resolution.
-2. **Educational & Lab Model Implementations (`learning/`)**:
-   - `learning/rl_labs/reference_solution.py` & `learning/rl_labs/student_lab.py`: Full PyTorch implementations of `UNetConvBlock`, `UNetUpBlock`, `CoCSpatialEncoder`, and `CoCActorCritic` for Deep RL labs 1–4.
-   - `learning/pytorch_bootcamp/bootcamp_exercises.py` & `bootcamp_solutions.py`: Introductory `TinyMLP` / `SolTinyMLP` and `MiniGridCNN` / `SolMiniGridCNN`.
-3. **Downstream Visualization Consumers**:
+2. **Downstream Visualization Consumers**:
    - `python/ai_server.py`: Serves `/api/ai/model-architecture` powered by `extract_live_layer_specs()`.
    - `python/coc_rl/vault_generator.py`: Embeds model architecture diagrams into Obsidian canvas.
    - `web/src/ai/AIStudioView.tsx` & `RLAcademyView.tsx`: Consumes live layer specs to render the interactive 3D layer visualizer, receptive field inspector, and live PyTorch code.
@@ -205,7 +199,7 @@ Whenever any code changes, refactors, simulation updates, or neural network modi
    ```
    *Features of [`scripts/post_task_background.sh`](file:///home/robin/Projects/CoC/scripts/post_task_background.sh)*:
    - **Mutex Locked (`flock`)**: Prevents duplicate or overlapping sync runs.
-   - **Smart Drift Detection**: Inspects `git diff` for model/visualization files (`networks.py`, `visualize.py`, `visualize_model.py`, `rl_labs/`) to trigger `model-visualizer`; runs `python3 scripts/vault_diff.py --status` to detect code drift and trigger `vault-updater`.
+   - **Smart Drift Detection**: Inspects `git diff` for model/visualization files (`networks.py`, `visualize.py`, `visualize_model.py`) to trigger `model-visualizer`; runs `python3 scripts/vault_diff.py --status` to detect code drift and trigger `vault-updater`.
    - **Auto Commit & Push**: Automatically stages updated artifacts (`obsidian_vault/`, `docs/architecture/`), commits, rebases, and pushes to `origin main`.
    - **Audit Log**: Progress is continuously streamed to `.logs/post_task_sync.log` (`tail -f .logs/post_task_sync.log`).
 
@@ -232,9 +226,7 @@ Whenever any code changes, refactors, simulation updates, or neural network modi
 # 3. Build Python extension into the local CUDA PyTorch .venv
 . "$HOME/.cargo/env" && env -u CONDA_PREFIX VIRTUAL_ENV="$PWD/.venv" .venv/bin/maturin develop --release -m crates/coc-py/Cargo.toml
 
-# 4. Verify the Educational Labs on GPU or run CLI PPO training
-.venv/bin/python learning/rl_labs/verify_labs.py
-.venv/bin/python learning/pytorch_bootcamp/verify_bootcamp.py
+# 4. Run CLI PPO training or layout benchmark
 .venv/bin/python python/train_ai.py --train-ppo --episodes 20
 
 # 5. Launch the Python GPU AI Studio Server (port 8000)
