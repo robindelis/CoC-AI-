@@ -452,6 +452,56 @@ Defined in `CoCActorCritic` (`python/coc_rl/networks.py`), the policy parameteri
   - Guarantees exactly 600 seconds of genuine PPO exploration and rollout transitions between recursive cycles.
   - Clear, intuitive developer status indicators across all Web AI Studio panels.
 
+### ADR-016: Dual-Mode Self-Improvement Decision Paradigm (In-Place Optimization vs Stop & Restart with New Architecture) and 300-Episode Honest Evaluation Standard
+- **Date**: 2026-10-31
+- **Status**: Accepted
+- **Context**:
+  1. **Architectural vs Hyperparameter Discontinuity**: In previous cycles, all self-improvement recommendations were treated as continuous in-place mutations. While continuous fine-tuning is valid for reward coefficients, entropy regularizers, and spatial prior scalars, modifying network topology (e.g. inserting dilated residual blocks, changing layer depths, or adding channel attention) breaks weight checkpoint compatibility or induces catastrophic interference if forced onto partially-converged weights.
+  2. **Short-Window Evaluation Noise**: Evaluating agent performance over small slices (e.g. 10 to 50 episodes) exhibited massive statistical variance. Because rollouts rotate across 5 distinct reference villages with varying layout difficulties, a 50-episode window provides only 10 samples per layout. Lucky or unlucky deployments caused false-positive confirmations or spurious rollbacks.
+- **Decision**:
+  1. **Dual-Mode Decision Separation (`stop_and_restart_new_arch` vs `apply_in_place_solution`)**:
+     - The recursive loop explicitly categorizes proposed hypotheses into two distinct pathways:
+       - **In-Place Optimization (`apply_in_place_solution`)**: Applied dynamically during active training for hyperparameter tweaks, reward scale adjustments, and runtime prior modulation via `apply_arch_config()`.
+       - **Stop & Restart with New Architecture (`stop_and_restart_new_arch`)**: Triggered when a solution introduces structural modifications (`use_dilated_context`, `use_se_attention`, `use_gated_heads`, `critic_depth`, or custom layer dimensions).
+     - Upon electing an architectural restart, the system cleanly halts current training, safely moves the active checkpoint to `trained_models/archives/`, resets the baseline episode to 0 (`baseline_episode = 0`), preserves `pre_restart_episode` for historic continuity, and spawns fresh PPO training with the new architecture config.
+  2. **300-Episode Honest Evaluation Standard**:
+     - Standardized the primary empirical verification window to 300 episodes (`test_episodes_per_cycle = 300`).
+     - Added rolling 300-episode peak detection in `python/coc_rl/training_feedback.py`: computes `rolling300_peak_pct`, `rolling300_peak_at_episode`, `episodes_since_rolling300_peak`, `current_rolling300_pct`, and `drawdown_from_rolling300_peak_pct`.
+     - In `python/train_ai.py`, `compute_matchup_stats()` calculates recent destruction averages and triple conversion rates strictly across the last 300 episodes (`recent_hist_300`), guaranteeing statistically significant sample sizes across all 5 village layouts.
+     - PPO logging tracks running 300-episode destruction averages (`avg_pct_300`) alongside short-term indicators.
+- **Consequences**:
+  - Provides a clean, principled mechanism for the autonomous AI loop to explore structural architectural evolutions without corrupting existing weights.
+  - Eliminates noise-induced false positives by grounding all empirical verifications in a statistically robust 300-episode evaluation window.
+  - Maintains full provenance: archived weights, pre-restart episode counters, and historic baseline metrics are preserved in perpetuity.
 
-
-
+### ADR-017: Modular Trained Models Directory Hierarchy, Checkpoint Pruning, and Dynamic Multi-Scale Architecture Extensions
+- **Date**: 2026-10-31
+- **Status**: Accepted
+- **Context**:
+  1. **Unstructured File Sprawl in `trained_models/`**: As training sessions, backups, diagnostic JSONs, model evaluations, and checkpoint files accumulated, the root `trained_models/` directory grew cluttered with hundreds of mixed files, complicating backups, inspection, and disk management.
+  2. **Disk Exhaustion from Intermediate Checkpoints**: Saving checkpoints every $N$ episodes generated redundant intermediate `.pt` files that remained on disk long after being superseded by newer checkpoints.
+  3. **Demand for Enhanced Spatial Receptive Fields & Attention**: Complex Town Hall 18 base layouts feature multi-compartment wall rings and high-density defensive pockets. The baseline U-Net needed optional mechanisms for broader dilated receptive fields without gridding artifacts and dynamic channel reweighting across the 59 spatial channels.
+- **Decision**:
+  1. **Modular Directory Structure (`ensure_trained_models_dir`)**:
+     - Partitioned `trained_models/` into dedicated functional subdirectories:
+       - `trained_models/checkpoints/`: Active training checkpoints (`latest_attacker.pt`, `<army_slug>_epXXXXX.pt`).
+       - `trained_models/archives/`: Archived models from completed runs or superseded architectures.
+       - `trained_models/presets/`: Custom army configurations (`custom_armies.json`).
+       - `trained_models/state/`: Runtime status files (`last_training_state.json`, `run_registry.json`, `model_evals.json`).
+       - `trained_models/loop/`: Self-improvement state (`recursive_improvement_loop.json`, `active_experiment_config.json`).
+       - `trained_models/feedback/`: Telemetry & LLM feedback logs (`last_ai_feedback.json`, `last_ai_feedback_opencode_argon.json`).
+       - `trained_models/code_backups/`: Pre-change cryptographic file backups (`cycle_NNN/`).
+  2. **Automated Superseded Checkpoint Pruning**:
+     - During PPO checkpoint saving in `python/train_ai.py`, stale intermediate checkpoints matching the current army slug and run are automatically purged from `trained_models/checkpoints/`, keeping storage footprints minimal while retaining final exports and archives.
+  3. **Dynamic Architecture Extensions in `python/coc_rl/networks.py`**:
+     - **Multi-Scale Dilated Residual Context (`DilatedResBlock`)**: Optional block inserted at `enc2` ($25 \times 25$ resolution) with dual convolutions ($3 \times 3$, dilation=2 and dilation=4, GroupNorm=8, SiLU) via `use_dilated_context=True`, expanding spatial receptive field across outer wall rings without downsampling.
+     - **Squeeze-and-Excitation Channel Attention (`SEChannelAttention`)**: Optional channel attention modules inserted at the bottleneck ($6 \times 6$, 256 channels) and spatial output ($50 \times 50$, 32 channels) via `use_se_attention=True`, dynamically recalibrating the importance of specific defense and unit channels based on global layout context.
+     - **Spatial Head Gating (`head_gate`)**: Optional Sigmoid gating layer on conditioned spatial embeddings (`tile_cond_proj`) via `use_gated_heads=True`.
+     - **Deep Critic Variant**: Optional 3-layer MLP critic with `LayerNorm` and dual hidden projections when `critic_depth >= 3`.
+     - **Milestone & Pacing Rewards in `ppo.py`**: Integrated dense rewards for 75% (`high_pct_milestone_75=2.0`), 90% (`high_pct_milestone_90=4.0`), triple wipes (`triple_wipe_bonus=6.0`), and pacing waits (`pacing_wait_bonus=0.02`).
+  4. **Dynamic Layer Telemetry & Visualization**:
+     - Reconciled `python/coc_rl/visualize.py` (`extract_live_layer_specs`) to dynamically calculate exact parameter counts, MACs, and receptive fields whether dilated blocks, SE attention, or deep critics are active or disabled.
+- **Consequences**:
+  - Clean separation of concerns across filesystem storage, eliminating clutter and preventing storage leaks.
+  - Flexible neural architecture supporting both lightweight baseline configurations and advanced dilated attention variants.
+  - Live visualizer and architecture manifests stay mathematically accurate across all configuration states.

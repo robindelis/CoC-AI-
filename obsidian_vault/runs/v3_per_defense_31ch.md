@@ -1,12 +1,12 @@
 ---
-title: "v3.0 — 50-Channel Dedicated CNN & Single-Army Specialist Actor-Critic"
+title: "v3.0 — 59-Channel Dedicated Multi-Block Dilated CNN & Single-Army Specialist Actor-Critic"
 model_id: "v3_per_defense_31ch"
 arch_version: "3.0"
 status: "active"
-total_episodes: 15672
-best_pct: 100
-best_stars: 3
-updated_at: "2026-10-31 17:48:27"
+total_episodes: 0
+best_pct: 0
+best_stars: 0
+updated_at: "2026-10-31 21:31:27"
 tags:
   - coc-rl
   - ppo
@@ -14,7 +14,7 @@ tags:
   - architecture-3-0
 ---
 
-# 🤖 v3.0 — 50-Channel Dedicated CNN & Single-Army Specialist Actor-Critic
+# 🤖 v3.0 — 59-Channel Dedicated Multi-Block Dilated CNN & Single-Army Specialist Actor-Critic
 
 Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_and_Training_Tracker.canvas|Interactive Obsidian Canvas]]
 
@@ -26,30 +26,14 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 - **Architecture Version**: `v3.0` (`1,375,288` Trainable Parameters)
 - **Dedicated Army Composition**: **`TH18 Thrower + Healer + Totem Smash (Meta)`** (Exported in `.pt` checkpoint metadata for testing)
 - **Active Status**: **ACTIVE**
-- **Total Episodes Trained**: **`15,672`** (Cumulative across **17** training sessions)
-- **Peak Combat Performance**: **`100%` (3★)** (Best dense return: `+147.04345673999435`)
-- **Latest Checkpoint**: `trained_models/thrower_healer_totem_smash_ep15672_100pct_3star.pt`
+- **Total Episodes Trained**: **`0`** (Cumulative across **0** training sessions)
+- **Peak Combat Performance**: **`0%` (0★)** (Best dense return: `+0.0`)
+- **Latest Checkpoint**: `trained_models/thrower_healer_totem_smash_ep0_0pct_0star.pt`
 
 ### 🔄 Resumed Training Sessions History
 | Session # | Start Ep | End Ep | Episodes Added | Checkpoint File | Peak % | Stars | Notes |
 | :---: | :---: | :---: | :---: | :--- | :---: | :---: | :--- |
-| **#1** | `0` | `1,689` | `+1,689` | `thrower_healer_totem_smash_ep1689_100pct_3star.pt` | `100%` | `3★` | Initial training (1,689 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
-| **#2** | `1,689` | `1,918` | `+229` | `thrower_healer_totem_smash_ep1918_100pct_3star.pt` | `100%` | `3★` | Resumed training (+229 ep from thrower_healer_totem_smash_ep1689_100pct_3star.pt) on TH18 Thrower + Healer + Totem Smash (Meta) |
-| **#3** | `0` | `60` | `+60` | `thrower_healer_totem_smash_ep60_100pct_3star.pt` | `100%` | `3★` | Initial training (60 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
-| **#4** | `0` | `1,000` | `+1,000` | `thrower_healer_totem_smash_ep1000_100pct_3star.pt` | `100%` | `3★` | Initial training (1,000 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
-| **#5** | `0` | `4` | `+4` | `thrower_healer_totem_smash_ep4_78pct_2star.pt` | `78%` | `2★` | Initial training (4 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
-| **#6** | `0` | `20` | `+20` | `thrower_healer_totem_smash_ep20_100pct_3star.pt` | `100%` | `3★` | Initial training (20 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
-| **#7** | `0` | `60` | `+60` | `thrower_healer_totem_smash_ep60_100pct_3star.pt` | `100%` | `3★` | Initial training (60 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
-| **#8** | `0` | `6,432` | `+6,432` | `thrower_healer_totem_smash_ep6432_100pct_3star.pt` | `100%` | `3★` | Initial training (6,432 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
-| **#9** | `6,432` | `6,492` | `+60` | `thrower_healer_totem_smash_ep6492_100pct_3star.pt` | `100%` | `3★` | Resumed training (+60 ep from thrower_healer_totem_smash_ep6432_100pct_3star.pt) on TH18 Thrower + Healer + Totem Smash (Meta) |
-| **#10** | `6,492` | `15,528` | `+9,036` | `thrower_healer_totem_smash_ep15528_100pct_3star.pt` | `100%` | `3★` | Resumed training (+9,036 ep from thrower_healer_totem_smash_ep6492_100pct_3star.pt) on TH18 Thrower + Healer + Totem Smash (Meta) |
-| **#11** | `0` | `2` | `+2` | `thrower_healer_totem_smash_ep2_57pct_1star.pt` | `57%` | `1★` | Initial training (2 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
-| **#12** | `0` | `2` | `+2` | `thrower_healer_totem_smash_ep2_53pct_2star.pt` | `0%` | `0★` | Initial training (2 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
-| **#13** | `0` | `2` | `+2` | `thrower_healer_totem_smash_ep2_53pct_2star.pt` | `0%` | `0★` | Initial training (2 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
-| **#14** | `9,084` | `9,108` | `+24` | `thrower_healer_totem_smash_ep9108_100pct_3star.pt` | `100%` | `3★` | Resumed training (+24 ep from thrower_healer_totem_smash_ep9084_100pct_3star.pt) on TH18 Thrower + Healer + Totem Smash (Meta) |
-| **#15** | `9,108` | `9,132` | `+24` | `thrower_healer_totem_smash_ep9132_100pct_3star.pt` | `100%` | `3★` | Resumed training (+24 ep from thrower_healer_totem_smash_ep9108_100pct_3star.pt) on TH18 Thrower + Healer + Totem Smash (Meta) |
-| **#16** | `15,240` | `15,264` | `+24` | `thrower_healer_totem_smash_ep15264_100pct_3star.pt` | `100%` | `3★` | Resumed training (+24 ep from thrower_healer_totem_smash_ep15192_100pct_3star.pt) on TH18 Thrower + Healer + Totem Smash (Meta) |
-| **#17** | `15,528` | `15,672` | `+144` | `thrower_healer_totem_smash_ep15672_100pct_3star.pt` | `100%` | `3★` | Resumed training (+144 ep from thrower_healer_totem_smash_ep15528_100pct_3star.pt) on TH18 Thrower + Healer + Totem Smash (Meta) |
+| *No sessions recorded yet* | `0` | `0` | `+0` | `—` | `0%` | `0★` | Ready for single-army training |
 
 ---
 
@@ -158,8 +142,8 @@ $$R_t = 0.35 \cdot \Delta \%_{\text{destr}} + 15.0 \cdot \Delta \text{HP}_{\text
 
 | Attack Composition | **Central Box** | **Offset Diamond** | **Anti-Hydra Ring** | **Anti-Fireball** | **Compact Teaser** | **Avg Destruction** | **3★ Rate** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **TH18 Thrower + Healer + Totem Smash** | `62% (2★)` | `62% (2★)` | `55% (2★)` | `88% (2★)` | `70% (2★)` | **67.4%** | **0.0%** |
-| **Base Defense Rate (Avg)** | **62.0% (2.0★)** | **62.0% (2.0★)** | **55.0% (2.0★)** | **88.0% (2.0★)** | **70.0% (2.0★)** | **Overall: 67.4%** | — |
+| **TH18 Thrower + Healer + Totem Smash** | `21% (0★)` | `17% (0★)` | `36% (0★)` | `39% (1★)` | `54% (2★)` | **33.4%** | **0.0%** |
+| **Base Defense Rate (Avg)** | **21.0% (0.0★)** | **17.0% (0.0★)** | **36.0% (0.0★)** | **39.0% (1.0★)** | **54.0% (2.0★)** | **Overall: 33.4%** | — |
 
 ---
 
@@ -181,7 +165,7 @@ See [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Tel
 | :--- | :--- | :--- |
 | **Trained Army Composition** | `TH18 Thrower + Healer + Totem Smash (Meta)` | Single dedicated army composition per model |
 | **Default Checkpoint Pattern** | `thrower_healer_totem_smash_ep{N}_{pct}pct_{stars}star.pt` | Army-prefixed checkpoint naming convention |
-| **Learning Rate (`lr`)** | `0.000184` | Adam optimizer learning rate (Critic `2.5x`) |
+| **Learning Rate (`lr`)** | `0.0003` | Adam optimizer learning rate (Critic `2.5x`) |
 | **Batch Episodes** | `12` | Trajectories collected per PPO update |
 | **Minibatch Size** | `128` | SGD transition batch size |
 | **PPO Epochs** | `4` | Optimization passes over collected rollout |
@@ -190,4 +174,4 @@ See [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Tel
 | **GAE ($\lambda$)** | `0.95` | Generalized Advantage Estimation smoothing |
 | **Clip Coefficient** | `0.2` | PPO surrogate objective clipping range |
 | **Entropy Coefficient** | `0.015` | Normalized per-head exploration policy entropy bonus |
-| **Total Training Episodes** | **`15,672`** | **Cumulative episodes across all resumed sessions** |
+| **Total Training Episodes** | **`0`** | **Cumulative episodes across all resumed sessions** |
