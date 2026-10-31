@@ -7,7 +7,7 @@ tags:
   - architecture
   - coc-rl
   - tensor-spec
-updated: 2026-10-30
+updated: 2026-10-31
 ---
 
 # 🧠 CoC TH18 Deep RL — Project Long-Term Memory & Source of Truth
@@ -29,21 +29,21 @@ The `obsidian_vault/` directory is the **authoritative single source of truth** 
 ## 📥 Current Input Implementation
 
 The deep reinforcement learning attacker policy receives two fused inputs at every decision step `t`:
-1. A **50-Channel Spatial Observation Tensor** `obs` with shape `(B, 50, 50, 50)`
+1. A **59-Channel Dedicated Spatial Observation Tensor** `obs` with shape `(B, 59, 50, 50)` (see complete specification in [[encodings/Defense_And_Unit_Spatial_Encoding|59-Channel Defense & Unit Encoding Spec]])
 2. A **64-Dimensional Live Available Inventory Vector** `army_context` with shape `(B, 64)`
 
 ```text
-[Input 1: obs (50, 50, 50)]  ───> [CoCSpatialEncoder] ───> spatial_features (B, 128, 50, 50)
-                                        │
-                                        └───> global_emb (B, 256)
-                                                  │
-[Input 2: army_context (64)] ───> [Linear+LN+SiLU] ───(+) (Residual Fusion)
-                                                  │
-                                       ┌──────────┴──────────┐
-                                  [Factorized Actor Heads] [Critic Head]
+[Input 1: obs (59, 50, 50)]  ───> [CoCSpatialEncoder (U-Net)] ───> spatial_features (B, 32, 50, 50)
+                                           │
+                                           └───> global_emb (B, 256)
+                                                     │
+[Input 2: army_context (64)] ─────> [Linear+LN+SiLU] ───(+) (Residual Fusion)
+                                                     │
+                                          ┌──────────┴──────────┐
+                                     [Factorized Actor Heads] [Critic Head]
 ```
 
-### 1. 50-Channel Spatial Observation Grid (`(B, 50, 50, 50)`)
+### 1. 59-Channel Spatial Observation Grid (`(B, 59, 50, 50)`)
 
 Extracted directly by the Rust simulation engine via `BattleEngine::extract_spatial_observation()` (`crates/coc-engine/src/sim.rs`):
 
@@ -375,4 +375,33 @@ Defined in `CoCActorCritic` (`python/coc_rl/networks.py`), the policy parameteri
 - **Consequences**:
   - Automated synchronization between PyTorch module definitions and visual graph artifacts.
   - Strict separation of concerns between training/simulation engineering, long-term memory governance (`vault-updater`), and visual architecture inspection (`model-visualizer`).
+
+### ADR-013: Autonomous 10-Minute Recursive AI Self-Improvement Loop, Dynamic Architectural Conditioning, Milestone Reward Shaping & Mandatory Pre-Change Baseline Snapshots
+- **Date**: 2026-10-31
+- **Status**: Accepted
+- **Context**:
+  1. **Long-Run Training Plateaus & Diagnostic Blindspots**: As PPO training extends past 9,000+ episodes, policies encounter subtle multi-modal bottlenecks: 2-star to 3-star conversion funnels stalling at back-end cleanup, high cross-village destruction variance (e.g. 17.1% gap between symmetrical layouts vs. Offset Diamond with Hot Candle), and critic baseline lag ($V(s_0)$ under-calibrating by >24 pts). Diagnosing these manually was slow, error-prone, and reactive.
+  2. **Scientific Traceability & The "Pre-Change Baseline" Invariant**: In deep RL, hyperparameter or architecture tweaks often appear beneficial in short windows but introduce silent regressions on difficult layouts. Without recording the full baseline state (exact model weights, git commit, full reward formula, architecture config, conversion funnels, per-village spread) *immediately prior* to any modification, it was impossible to objectively measure progress or verify whether an intervention actually solved the targeted pathology.
+  3. **Static Weights in Production Networks**: Architectural priors (such as the 15×15 Town Hall breach attraction field `th_threat_weight`, `breach_prior_weight`, `film_cond_scale`, and per-head entropy regularization weights) and reward parameters (such as `th_bonus`, `damage_weight`, `funnel_weight`, and high-percentage milestone bonuses) were previously hardcoded constants in `networks.py` and `ppo.py`, requiring code edits and server restarts to test hypotheses.
+- **Decision**:
+  1. **Autonomous 10-Minute Recursive Improvement Loop (`python/coc_rl/recursive_loop.py`, `python/ai_server.py`)**:
+     - Background daemon running every 600 seconds (`interval_seconds=600`) that triggers automatic health evaluations (0–100 score).
+     - Multi-provider LLM / hybrid diagnostic engine (Vertex AI Gemini 4 Argon, OpenCode Argon, or deterministic analytical fallbacks) identifying primary bottlenecks across four structured categories: `architecture`, `reward_function`, `hyperparameters`, and `combined`.
+  2. **Mandatory Pre-Change Baseline Snapshots (`capture_pre_change_snapshot`)**:
+     - Before applying any candidate solution, the system captures an immutable snapshot: cumulative episode, checkpoint path, git commit SHA, active architecture hyperparameters, active reward formula, PPO hyperparameters, 50-episode mean destruction %, star conversion funnel ($1\star \to P(2\star|1\star) \to P(3\star|2\star)$), critic calibration gap, and per-village destruction metrics.
+  3. **Dynamic Architectural Conditioning (`DEFAULT_ARCH_CONFIG` in `python/coc_rl/networks.py`)**:
+     - Parameterized `arch_config` passed into `CoCActorCritic`: dynamically tunes U-Net FiLM scale (`film_cond_scale`), Town Hall breach attraction (`th_threat_weight`, `breach_prior_weight`), spell combat prior (`spell_combat_prior_weight`), spatial tile scale (`tile_logit_scale`), and per-head categorical entropy weights (`reg_ent_type_weight`, `reg_ent_idx_weight`, `reg_ent_frac_weight`, `reg_ent_tile_weight`).
+  4. **Configurable Dense & Milestone Reward Shaping (`DEFAULT_REWARD_CONFIG` in `python/coc_rl/ppo.py`)**:
+     - Parameterized `reward_config` passed into `compute_custom_reward_components()`: supports progressive milestone bonuses (`high_pct_milestone_75`, `high_pct_milestone_90`, `triple_wipe_bonus`), custom destruction/star/TH weights, and generates explicit LaTeX/text math representations via `format_reward_formula()`.
+  5. **Empirical Post-Verification & Vault Ledger (`verify_solution_outcome`, `sync_recursive_loop_to_vault`)**:
+     - Evaluates post-change training runs (typically +24 to +50 episodes) against the pre-change baseline snapshot.
+     - Categorizes outcomes into `SOLVED` (promoted as new baseline), `IMPROVED` (retained for continued consolidation), or `REGRESSED` (rolled back to baseline configuration).
+     - Continuously generates and updates the long-term memory ledger in `obsidian_vault/experiments/Recursive_AI_Improvement_Loop.md`, complete with comparative synthesis matrix, exact parameter diffs, and before-vs-after delta tables.
+  6. **Interactive AI Studio UI Panel (`web/src/ai/RecursiveLoopPanel.tsx`)**:
+     - Full-featured monitoring dashboard in Web AI Studio for visualizing active cycle phases, triggering on-demand audits, manually selecting candidate solutions, and reviewing pre-change snapshots.
+- **Consequences**:
+  - Establishes a fully autonomous, scientifically verifiable self-improvement loop for TH18 combat AI.
+  - Eliminates silent regressions through mandatory before-vs-after baseline comparison.
+  - Ensures all self-improvement experiments, parameter mutations, and empirical results are permanently recorded in the Obsidian vault.
+
 

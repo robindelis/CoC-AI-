@@ -1,7 +1,7 @@
 {
-  "last_synced_commit": "ff5e0e2ec31d23b577ab35629671cc4559662825",
-  "last_synced_commit_short": "ff5e0e2",
-  "last_synced_at": "2026-10-31T11:19:53.911139+00:00",
-  "last_synced_subject": "refactor: remove learning curriculum and dereference throughout AGENTS.md, docs, and tooling",
+  "last_synced_commit": "bb7bb7a306a69af6db702dfdf58ba648c76df414",
+  "last_synced_commit_short": "bb7bb7a",
+  "last_synced_at": "2026-10-31T14:00:43.012767+00:00",
+  "last_synced_subject": "docs(arch): reconcile model architecture specs, canvas links, and diagram manifest",
   "branch": "main"
 }
