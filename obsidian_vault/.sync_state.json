@@ -1,7 +1,7 @@
 {
-  "last_synced_commit": "d8addaf23335b2d06b3e32bf4d3b44ab0521af33",
-  "last_synced_commit_short": "d8addaf",
-  "last_synced_at": "2026-10-31T11:19:34.486365+00:00",
-  "last_synced_subject": "docs(vault): record sync state at 8536ce1",
+  "last_synced_commit": "ff5e0e2ec31d23b577ab35629671cc4559662825",
+  "last_synced_commit_short": "ff5e0e2",
+  "last_synced_at": "2026-10-31T11:19:53.911139+00:00",
+  "last_synced_subject": "refactor: remove learning curriculum and dereference throughout AGENTS.md, docs, and tooling",
   "branch": "main"
 }
