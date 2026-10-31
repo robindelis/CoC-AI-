@@ -516,12 +516,18 @@ export interface AICandidateSolution {
     | 'hyperparameters'
     | 'combined'
     | 'code_agent'
+    | 'new_architecture_restart'
     | string;
+  decision_type?:
+    | 'apply_in_place_solution'
+    | 'stop_and_restart_new_arch'
+    | string;
+  requires_restart_from_scratch?: boolean;
   title: string;
   target_problem: string;
   rationale: string;
   config_patch: {
-    arch_config?: Record<string, number | string>;
+    arch_config?: Record<string, number | string | boolean>;
     reward_config?: Record<string, number>;
     hyperparams?: Record<string, number | string>;
   };
@@ -551,6 +557,16 @@ export interface AICodeAgentExecution {
 export interface AICompactBaselineMetrics {
   episode: number;
   history_length: number;
+  eval_window_episodes?: number;
+  mean_pct_300?: number;
+  std_pct_300?: number;
+  sem_pct_300?: number;
+  one_star_rate_300?: number;
+  two_star_th_rate_300?: number;
+  three_star_triple_rate_300?: number;
+  mean_reward_300?: number;
+  combat_score_300?: number;
+  raw_mean_pct_50?: number;
   mean_pct_50: number;
   std_pct_50: number;
   rolling50_peak_pct: number;
@@ -616,7 +632,7 @@ export interface AIPreChangeSnapshot {
   git_commit: string;
   checkpoint_file: string;
   cumulative_episode: number;
-  arch_config: Record<string, number | string>;
+  arch_config: Record<string, number | string | boolean>;
   reward_config: Record<string, number>;
   reward_formula: string;
   hyperparams: Record<string, number | string>;
@@ -628,14 +644,30 @@ export interface AISolutionVerificationResult {
   start_episode: number;
   end_episode: number;
   episodes_tested: number;
+  eval_window_episodes?: number;
   problem_solved: boolean;
-  verdict: 'SOLVED' | 'IMPROVED' | 'PARTIAL' | 'NOT_SOLVED_ROLLED_BACK' | string;
-  decision_taken: 'kept_and_promoted' | 'kept_and_continuing' | 'rolled_back_to_baseline' | string;
+  verdict:
+    | 'SOLVED'
+    | 'IMPROVED'
+    | 'STAGNANT'
+    | 'NOT_SOLVED_ROLLED_BACK'
+    | 'DEGRADED_RESTART_NEW_ARCH'
+    | 'PLATEAU_RESTART_NEW_ARCH'
+    | string;
+  decision_taken:
+    | 'kept_and_promoted'
+    | 'kept_and_continuing'
+    | 'rolled_back_to_baseline'
+    | 'stopped_and_restarted_new_arch'
+    | string;
+  trigger_new_arch_restart?: boolean;
   post_change_metrics: AICompactBaselineMetrics;
   metric_deltas: {
     delta_mean_pct_50: number;
+    delta_mean_pct_300?: number;
     delta_two_star_th_rate: number;
     delta_three_star_rate: number;
+    delta_combat_score?: number;
     delta_mean_reward: number;
     delta_pct_slope: number;
     delta_noop_pct: number;
@@ -661,10 +693,17 @@ export interface AIRecursiveLoopCycle {
   completed_at: string | null;
   trigger: string;
   episode_at_analysis: number;
+  restarted_from_scratch?: boolean;
   health_verdict: {
     status: 'healthy_progressing' | 'plateaued' | 'degrading' | string;
     health_score: number;
     is_plateaued: boolean;
+    recommended_decision?:
+      | 'keep_monitoring'
+      | 'apply_in_place_solution'
+      | 'rollback_to_baseline'
+      | 'stop_and_restart_new_arch'
+      | string;
     headline: string;
     progression_summary: string;
     model_used: string;
@@ -705,12 +744,14 @@ export interface AIRecursiveLoopState {
     cycle_id: number;
     solution: AICandidateSolution;
     baseline_episode: number;
+    pre_restart_episode?: number;
+    restarted_from_scratch?: boolean;
     target_episodes: number;
     baseline_metrics: AICompactBaselineMetrics;
   } | null;
   active_config: {
     updated_at?: string;
-    arch_config: Record<string, number | string>;
+    arch_config: Record<string, number | string | boolean>;
     reward_config: Record<string, number>;
     hyperparams: Record<string, number | string>;
   };

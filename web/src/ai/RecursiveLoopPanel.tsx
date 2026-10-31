@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   applyRecursiveLoopSolution,
   configureRecursiveLoop,
+  restartRecursiveLoopNewArchitecture,
   runRecursiveLoopCycle,
   verifyRecursiveLoopSolution,
 } from './aiClient';
@@ -52,6 +53,12 @@ const CATEGORY_COLORS: Record<
     border: '#f97316',
     text: '#fdba74',
     label: 'ARGON 4 CODE AGENT',
+  },
+  new_architecture_restart: {
+    bg: 'rgba(236, 72, 153, 0.18)',
+    border: '#ec4899',
+    text: '#f9a8d4',
+    label: 'STOP & RESTART NEW ARCH',
   },
 };
 
@@ -126,7 +133,7 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
   const enabled = Boolean(loopState?.enabled);
   const intervalSec = loopState?.interval_seconds ?? 600;
   const countdownSec = loopState?.seconds_until_next_check ?? intervalSec;
-  const testEps = loopState?.test_episodes_per_cycle ?? 48;
+  const testEps = loopState?.test_episodes_per_cycle ?? 300;
   const provider: AIFeedbackProviderId =
     loopState?.provider ?? 'opencode_argon';
   const phase = loopState?.phase ?? 'idle';
@@ -243,6 +250,22 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
     }
   };
 
+  const handleRestartWithNewArchitecture = async () => {
+    setIsBusy(true);
+    try {
+      const res = await restartRecursiveLoopNewArchitecture({
+        run_code_agent: allowCodeAgent,
+        use_llm: true,
+      });
+      if (res && res.cycles.length > 0) {
+        setSelectedCycleId(res.cycles[res.cycles.length - 1].cycle_id);
+      }
+      await onRefreshStatus();
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
   const snap = activeCycle?.pre_change_snapshot;
   const bm = snap?.baseline_metrics;
   const hv = activeCycle?.health_verdict;
@@ -296,7 +319,7 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
               </span>
 
               <span className="rl-loop-meta-chip">
-                <span>Test Burst</span>
+                <span>Eval / Test Window</span>
                 <select
                   className="rl-inline-select"
                   value={testEps}
@@ -304,10 +327,11 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
                     void handleTestEpsChange(Number(e.target.value))
                   }
                 >
-                  <option value={24}>24 Eps</option>
                   <option value={48}>48 Eps</option>
                   <option value={96}>96 Eps</option>
-                  <option value={144}>144 Eps</option>
+                  <option value={150}>150 Eps</option>
+                  <option value={300}>300 Eps (Low-Var Mean)</option>
+                  <option value={500}>500 Eps</option>
                 </select>
               </span>
 
@@ -358,6 +382,20 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
               onClick={() => void handleRunCycleNow(true)}
             >
               ⚡ Run Full Cycle (Snapshot → Fix → Test)
+            </button>
+
+            <button
+              type="button"
+              className="clash-btn"
+              style={{
+                borderColor: '#ec4899',
+                color: '#f9a8d4',
+                background: 'rgba(236, 72, 153, 0.16)',
+              }}
+              disabled={isBusy || Boolean(loopState?.is_running_cycle)}
+              onClick={() => void handleRestartWithNewArchitecture()}
+            >
+              🛑🔄 Stop &amp; Restart New Arch
             </button>
 
             {activeHyp && (
@@ -532,13 +570,14 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
             {snapshotTab === 'telemetry' && (
               <div className="rl-kv-grid">
                 <div className="rl-kv-item">
-                  <span>Mean Destr (50-Ep)</span>
+                  <span>Mean Destr (300-Ep)</span>
                   <strong style={{ color: '#fde047' }}>
                     {bm.mean_pct_50.toFixed(1)}%
+                    {bm.sem_pct_300 !== undefined ? ` ± ${bm.sem_pct_300.toFixed(2)}%` : ''}
                   </strong>
                 </div>
                 <div className="rl-kv-item">
-                  <span>Rolling-50 Peak</span>
+                  <span>300-Ep Peak</span>
                   <strong>
                     {bm.rolling50_peak_pct.toFixed(1)}% ({bm.episodes_since_peak}{' '}
                     eps ago)
@@ -766,6 +805,18 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
                         >
                           {catStyle.label}
                         </span>
+                        {sol.requires_restart_from_scratch && (
+                          <span
+                            className="rl-cat-chip"
+                            style={{
+                              background: 'rgba(236, 72, 153, 0.2)',
+                              borderColor: '#ec4899',
+                              color: '#f9a8d4',
+                            }}
+                          >
+                            🔄 RESTART FROM SCRATCH
+                          </span>
+                        )}
                         {sol.requires_code_edit && (
                           <span
                             className="rl-cat-chip"
@@ -933,7 +984,7 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
               <tbody>
                 <tr>
                   <td>
-                    <strong>Mean 50-Ep Destruction %</strong>
+                    <strong>Mean 300-Ep Destruction %</strong>
                   </td>
                   <td>{bm.mean_pct_50.toFixed(2)}%</td>
                   <td style={{ color: '#fde047', fontWeight: 700 }}>
@@ -952,6 +1003,41 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
                     {ver.metric_deltas.delta_mean_pct_50.toFixed(2)}%
                   </td>
                 </tr>
+                {ver.metric_deltas.delta_combat_score !== undefined && (
+                  <tr>
+                    <td>
+                      <strong>Composite Combat Score (0–100)</strong>
+                    </td>
+                    <td>
+                      {(
+                        bm.combat_score_300 ??
+                        0.5 * bm.mean_pct_50 +
+                          0.2 * bm.two_star_th_rate_50 +
+                          0.3 * bm.three_star_triple_rate_50
+                      ).toFixed(2)}
+                    </td>
+                    <td style={{ color: '#38bdf8', fontWeight: 700 }}>
+                      {(
+                        ver.post_change_metrics.combat_score_300 ??
+                        0.5 * ver.post_change_metrics.mean_pct_50 +
+                          0.2 * ver.post_change_metrics.two_star_th_rate_50 +
+                          0.3 * ver.post_change_metrics.three_star_triple_rate_50
+                      ).toFixed(2)}
+                    </td>
+                    <td
+                      style={{
+                        color:
+                          ver.metric_deltas.delta_combat_score >= 0
+                            ? '#4ade80'
+                            : '#f87171',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {ver.metric_deltas.delta_combat_score >= 0 ? '+' : ''}
+                      {ver.metric_deltas.delta_combat_score.toFixed(2)}
+                    </td>
+                  </tr>
+                )}
                 <tr>
                   <td>
                     <strong>2★+ Town Hall 18 Takedown Rate</strong>

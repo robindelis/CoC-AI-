@@ -360,3 +360,25 @@ export async function verifyRecursiveLoopSolution(): Promise<AIRecursiveLoopStat
     return null;
   }
 }
+
+export async function restartRecursiveLoopNewArchitecture(params?: {
+  run_code_agent?: boolean;
+  use_llm?: boolean;
+}): Promise<AIRecursiveLoopState | null> {
+  try {
+    const res = await fetch(`${AI_API_BASE}/loop/restart-new-arch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        run_code_agent: params?.run_code_agent ?? true,
+        auto_test: true,
+        use_llm: params?.use_llm ?? true,
+        trigger: 'restart_new_arch',
+      }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as AIRecursiveLoopState;
+  } catch {
+    return null;
+  }
+}

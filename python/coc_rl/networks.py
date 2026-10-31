@@ -91,6 +91,57 @@ class UNetUpBlock(nn.Module):
         return self.conv(fused)
 
 
+class SEChannelAttention(nn.Module):
+    """
+    Squeeze-and-Excitation (SE) Channel Attention Block:
+    Dynamically re-weights the 59-channel / multi-scale defense & unit feature maps
+    based on global village layout context.
+    """
+
+    def __init__(self, channels: int, reduction: int = 4):
+        super().__init__()
+        mid = max(8, channels // reduction)
+        self.fc = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(channels, mid),
+            nn.SiLU(inplace=True),
+            nn.Linear(mid, channels),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        w = self.fc(x).unsqueeze(-1).unsqueeze(-1)
+        return x * w.to(x.dtype)
+
+
+class DilatedResBlock(nn.Module):
+    """
+    Multi-Scale Dilated Residual Context Block (dilation=2 and dilation=4):
+    Expands spatial receptive field across TH18 multi-compartment wall & defense rings
+    while preserving exact spatial resolution.
+    """
+
+    def __init__(self, channels: int, groups: int = 8):
+        super().__init__()
+        g = min(groups, channels)
+        self.block = nn.Sequential(
+            nn.Conv2d(channels, channels, kernel_size=3, padding=2, dilation=2, bias=False),
+            nn.GroupNorm(g, channels),
+            nn.SiLU(inplace=True),
+            nn.Conv2d(channels, channels, kernel_size=3, padding=4, dilation=4, bias=False),
+            nn.GroupNorm(g, channels),
+        )
+        self.act = nn.SiLU(inplace=True)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        c1 = self.block[0](x)
+        h1 = self.block[2](self.block[1](c1).to(c1.dtype))
+        c2 = self.block[3](h1)
+        h2 = self.block[4](c2).to(c2.dtype)
+        return self.act(x + h2)
+
+
 class CoCSpatialEncoder(nn.Module):
     """
     U-Net Contracting-Expansive Spatial Backbone for the 59x50x50 Village Observation Grid.
@@ -117,12 +168,16 @@ class CoCSpatialEncoder(nn.Module):
         base_ch: int = 32,
         spatial_dim: int = 32,
         embed_dim: int = 256,
+        use_dilated_context: bool = False,
+        use_se_attention: bool = False,
     ):
         super().__init__()
         self.in_channels = in_channels
         self.base_ch = base_ch
         self.spatial_dim = spatial_dim
         self.embed_dim = embed_dim
+        self.use_dilated_context = bool(use_dilated_context)
+        self.use_se_attention = bool(use_se_attention)
 
         c1 = base_ch          # 32
         c2 = base_ch * 2      # 64
@@ -134,12 +189,14 @@ class CoCSpatialEncoder(nn.Module):
         self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
 
         self.enc2 = UNetConvBlock(c1, c2)
+        self.dilated_context = DilatedResBlock(c2) if self.use_dilated_context else None
         self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
 
         self.enc3 = UNetConvBlock(c2, c3)
         self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
 
         self.bottleneck = UNetConvBlock(c3, c4)
+        self.bottleneck_se = SEChannelAttention(c4) if self.use_se_attention else None
 
         # Stage 2A: Initial U-Net Upscale (6x6 -> 12x12 with Skip 3)
         # Feeds both the Global Tower (for the 5 heads) and the remaining U-Net decoder path
@@ -168,6 +225,7 @@ class CoCSpatialEncoder(nn.Module):
         self.up1 = UNetUpBlock(
             in_ch=c2, skip_ch=c1, out_ch=spatial_dim, padding=1, output_padding=1
         )
+        self.spatial_se = SEChannelAttention(spatial_dim) if self.use_se_attention else None
 
     @property
     def spatial_stem(self) -> nn.Module:
@@ -221,8 +279,12 @@ class CoCSpatialEncoder(nn.Module):
         # Stage 1: Downscale 50x50 -> 25x25 -> 12x12 -> 6x6
         e1 = self.enc1(obs)               # (B, 32, 50, 50)
         e2 = self.enc2(self.pool1(e1))    # (B, 64, 25, 25)
+        if self.dilated_context is not None:
+            e2 = self.dilated_context(e2)
         e3 = self.enc3(self.pool2(e2))    # (B, 128, 12, 12)
         b = self.bottleneck(self.pool3(e3))  # (B, 256, 6, 6)
+        if self.bottleneck_se is not None:
+            b = self.bottleneck_se(b)
 
         # Stage 2: Upscale a little bit (6x6 -> 12x12) with Skip 3
         d3 = self.up3(b, e3)              # (B, 128, 12, 12)
@@ -233,6 +295,8 @@ class CoCSpatialEncoder(nn.Module):
         # Branch B: Upscale completely back to 50x50 (12x12 -> 25x25 -> 50x50) for grid position selection
         d2 = self.up2(d3, e2)             # (B, 64, 25, 25)
         spatial_features = self.up1(d2, e1)  # (B, 32, 50, 50)
+        if self.spatial_se is not None:
+            spatial_features = self.spatial_se(spatial_features)
 
         return spatial_features.float(), global_embedding.float()
 
@@ -246,14 +310,18 @@ DEFAULT_ARCH_CONFIG: Dict[str, Any] = {
     "spatial_dim": 32,
     "embed_dim": 256,
     "head_hidden_dim": 128,
+    "use_dilated_context": False,
+    "use_se_attention": False,
+    "use_gated_heads": False,
+    "critic_depth": 2,
     "logit_temp_type": 1.4,
     "logit_temp_idx": 1.6,
     "logit_temp_frac": 1.4,
     "tile_logit_scale": 2.2,
-    "th_threat_weight": 8.6,
-    "defense_threat_weight": 1.8,
-    "breach_prior_weight": 10.6,
-    "spell_combat_prior_weight": 7.5,
+    "th_threat_weight": 9.5,  # Cycle 20 spatial breach & TH focus
+    "defense_threat_weight": 2.0,
+    "breach_prior_weight": 11.0,
+    "spell_combat_prior_weight": 8.0,
     "film_cond_scale": 0.8,
     "reg_ent_type_weight": 2.2,
     "reg_ent_idx_weight": 2.2,
@@ -312,16 +380,21 @@ class CoCActorCritic(nn.Module):
         embed_dim_cfg = int(cfg.get("embed_dim", 256))
         head_hidden_dim = int(cfg.get("head_hidden_dim", 128))
         self.head_hidden_dim = head_hidden_dim
+        self.arch_version: str = str(cfg.get("arch_version", "3.0-UNet"))
+        self.use_dilated_context: bool = bool(cfg.get("use_dilated_context", False))
+        self.use_se_attention: bool = bool(cfg.get("use_se_attention", False))
+        self.use_gated_heads: bool = bool(cfg.get("use_gated_heads", False))
+        self.critic_depth: int = int(cfg.get("critic_depth", 2))
 
         # Dynamic architectural conditioning & regularization coefficients
         self.logit_temp_type: float = float(cfg.get("logit_temp_type", 1.4))
         self.logit_temp_idx: float = float(cfg.get("logit_temp_idx", 1.6))
         self.logit_temp_frac: float = float(cfg.get("logit_temp_frac", 1.4))
         self.tile_logit_scale: float = float(cfg.get("tile_logit_scale", 2.2))
-        self.th_threat_weight: float = float(cfg.get("th_threat_weight", 8.6))
-        self.defense_threat_weight: float = float(cfg.get("defense_threat_weight", 1.8))
-        self.breach_prior_weight: float = float(cfg.get("breach_prior_weight", 10.6))
-        self.spell_combat_prior_weight: float = float(cfg.get("spell_combat_prior_weight", 7.5))
+        self.th_threat_weight: float = float(cfg.get("th_threat_weight", 9.5))
+        self.defense_threat_weight: float = float(cfg.get("defense_threat_weight", 2.0))
+        self.breach_prior_weight: float = float(cfg.get("breach_prior_weight", 11.0))
+        self.spell_combat_prior_weight: float = float(cfg.get("spell_combat_prior_weight", 8.0))
         self.film_cond_scale: float = float(cfg.get("film_cond_scale", 0.8))
         self.reg_ent_type_weight: float = float(cfg.get("reg_ent_type_weight", 2.2))
         self.reg_ent_idx_weight: float = float(cfg.get("reg_ent_idx_weight", 2.2))
@@ -334,6 +407,8 @@ class CoCActorCritic(nn.Module):
             base_ch=base_ch,
             spatial_dim=spatial_dim_cfg,
             embed_dim=embed_dim_cfg,
+            use_dilated_context=self.use_dilated_context,
+            use_se_attention=self.use_se_attention,
         )
         spatial_dim = self.encoder.spatial_dim  # 32
         embed_dim = self.encoder.embed_dim  # 256
@@ -365,6 +440,14 @@ class CoCActorCritic(nn.Module):
 
         # Head 4: Spatial Tile Pointer (projects conditioned embedding onto the spatial map)
         self.tile_cond_proj = nn.Linear(embed_dim + 7 + 10, spatial_dim)
+        self.head_gate = (
+            nn.Sequential(
+                nn.Linear(embed_dim + 7 + 10, spatial_dim),
+                nn.Sigmoid(),
+            )
+            if self.use_gated_heads
+            else None
+        )
         self.tile_conv_head = nn.Sequential(
             nn.Conv2d(spatial_dim, 32, kernel_size=3, padding=1),
             nn.SiLU(),
@@ -372,11 +455,22 @@ class CoCActorCritic(nn.Module):
         )
 
         # Head 5: State-Value Critic V(s)
-        self.critic_head = nn.Sequential(
-            nn.Linear(embed_dim, head_hidden_dim),
-            nn.SiLU(),
-            nn.Linear(head_hidden_dim, 1),
-        )
+        if self.critic_depth >= 3:
+            self.critic_head = nn.Sequential(
+                nn.Linear(embed_dim, head_hidden_dim),
+                nn.LayerNorm(head_hidden_dim),
+                nn.SiLU(),
+                nn.Linear(head_hidden_dim, head_hidden_dim),
+                nn.LayerNorm(head_hidden_dim),
+                nn.SiLU(),
+                nn.Linear(head_hidden_dim, 1),
+            )
+        else:
+            self.critic_head = nn.Sequential(
+                nn.Linear(embed_dim, head_hidden_dim),
+                nn.SiLU(),
+                nn.Linear(head_hidden_dim, 1),
+            )
         self.register_buffer(
             "_frac_bins_tensor",
             torch.tensor(DEPLOY_FRACTION_BINS, dtype=torch.float32),
@@ -386,6 +480,8 @@ class CoCActorCritic(nn.Module):
     def apply_arch_config(self, cfg: Optional[Dict[str, Any]]) -> None:
         if not isinstance(cfg, dict):
             return
+        if "arch_version" in cfg and cfg["arch_version"]:
+            self.arch_version = str(cfg["arch_version"])
         for attr in (
             "logit_temp_type",
             "logit_temp_idx",
@@ -406,12 +502,16 @@ class CoCActorCritic(nn.Module):
 
     def get_arch_config(self) -> Dict[str, Any]:
         return {
-            "arch_version": "3.0-UNet",
+            "arch_version": str(getattr(self, "arch_version", "3.0-UNet")),
             "in_channels": int(self.in_channels),
             "base_ch": int(self.encoder.base_ch),
             "spatial_dim": int(self.encoder.spatial_dim),
             "embed_dim": int(self.encoder.embed_dim),
             "head_hidden_dim": int(getattr(self, "head_hidden_dim", 128)),
+            "use_dilated_context": bool(getattr(self, "use_dilated_context", False)),
+            "use_se_attention": bool(getattr(self, "use_se_attention", False)),
+            "use_gated_heads": bool(getattr(self, "use_gated_heads", False)),
+            "critic_depth": int(getattr(self, "critic_depth", 2)),
             "total_params": int(sum(p.numel() for p in self.parameters())),
             "logit_temp_type": round(float(self.logit_temp_type), 4),
             "logit_temp_idx": round(float(self.logit_temp_idx), 4),
@@ -458,7 +558,12 @@ class CoCActorCritic(nn.Module):
 
         # 4. Conditioned 50x50 Spatial Tile Pointer
         cond_spatial = self.tile_cond_proj(frac_cond_emb).unsqueeze(-1).unsqueeze(-1)
-        fused_spatial = F.silu(spatial_feat + cond_spatial)
+        if self.head_gate is not None:
+            gate_w = self.head_gate(frac_cond_emb).unsqueeze(-1).unsqueeze(-1)
+            cond_spatial = cond_spatial * gate_w
+        fused_spatial = F.silu(
+            spatial_feat * (1.0 + self.film_cond_scale * torch.tanh(cond_spatial)) + cond_spatial
+        )
         tile_logits = self.tile_conv_head(fused_spatial).reshape(B, 2500)
 
         # 5. Critic Value V(s)
@@ -568,6 +673,9 @@ class CoCActorCritic(nn.Module):
         # 4. Spatial Tile Distribution (50x50 = 2500 tiles)
         # FiLM-style multiplicative + additive spatial conditioning & multi-scale core/defense proximity focus
         cond_spatial = self.tile_cond_proj(frac_cond_emb).unsqueeze(-1).unsqueeze(-1)
+        if self.head_gate is not None:
+            gate_w = self.head_gate(frac_cond_emb).unsqueeze(-1).unsqueeze(-1)
+            cond_spatial = cond_spatial * gate_w
         fused_spatial = F.silu(
             spatial_feat * (1.0 + self.film_cond_scale * torch.tanh(cond_spatial)) + cond_spatial
         )

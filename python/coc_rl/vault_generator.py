@@ -31,9 +31,13 @@ CHARTS_ASSETS_DIR = os.path.join(ASSETS_DIR, "charts")
 RUNS_DIR = os.path.join(VAULT_DIR, "runs")
 DECISIONS_DIR = os.path.join(VAULT_DIR, "decisions")
 CANVAS_FILE = os.path.join(VAULT_DIR, "01_Model_Architecture_and_Training_Tracker.canvas")
-REGISTRY_FILE = os.path.join(REPO_ROOT, "trained_models", "run_registry.json")
-EVAL_CACHE_FILE = os.path.join(REPO_ROOT, "trained_models", "model_evals.json")
 TRAINED_MODELS_DIR = os.path.join(REPO_ROOT, "trained_models")
+CHECKPOINTS_DIR = os.path.join(TRAINED_MODELS_DIR, "checkpoints")
+ARCHIVES_DIR = os.path.join(TRAINED_MODELS_DIR, "archives")
+STATE_DIR = os.path.join(TRAINED_MODELS_DIR, "state")
+FEEDBACK_DIR = os.path.join(TRAINED_MODELS_DIR, "feedback")
+REGISTRY_FILE = os.path.join(STATE_DIR, "run_registry.json")
+EVAL_CACHE_FILE = os.path.join(STATE_DIR, "model_evals.json")
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +135,19 @@ $$R_t = 0.35 \\cdot \\Delta \\%_{\\text{destr}} + 15.0 \\cdot \\Delta \\text{HP}
 # ---------------------------------------------------------------------------
 
 def ensure_dirs() -> None:
-    for d in (VAULT_DIR, ASSETS_DIR, ARCH_ASSETS_DIR, CHARTS_ASSETS_DIR, RUNS_DIR, DECISIONS_DIR, TRAINED_MODELS_DIR):
+    for d in (
+        VAULT_DIR,
+        ASSETS_DIR,
+        ARCH_ASSETS_DIR,
+        CHARTS_ASSETS_DIR,
+        RUNS_DIR,
+        DECISIONS_DIR,
+        TRAINED_MODELS_DIR,
+        CHECKPOINTS_DIR,
+        ARCHIVES_DIR,
+        STATE_DIR,
+        FEEDBACK_DIR,
+    ):
         os.makedirs(d, exist_ok=True)
 
 
@@ -227,9 +243,10 @@ def evaluate_model_matchups(
     Evaluates a single-army specialist model on its exported Army Composition
     across all 5 Reference Villages.
     """
-    from train_ai import get_meta_presets, load_attacker_model, simulate_model_rollout
+    from train_ai import get_meta_presets, load_attacker_model, resolve_model_path, simulate_model_rollout
 
-    model_path = os.path.join(TRAINED_MODELS_DIR, os.path.basename(model_file))
+    resolved_p = resolve_model_path(model_file)
+    model_path = resolved_p or os.path.join(CHECKPOINTS_DIR, os.path.basename(model_file))
     if not os.path.exists(model_path):
         model_path = model_file
 
@@ -548,9 +565,9 @@ def generate_ai_diagnostics_chart(out_png_path: str) -> str:
       6. Per-Module L2 Parameter Weight Norms (spatial_stem .. critic_head)
     """
     os.makedirs(os.path.dirname(out_png_path), exist_ok=True)
-    fb_path = os.path.join(TRAINED_MODELS_DIR, "last_ai_feedback_opencode_argon.json")
+    fb_path = os.path.join(FEEDBACK_DIR, "last_ai_feedback_opencode_argon.json")
     if not os.path.exists(fb_path):
-        fb_path = os.path.join(TRAINED_MODELS_DIR, "last_ai_feedback.json")
+        fb_path = os.path.join(FEEDBACK_DIR, "last_ai_feedback.json")
 
     telemetry: Dict[str, Any] = {}
     if os.path.exists(fb_path):

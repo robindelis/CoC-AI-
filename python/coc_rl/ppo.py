@@ -14,15 +14,15 @@ from .networks import CoCActorCritic
 DEFAULT_REWARD_CONFIG: Dict[str, float] = {
     "destr_weight": 0.35,
     "star_weight": 12.0,
-    "th_bonus": 20.0,
+    "th_bonus": 20.0,  # Cycle 20 TH18 takedown milestone bonus
     "damage_weight": 15.0,
     "funnel_weight": 0.08,
     "invalid_penalty": 0.05,
     "early_noop_penalty": 0.02,
-    "high_pct_milestone_75": 0.0,
-    "high_pct_milestone_90": 0.0,
-    "triple_wipe_bonus": 0.0,
-    "pacing_wait_bonus": 0.0,
+    "high_pct_milestone_75": 2.0,
+    "high_pct_milestone_90": 4.0,
+    "triple_wipe_bonus": 6.0,
+    "pacing_wait_bonus": 0.02,
 }
 
 DEFAULT_HYPERPARAMS: Dict[str, Any] = {
@@ -75,7 +75,7 @@ def compute_custom_reward_components(
     """
     Calibrated 100-Point Dense & Milestone Reward Shaping for TH18 Combat:
       - 35.0 pts max for Destruction Percentage: delta_pct * destr_weight (0.35)
-      - 50.0 pts max for 3 Stars & TH18 milestone: delta_stars * star_weight (12.0) + th_bonus (14.0)
+      - 50.0 pts max for 3 Stars & TH18 milestone: delta_stars * star_weight (12.0) + th_bonus (20.0)
       - 15.0+ pts max for Core HP damage & tactical cohesion: delta_damage_ratio * damage_weight (15.0) + funnel_cohesion * funnel_weight (0.08)
 
     Returns:
@@ -97,7 +97,15 @@ def compute_custom_reward_components(
     r_destr = delta_pct * rc["destr_weight"]
     th_bonus = rc["th_bonus"] if th_just_destroyed else 0.0
     r_stars = delta_stars * rc["star_weight"] + th_bonus
+    if bool(step_info.get("milestone_75_reached", False)):
+        r_stars += rc.get("high_pct_milestone_75", 0.0)
+    if bool(step_info.get("milestone_90_reached", False)):
+        r_stars += rc.get("high_pct_milestone_90", 0.0)
+    if bool(step_info.get("triple_wipe_reached", False)):
+        r_stars += rc.get("triple_wipe_bonus", 0.0)
     r_damage = delta_dmg_ratio * rc["damage_weight"] + funnel_cohesion * rc["funnel_weight"]
+    if bool(step_info.get("pacing_wait_active", False)):
+        r_damage += rc.get("pacing_wait_bonus", 0.0)
     if invalid_action:
         r_damage -= rc["invalid_penalty"]
 

@@ -6,6 +6,7 @@ Manages the Attacker AI (`CoCActorCritic`), `trained_models/` checkpoint library
 
 import json
 import os
+import shutil
 import sys
 import threading
 import time
@@ -46,12 +47,16 @@ from coc_rl import (
     verify_solution_outcome,
 )
 from train_ai import (
+    ARCHIVES_DIR,
     ARMY_SHORT_NAMES,
+    CHECKPOINTS_DIR,
     DEFAULT_CKPT_PATH,
+    STATE_DIR,
     VILLAGE_SHORT_NAMES,
     army_name_to_slug,
     compute_matchup_stats,
     delete_custom_army,
+    ensure_trained_models_dir,
     get_all_army_presets,
     get_model_training_history,
     list_custom_armies,
@@ -78,11 +83,8 @@ app.add_middleware(
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DEVICE_NAME = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
 
-_LAST_STATE_PATH = os.path.join(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
-    "trained_models",
-    "last_training_state.json",
-)
+ensure_trained_models_dir()
+_LAST_STATE_PATH = os.path.join(STATE_DIR, "last_training_state.json")
 
 _train_lock = threading.Lock()
 _training_state: Dict[str, Any] = {
@@ -219,7 +221,7 @@ def _get_loop_status_payload() -> Dict[str, Any]:
     }
 
 
-_ARCH_MANIFEST_CACHE: Tuple[float, Dict[str, Any]] = (0.0, {})
+_ARCH_MANIFEST_CACHE: Tuple[float, str, Dict[str, Any]] = (0.0, "", {})
 
 
 def _get_fresh_architecture_manifest(force: bool = False) -> Dict[str, Any]:
@@ -229,13 +231,20 @@ def _get_fresh_architecture_manifest(force: bool = False) -> Dict[str, Any]:
 
     net_file = getattr(_net_mod, "__file__", "")
     mtime = os.path.getmtime(net_file) if net_file and os.path.exists(net_file) else 0.0
-    if not force and _ARCH_MANIFEST_CACHE[1] and _ARCH_MANIFEST_CACHE[0] == mtime:
-        return _ARCH_MANIFEST_CACHE[1]
+    active_arch_cfg = load_active_experiment_config().get("arch_config", {})
+    arch_sig = json.dumps(active_arch_cfg, sort_keys=True)
+    if (
+        not force
+        and _ARCH_MANIFEST_CACHE[2]
+        and _ARCH_MANIFEST_CACHE[0] == mtime
+        and _ARCH_MANIFEST_CACHE[1] == arch_sig
+    ):
+        return _ARCH_MANIFEST_CACHE[2]
 
     importlib.reload(_net_mod)
-    fresh_model = _net_mod.CoCActorCritic()
+    fresh_model = _net_mod.CoCActorCritic(arch_config=active_arch_cfg)
     manifest = ensure_architecture_diagrams(fresh_model, force=force)
-    _ARCH_MANIFEST_CACHE = (mtime, manifest)
+    _ARCH_MANIFEST_CACHE = (mtime, arch_sig, manifest)
     return manifest
 
 
@@ -524,7 +533,11 @@ def start_ppo_training(req: TrainStartRequest) -> Dict[str, Any]:
                     pass
 
             # If a Recursive Improvement Loop hypothesis was being tested, verify it automatically!
-            if _loop_state.get("active_hypothesis") and not _loop_state.get("is_running_cycle"):
+            if (
+                _loop_state.get("active_hypothesis")
+                and not _loop_state.get("is_running_cycle")
+                and not _loop_state.get("suppress_post_stop_auto_verify")
+            ):
                 def _verify_after_train() -> None:
                     try:
                         run_recursive_improvement_cycle(
@@ -533,6 +546,16 @@ def start_ppo_training(req: TrainStartRequest) -> Dict[str, Any]:
                             device=DEVICE,
                             trigger="post_test_verification",
                             use_llm=False,
+                            start_training_callback=(
+                                (lambda cfg: _launch_verification_training(cfg))
+                                if _loop_state.get("auto_apply_and_test", True)
+                                else None
+                            ),
+                            restart_new_arch_callback=(
+                                (lambda cfg, cid: _stop_and_restart_new_architecture_training(cfg, cid))
+                                if _loop_state.get("auto_apply_and_test", True)
+                                else None
+                            ),
                         )
                     except Exception:
                         pass
@@ -550,7 +573,7 @@ def _launch_verification_training(active_cfg: Dict[str, Any], test_episodes_over
     """
     if _training_state.get("is_training"):
         return False
-    saved = list_trained_models()
+    saved = [m for m in list_trained_models() if m.get("model_type") != "archived_attacker"]
     resume_target = (
         _training_state.get("saved_filename")
         or (saved[0]["filename"] if saved else "scratch")
@@ -559,7 +582,7 @@ def _launch_verification_training(active_cfg: Dict[str, Any], test_episodes_over
     eps_to_run = int(
         test_episodes_override
         or _loop_state.get("test_episodes_per_cycle")
-        or 48
+        or 300
     )
     req = TrainStartRequest(
         episodes=max(12, eps_to_run),
@@ -570,6 +593,80 @@ def _launch_verification_training(active_cfg: Dict[str, Any], test_episodes_over
         ticks_per_step=int(hp.get("ticks_per_step", 8)),
         matchup_mode=str(hp.get("matchup_mode", "random")),
         resume_from=resume_target,
+    )
+    res = start_ppo_training(req)
+    return bool(res.get("started"))
+
+
+def _stop_and_restart_new_architecture_training(
+    active_cfg: Dict[str, Any],
+    cycle_id: int,
+    test_episodes_override: Optional[int] = None,
+) -> bool:
+    """
+    Stops the currently running model (if active), archives existing checkpoints
+    from `trained_models/checkpoints/` into `trained_models/archives/` to keep
+    `trained_models/` clean, regenerates the architecture diagrams for the new
+    architecture, and restarts PPO training from scratch (`resume_from='scratch'`)
+    for at least 300 episodes.
+    """
+    ensure_trained_models_dir()
+    if _training_state.get("is_training"):
+        _loop_state["suppress_post_stop_auto_verify"] = True
+        _training_state["stop_requested"] = True
+        waited = 0.0
+        while _training_state.get("is_training") and waited < 45.0:
+            time.sleep(0.25)
+            waited += 0.25
+        _loop_state["suppress_post_stop_auto_verify"] = False
+
+    # Move any existing active checkpoints into `trained_models/archives/`
+    if os.path.isdir(CHECKPOINTS_DIR):
+        for fname in list(os.listdir(CHECKPOINTS_DIR)):
+            if not fname.endswith(".pt"):
+                continue
+            src = os.path.join(CHECKPOINTS_DIR, fname)
+            if not os.path.isfile(src):
+                continue
+            dst_name = f"cycle_{cycle_id:03d}_{fname}"
+            dst = os.path.join(ARCHIVES_DIR, dst_name)
+            try:
+                shutil.move(src, dst)
+            except Exception:
+                pass
+
+    with _train_lock:
+        _training_state["saved_filename"] = ""
+        _training_state["resume_from"] = "scratch"
+        _training_state["current_episode"] = 0
+        _training_state["cumulative_episode"] = 0
+        _training_state["best_pct"] = 0
+        _training_state["best_stars"] = 0
+        _training_state["history"] = []
+
+    try:
+        _get_fresh_architecture_manifest(force=True)
+    except Exception:
+        pass
+
+    hp = active_cfg.get("hyperparams", {})
+    eps_to_run = max(
+        300,
+        int(
+            test_episodes_override
+            or _loop_state.get("test_episodes_per_cycle")
+            or 300
+        ),
+    )
+    req = TrainStartRequest(
+        episodes=eps_to_run,
+        batch_episodes=int(hp.get("batch_episodes", 12)),
+        minibatch_size=int(hp.get("minibatch_size", 128)),
+        ppo_epochs=int(hp.get("ppo_epochs", 4)),
+        lr=float(hp.get("lr", 3e-4)),
+        ticks_per_step=int(hp.get("ticks_per_step", 8)),
+        matchup_mode=str(hp.get("matchup_mode", "round_robin")),
+        resume_from="scratch",
     )
     res = start_ppo_training(req)
     return bool(res.get("started"))
@@ -643,6 +740,41 @@ def trigger_recursive_loop_cycle(req: LoopRunCycleRequest) -> Dict[str, Any]:
                 if req.auto_test
                 else None
             ),
+            restart_new_arch_callback=(
+                (lambda cfg, cid: _stop_and_restart_new_architecture_training(cfg, cid))
+                if req.auto_test
+                else None
+            ),
+        )
+    finally:
+        _loop_state["auto_apply_and_test"] = prev_auto
+        save_recursive_loop_state(_loop_state)
+    return _get_loop_status_payload()
+
+
+@app.post("/api/ai/loop/restart-new-arch")
+def trigger_stop_and_restart_new_arch(req: LoopRunCycleRequest) -> Dict[str, Any]:
+    """
+    Explicitly triggers the 'Stop Model & Restart with New Architecture' decision:
+    diagnoses the issues in the current/previous run over the last 300 episodes,
+    documents the pre-change baseline snapshot, stops the active model (archiving it
+    to `trained_models/archives/`), applies the new architecture designed to solve
+    those issues, and restarts training from scratch for 300 episodes.
+    """
+    prev_auto = _loop_state.get("auto_apply_and_test", True)
+    _loop_state["auto_apply_and_test"] = True
+    try:
+        run_recursive_improvement_cycle(
+            loop_state=_loop_state,
+            training_state=_training_state,
+            device=DEVICE,
+            trigger="restart_new_arch",
+            run_code_agent=req.run_code_agent,
+            use_llm=req.use_llm,
+            start_training_callback=(lambda cfg: _launch_verification_training(cfg)),
+            restart_new_arch_callback=(
+                lambda cfg, cid: _stop_and_restart_new_architecture_training(cfg, cid)
+            ),
         )
     finally:
         _loop_state["auto_apply_and_test"] = prev_auto
@@ -657,7 +789,8 @@ def apply_specific_loop_solution(req: LoopApplySolutionRequest) -> Dict[str, Any
     (ensuring the Pre-Change Baseline Snapshot is documented first), merges
     their config patches, invokes the OpenCode `google-vertex/gemini-4-argon#medium`
     code agent if any selected solution requires code edits, logs to the Obsidian
-    Vault, and optionally launches a verification training run.
+    Vault, and either launches an in-place verification run or stops the current
+    model and restarts from scratch with a new architecture.
     """
     req_ids = list(req.solution_ids or ([] if not req.solution_id else [req.solution_id]))
     cycles = list(_loop_state.get("cycles") or [])
@@ -672,6 +805,11 @@ def apply_specific_loop_solution(req: LoopApplySolutionRequest) -> Dict[str, Any
             use_llm=False,
             start_training_callback=(
                 (lambda cfg: _launch_verification_training(cfg, req.test_episodes))
+                if req.auto_test
+                else None
+            ),
+            restart_new_arch_callback=(
+                (lambda cfg, cid: _stop_and_restart_new_architecture_training(cfg, cid, req.test_episodes))
                 if req.auto_test
                 else None
             ),
@@ -709,6 +847,12 @@ def apply_specific_loop_solution(req: LoopApplySolutionRequest) -> Dict[str, Any
     )
     active_config = save_active_experiment_config(new_cfg)
     composite_sol["applied_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    restarted_from_scratch = bool(
+        composite_sol.get("requires_restart_from_scratch")
+        or composite_sol.get("decision_type") == "stop_and_restart_new_arch"
+        or composite_sol.get("category") == "new_architecture_restart"
+    )
+    target_cycle["restarted_from_scratch"] = restarted_from_scratch
     target_cycle["selected_solutions"] = chosen_list
     target_cycle["selected_solution"] = composite_sol
     target_cycle["verification_result"] = None
@@ -725,23 +869,32 @@ def apply_specific_loop_solution(req: LoopApplySolutionRequest) -> Dict[str, Any
                 or ["python/coc_rl/networks.py", "python/coc_rl/ppo.py"]
             ),
             cycle_id=cycle_num,
+            allow_architecture_redesign=restarted_from_scratch,
+            arch_config=active_config.get("arch_config"),
         )
 
-    test_eps = int(req.test_episodes or _loop_state.get("test_episodes_per_cycle", 48))
+    test_eps = int(req.test_episodes or _loop_state.get("test_episodes_per_cycle", 300))
+    if restarted_from_scratch:
+        test_eps = max(300, test_eps)
     _loop_state["active_config"] = active_config
     _loop_state["phase"] = "testing_solution"
     _loop_state["active_hypothesis"] = {
         "cycle_id": cycle_num,
         "solution": composite_sol,
-        "baseline_episode": pre_snap["cumulative_episode"],
+        "baseline_episode": 0 if restarted_from_scratch else pre_snap["cumulative_episode"],
+        "pre_restart_episode": pre_snap["cumulative_episode"],
+        "restarted_from_scratch": restarted_from_scratch,
         "target_episodes": test_eps,
         "baseline_metrics": pre_snap["baseline_metrics"],
     }
     sync_recursive_loop_to_vault(_loop_state)
     save_recursive_loop_state(_loop_state)
 
-    if req.auto_test and not _training_state.get("is_training", False):
-        _launch_verification_training(active_config, test_eps)
+    if req.auto_test:
+        if restarted_from_scratch:
+            _stop_and_restart_new_architecture_training(active_config, cycle_num, test_eps)
+        elif not _training_state.get("is_training", False):
+            _launch_verification_training(active_config, test_eps)
 
     return _get_loop_status_payload()
 
@@ -750,7 +903,7 @@ def apply_specific_loop_solution(req: LoopApplySolutionRequest) -> Dict[str, Any
 def verify_current_loop_solution() -> Dict[str, Any]:
     """
     Immediately verifies the currently active solution against the Pre-Change Baseline Snapshot
-    and logs the Before vs After empirical verification dossier to the Obsidian Vault.
+    over the last 300 episodes and logs the Before vs After empirical verification dossier.
     """
     cycles = list(_loop_state.get("cycles") or [])
     if not cycles:
@@ -765,6 +918,7 @@ def verify_current_loop_solution() -> Dict[str, Any]:
         cycle=last_cycle,
         post_telemetry=telemetry,
         current_config=active_cfg,
+        past_cycles=cycles,
     )
     last_cycle["verification_result"] = ver_res
     last_cycle["completed_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -773,6 +927,11 @@ def verify_current_loop_solution() -> Dict[str, Any]:
     _loop_state["phase"] = "monitoring" if _loop_state.get("enabled") else "idle"
     sync_recursive_loop_to_vault(_loop_state)
     save_recursive_loop_state(_loop_state)
+
+    if ver_res.get("trigger_new_arch_restart") and _loop_state.get("auto_apply_and_test", True):
+        cid = int(last_cycle.get("cycle_id", len(cycles)))
+        _stop_and_restart_new_architecture_training(next_cfg, cid)
+
     return _get_loop_status_payload()
 
 
@@ -821,6 +980,11 @@ def _init_and_start_recursive_loop_daemon() -> None:
                         use_llm=True,
                         start_training_callback=(
                             (lambda cfg: _launch_verification_training(cfg))
+                            if _loop_state.get("auto_apply_and_test", True)
+                            else None
+                        ),
+                        restart_new_arch_callback=(
+                            (lambda cfg, cid: _stop_and_restart_new_architecture_training(cfg, cid))
                             if _loop_state.get("auto_apply_and_test", True)
                             else None
                         ),

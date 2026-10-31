@@ -138,7 +138,7 @@ function armyNameToSlug(name: string): string {
 }
 
 export function createCocAiServerPlugin(rootDir: string): Plugin {
-  const customArmiesPath = path.join(rootDir, 'trained_models', 'custom_armies.json');
+  const customArmiesPath = path.join(rootDir, 'trained_models', 'presets', 'custom_armies.json');
   const initialHistory: AITrainingEpisodeRecord[] = [];
 
   const savedModels: SavedModelMeta[] = [];
@@ -1100,11 +1100,13 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
       const provPath = path.join(
         rootDir,
         'trained_models',
+        'feedback',
         `last_ai_feedback_${provKey}.json`
       );
       const defaultPath = path.join(
         rootDir,
         'trained_models',
+        'feedback',
         'last_ai_feedback.json'
       );
       const targetPath = fs.existsSync(provPath) ? provPath : defaultPath;

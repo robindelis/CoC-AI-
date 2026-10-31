@@ -39,9 +39,16 @@ if torch.cuda.is_available():
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 TRAINED_MODELS_DIR = os.path.join(REPO_ROOT, "trained_models")
+CHECKPOINTS_DIR = os.path.join(TRAINED_MODELS_DIR, "checkpoints")
+ARCHIVES_DIR = os.path.join(TRAINED_MODELS_DIR, "archives")
+PRESETS_DIR = os.path.join(TRAINED_MODELS_DIR, "presets")
+STATE_DIR = os.path.join(TRAINED_MODELS_DIR, "state")
+LOOP_DIR = os.path.join(TRAINED_MODELS_DIR, "loop")
+FEEDBACK_DIR = os.path.join(TRAINED_MODELS_DIR, "feedback")
+CODE_BACKUPS_DIR = os.path.join(TRAINED_MODELS_DIR, "code_backups")
 
-DEFAULT_CKPT_PATH = os.path.join(TRAINED_MODELS_DIR, "latest_attacker.pt")
-CUSTOM_ARMIES_PATH = os.path.join(TRAINED_MODELS_DIR, "custom_armies.json")
+DEFAULT_CKPT_PATH = os.path.join(CHECKPOINTS_DIR, "latest_attacker.pt")
+CUSTOM_ARMIES_PATH = os.path.join(PRESETS_DIR, "custom_armies.json")
 
 ARMY_SHORT_NAMES = [
     "Thrower + Healer Smash",
@@ -74,7 +81,17 @@ def build_default_model_filename(
 
 
 def ensure_trained_models_dir() -> None:
-    os.makedirs(TRAINED_MODELS_DIR, exist_ok=True)
+    for d in (
+        TRAINED_MODELS_DIR,
+        CHECKPOINTS_DIR,
+        ARCHIVES_DIR,
+        PRESETS_DIR,
+        STATE_DIR,
+        LOOP_DIR,
+        FEEDBACK_DIR,
+        CODE_BACKUPS_DIR,
+    ):
+        os.makedirs(d, exist_ok=True)
 
 
 def list_custom_armies() -> List[Dict[str, Any]]:
@@ -133,8 +150,9 @@ def rename_trained_model(old_filename: str, new_filename: str) -> List[Dict[str,
     ensure_trained_models_dir()
     old_base = os.path.basename(old_filename)
     new_base = sanitize_model_filename(os.path.basename(new_filename))
-    old_path = os.path.join(TRAINED_MODELS_DIR, old_base)
-    new_path = os.path.join(TRAINED_MODELS_DIR, new_base)
+    old_path = resolve_model_path(old_base) or os.path.join(CHECKPOINTS_DIR, old_base)
+    target_dir = os.path.dirname(old_path) if os.path.exists(old_path) else CHECKPOINTS_DIR
+    new_path = os.path.join(target_dir, new_base)
     if not os.path.exists(old_path):
         raise FileNotFoundError(f"Source model file '{old_base}' does not exist.")
     if old_base != new_base and os.path.exists(new_path):
@@ -160,73 +178,84 @@ def list_trained_models() -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
     default_layouts, default_armies = get_meta_presets()
     default_single_army = default_armies[0]
-    for fname in os.listdir(TRAINED_MODELS_DIR):
-        if not fname.endswith(".pt"):
+    seen_names = set()
+    for scan_dir in (CHECKPOINTS_DIR, ARCHIVES_DIR):
+        if not os.path.isdir(scan_dir):
             continue
-        fpath = os.path.join(TRAINED_MODELS_DIR, fname)
-        if not os.path.isfile(fpath):
-            continue
-        mtime = os.path.getmtime(fpath)
-        size_kb = round(os.path.getsize(fpath) / 1024.0, 1)
-        cached = _MODEL_META_CACHE.get(fname)
-        if cached and cached[0] == mtime and cached[1] == size_kb:
-            items.append(cached[2])
-            continue
-        meta: Dict[str, Any] = {
-            "filename": fname,
-            "size_kb": size_kb,
-            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mtime)),
-            "mtime": mtime,
-            "episode": 0,
-            "best_pct": 0,
-            "best_stars": 0,
-            "best_reward": 0.0,
-            "model_type": "live_attacker",
-            "hyperparams": {},
-            "army": default_single_army,
-            "army_name": default_single_army.get("name", "Army #1"),
-            "army_slug": army_name_to_slug(default_single_army.get("name", "army")),
-            "armies": [default_single_army],
-            "villages": default_layouts,
-            "army_names": [default_single_army.get("name", "Army #1")],
-            "village_names": [v.get("name", f"Village #{i+1}") for i, v in enumerate(default_layouts)],
-            "has_history": False,
-            "history_episodes": 0,
-            "compressed_kb": 0.0,
-            "raw_kb": 0.0,
-            "compression_ratio": 1.0,
-            "session_boundaries": [],
-        }
-        try:
-            ckpt = torch.load(fpath, map_location="cpu", weights_only=False)
-            meta["episode"] = int(ckpt.get("episode", 0))
-            meta["best_pct"] = int(ckpt.get("best_pct", 0))
-            meta["best_stars"] = int(ckpt.get("best_stars", 0))
-            meta["best_reward"] = round(float(ckpt.get("best_reward", 0.0)), 2)
-            meta["model_type"] = str(ckpt.get("model_type", "live_attacker"))
-            if "hyperparams" in ckpt and isinstance(ckpt["hyperparams"], dict):
-                meta["hyperparams"] = ckpt["hyperparams"]
-            if "army" in ckpt and isinstance(ckpt["army"], dict):
-                trained_army = ckpt["army"]
-            elif "armies" in ckpt and isinstance(ckpt["armies"], list) and len(ckpt["armies"]) > 0:
-                trained_army = ckpt["armies"][0]
-            else:
-                trained_army = default_single_army
-            meta["army"] = trained_army
-            meta["army_name"] = trained_army.get("name", "Army #1")
-            meta["army_slug"] = ckpt.get("army_slug") or army_name_to_slug(meta["army_name"])
-            meta["armies"] = [trained_army]
-            if "villages" in ckpt and isinstance(ckpt["villages"], list) and len(ckpt["villages"]) > 0:
-                meta["villages"] = ckpt["villages"]
-            meta["army_names"] = [meta["army_name"]]
-            meta["village_names"] = [v.get("name", f"Village #{i+1}") for i, v in enumerate(meta["villages"])]
-            hist_blob = ckpt.get("history_compressed") or ckpt.get("history")
-            hist_meta = get_compressed_history_meta(hist_blob)
-            meta.update(hist_meta)
-        except Exception:
-            pass
-        _MODEL_META_CACHE[fname] = (mtime, size_kb, meta)
-        items.append(meta)
+        for fname in os.listdir(scan_dir):
+            if not fname.endswith(".pt") or fname in seen_names:
+                continue
+            fpath = os.path.join(scan_dir, fname)
+            if not os.path.isfile(fpath):
+                continue
+            seen_names.add(fname)
+            mtime = os.path.getmtime(fpath)
+            size_kb = round(os.path.getsize(fpath) / 1024.0, 1)
+            cached = _MODEL_META_CACHE.get(fname)
+            if cached and cached[0] == mtime and cached[1] == size_kb:
+                items.append(cached[2])
+                continue
+            meta: Dict[str, Any] = {
+                "filename": fname,
+                "size_kb": size_kb,
+                "updated_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mtime)),
+                "mtime": mtime,
+                "episode": 0,
+                "best_pct": 0,
+                "best_stars": 0,
+                "best_reward": 0.0,
+                "model_type": "archived_attacker" if scan_dir == ARCHIVES_DIR else "live_attacker",
+                "hyperparams": {},
+                "army": default_single_army,
+                "army_name": default_single_army.get("name", "Army #1"),
+                "army_slug": army_name_to_slug(default_single_army.get("name", "army")),
+                "armies": [default_single_army],
+                "villages": default_layouts,
+                "army_names": [default_single_army.get("name", "Army #1")],
+                "village_names": [v.get("name", f"Village #{i+1}") for i, v in enumerate(default_layouts)],
+                "has_history": False,
+                "history_episodes": 0,
+                "compressed_kb": 0.0,
+                "raw_kb": 0.0,
+                "compression_ratio": 1.0,
+                "session_boundaries": [],
+            }
+            try:
+                ckpt = torch.load(fpath, map_location="cpu", weights_only=False)
+                meta["episode"] = int(ckpt.get("episode", 0))
+                meta["best_pct"] = int(ckpt.get("best_pct", 0))
+                meta["best_stars"] = int(ckpt.get("best_stars", 0))
+                meta["best_reward"] = round(float(ckpt.get("best_reward", 0.0)), 2)
+                meta["model_type"] = (
+                    "archived_attacker"
+                    if scan_dir == ARCHIVES_DIR
+                    else str(ckpt.get("model_type", "live_attacker"))
+                )
+                if "hyperparams" in ckpt and isinstance(ckpt["hyperparams"], dict):
+                    meta["hyperparams"] = ckpt["hyperparams"]
+                if "arch_config" in ckpt and isinstance(ckpt["arch_config"], dict):
+                    meta["arch_config"] = ckpt["arch_config"]
+                if "army" in ckpt and isinstance(ckpt["army"], dict):
+                    trained_army = ckpt["army"]
+                elif "armies" in ckpt and isinstance(ckpt["armies"], list) and len(ckpt["armies"]) > 0:
+                    trained_army = ckpt["armies"][0]
+                else:
+                    trained_army = default_single_army
+                meta["army"] = trained_army
+                meta["army_name"] = trained_army.get("name", "Army #1")
+                meta["army_slug"] = ckpt.get("army_slug") or army_name_to_slug(meta["army_name"])
+                meta["armies"] = [trained_army]
+                if "villages" in ckpt and isinstance(ckpt["villages"], list) and len(ckpt["villages"]) > 0:
+                    meta["villages"] = ckpt["villages"]
+                meta["army_names"] = [meta["army_name"]]
+                meta["village_names"] = [v.get("name", f"Village #{i+1}") for i, v in enumerate(meta["villages"])]
+                hist_blob = ckpt.get("history_compressed") or ckpt.get("history")
+                hist_meta = get_compressed_history_meta(hist_blob)
+                meta.update(hist_meta)
+            except Exception:
+                pass
+            _MODEL_META_CACHE[fname] = (mtime, size_kb, meta)
+            items.append(meta)
 
     items.sort(key=lambda x: x["mtime"], reverse=True)
     return items
@@ -300,22 +329,50 @@ def resolve_model_path(model_file: Optional[str]) -> Optional[str]:
     if model_file in ("scratch", "none", "new"):
         return None
     if model_file and model_file not in ("latest", "latest_attacker.pt"):
-        candidate = os.path.join(TRAINED_MODELS_DIR, os.path.basename(model_file))
-        if os.path.exists(candidate):
-            return candidate
+        base_f = os.path.basename(model_file)
+        for d in (CHECKPOINTS_DIR, ARCHIVES_DIR, TRAINED_MODELS_DIR):
+            candidate = os.path.join(d, base_f)
+            if os.path.exists(candidate):
+                return candidate
         if os.path.exists(model_file):
             return model_file
     if os.path.exists(DEFAULT_CKPT_PATH):
         return DEFAULT_CKPT_PATH
     pt_files = [
-        os.path.join(TRAINED_MODELS_DIR, f)
-        for f in os.listdir(TRAINED_MODELS_DIR)
-        if f.endswith(".pt") and os.path.isfile(os.path.join(TRAINED_MODELS_DIR, f))
+        os.path.join(CHECKPOINTS_DIR, f)
+        for f in os.listdir(CHECKPOINTS_DIR)
+        if f.endswith(".pt") and os.path.isfile(os.path.join(CHECKPOINTS_DIR, f))
     ]
     if pt_files:
         pt_files.sort(key=lambda p: os.path.getmtime(p), reverse=True)
         return pt_files[0]
     return None
+
+
+def _infer_structural_arch_from_state_dict(sd: Dict[str, Any]) -> Dict[str, Any]:
+    inferred: Dict[str, Any] = {}
+    stem_w = sd.get("encoder.enc1.block.0.weight")
+    if stem_w is None:
+        stem_w = sd.get("encoder.spatial_stem.0.weight")
+    if stem_w is not None and hasattr(stem_w, "shape") and len(stem_w.shape) >= 2:
+        inferred["base_ch"] = int(stem_w.shape[0])
+        inferred["in_channels"] = int(stem_w.shape[1])
+    up1_w = sd.get("encoder.up1.conv.block.3.weight")
+    if up1_w is not None and hasattr(up1_w, "shape") and len(up1_w.shape) >= 1:
+        inferred["spatial_dim"] = int(up1_w.shape[0])
+    st_w = sd.get("slot_type_head.weight")
+    if st_w is not None and hasattr(st_w, "shape") and len(st_w.shape) >= 2:
+        inferred["embed_dim"] = int(st_w.shape[1])
+    si_w = sd.get("slot_idx_head.0.weight")
+    if si_w is not None and hasattr(si_w, "shape") and len(si_w.shape) >= 1:
+        inferred["head_hidden_dim"] = int(si_w.shape[0])
+    inferred["use_dilated_context"] = any(k.startswith("encoder.dilated_context.") for k in sd)
+    inferred["use_se_attention"] = any(
+        k.startswith("encoder.bottleneck_se.") or k.startswith("encoder.spatial_se.") for k in sd
+    )
+    inferred["use_gated_heads"] = any(k.startswith("head_gate.") for k in sd)
+    inferred["critic_depth"] = 3 if any(k.startswith("critic_head.3.") for k in sd) else 2
+    return inferred
 
 
 def load_attacker_model(
@@ -331,20 +388,35 @@ def load_attacker_model(
         except Exception:
             attacker_ckpt_meta = {}
 
-    in_channels = 59
-    if "model_state_dict" in attacker_ckpt_meta and isinstance(attacker_ckpt_meta["model_state_dict"], dict):
-        sd = attacker_ckpt_meta["model_state_dict"]
-        stem_w = sd.get("encoder.enc1.block.0.weight")
-        if stem_w is None:
-            stem_w = sd.get("encoder.spatial_stem.0.weight")
-        if stem_w is not None and hasattr(stem_w, "shape"):
-            in_channels = int(stem_w.shape[1])
-
     active_exp_cfg = load_active_experiment_config()
     arch_cfg = dict(active_exp_cfg.get("arch_config", {}))
-    if isinstance(attacker_ckpt_meta.get("arch_config"), dict):
-        arch_cfg.update(attacker_ckpt_meta["arch_config"])
-        arch_cfg.update(active_exp_cfg.get("arch_config", {}))
+
+    in_channels = int(arch_cfg.get("in_channels", 59))
+    if "model_state_dict" in attacker_ckpt_meta and isinstance(attacker_ckpt_meta["model_state_dict"], dict):
+        sd = attacker_ckpt_meta["model_state_dict"]
+        if isinstance(attacker_ckpt_meta.get("arch_config"), dict):
+            arch_cfg.update(attacker_ckpt_meta["arch_config"])
+        # Keep dynamic scalar weights from active_exp_cfg, but preserve structural dimensions of the loaded checkpoint
+        for dyn_k in (
+            "logit_temp_type",
+            "logit_temp_idx",
+            "logit_temp_frac",
+            "tile_logit_scale",
+            "th_threat_weight",
+            "defense_threat_weight",
+            "breach_prior_weight",
+            "spell_combat_prior_weight",
+            "film_cond_scale",
+            "reg_ent_type_weight",
+            "reg_ent_idx_weight",
+            "reg_ent_frac_weight",
+            "reg_ent_tile_weight",
+        ):
+            if dyn_k in active_exp_cfg.get("arch_config", {}):
+                arch_cfg[dyn_k] = active_exp_cfg["arch_config"][dyn_k]
+        inferred_struct = _infer_structural_arch_from_state_dict(sd)
+        arch_cfg.update(inferred_struct)
+        in_channels = int(inferred_struct.get("in_channels", in_channels))
 
     live_attacker = CoCActorCritic(
         in_channels=in_channels,
@@ -354,7 +426,7 @@ def load_attacker_model(
 
     if "model_state_dict" in attacker_ckpt_meta and isinstance(attacker_ckpt_meta["model_state_dict"], dict):
         try:
-            live_attacker.load_state_dict(attacker_ckpt_meta["model_state_dict"])
+            live_attacker.load_state_dict(attacker_ckpt_meta["model_state_dict"], strict=False)
         except Exception:
             pass
     live_attacker.apply_arch_config(arch_cfg)
@@ -404,6 +476,7 @@ def compute_matchup_stats(
 
     hist = history or []
     total_eps = len(hist)
+    recent_hist_300 = hist[-300:]
 
     army_names = [a.get("name", f"Army #{i+1}") for i, a in enumerate(armies)]
     village_names = [v.get("name", f"Village #{i+1}") for i, v in enumerate(layouts)]
@@ -412,7 +485,11 @@ def compute_matchup_stats(
     for a_idx in range(len(armies)):
         recs = [r for r in hist if r.get("army_idx", 0) == a_idx] if len(armies) > 1 else list(hist)
         n = len(recs)
-        recent_recs = recs[-50:]
+        recent_recs = (
+            [r for r in recent_hist_300 if r.get("army_idx", 0) == a_idx]
+            if len(armies) > 1
+            else list(recent_hist_300)
+        )
         avg_pct = round(float(np.mean([r["destruction_pct"] for r in recs])), 1) if n else 0.0
         recent_pct = (
             round(float(np.mean([r["destruction_pct"] for r in recent_recs])), 1)
@@ -420,9 +497,10 @@ def compute_matchup_stats(
             else 0.0
         )
         peak_pct = int(max((r["destruction_pct"] for r in recs), default=0))
-        avg_stars = round(float(np.mean([r["stars"] for r in recs])), 2) if n else 0.0
-        avg_rew = round(float(np.mean([r["reward"] for r in recs])), 2) if n else 0.0
-        triples = sum(1 for r in recs if r["stars"] == 3)
+        avg_stars = round(float(np.mean([r["stars"] for r in recent_recs or recs])), 2) if n else 0.0
+        avg_rew = round(float(np.mean([r["reward"] for r in recent_recs or recs])), 2) if n else 0.0
+        rec_for_triples = recent_recs or recs
+        triples = sum(1 for r in rec_for_triples if r["stars"] == 3)
         usage_pct = round(100.0 * n / max(1, total_eps), 1) if total_eps > 0 else round(100.0 / max(1, len(armies)), 1)
         army_stats.append(
             {
@@ -436,7 +514,7 @@ def compute_matchup_stats(
                 "peak_pct": peak_pct,
                 "avg_stars": avg_stars,
                 "avg_reward": avg_rew,
-                "triple_rate": round(100.0 * triples / max(1, n), 1) if n else 0.0,
+                "triple_rate": round(100.0 * triples / max(1, len(rec_for_triples)), 1) if rec_for_triples else 0.0,
             }
         )
 
@@ -444,7 +522,9 @@ def compute_matchup_stats(
     for v_idx in range(len(layouts)):
         recs = [r for r in hist if r.get("village_idx") == v_idx]
         n = len(recs)
-        recent_recs = recs[-50:]
+        recent_recs = [r for r in recent_hist_300 if r.get("village_idx") == v_idx]
+        if not recent_recs:
+            recent_recs = recs[-60:]
         avg_pct = round(float(np.mean([r["destruction_pct"] for r in recs])), 1) if n else 0.0
         recent_pct = (
             round(float(np.mean([r["destruction_pct"] for r in recent_recs])), 1)
@@ -452,8 +532,9 @@ def compute_matchup_stats(
             else 0.0
         )
         peak_pct = int(max((r["destruction_pct"] for r in recs), default=0))
-        avg_stars = round(float(np.mean([r["stars"] for r in recs])), 2) if n else 0.0
-        triples = sum(1 for r in recs if r["stars"] == 3)
+        rec_for_stars = recent_recs or recs
+        avg_stars = round(float(np.mean([r["stars"] for r in rec_for_stars])), 2) if rec_for_stars else 0.0
+        triples = sum(1 for r in rec_for_stars if r["stars"] == 3)
         usage_pct = round(100.0 * n / max(1, total_eps), 1) if total_eps > 0 else round(100.0 / max(1, len(layouts)), 1)
         village_stats.append(
             {
@@ -470,7 +551,7 @@ def compute_matchup_stats(
                 "recent_avg_pct": recent_pct,
                 "peak_pct": peak_pct,
                 "avg_stars": avg_stars,
-                "triple_rate": round(100.0 * triples / max(1, n), 1) if n else 0.0,
+                "triple_rate": round(100.0 * triples / max(1, len(rec_for_stars)), 1) if rec_for_stars else 0.0,
             }
         )
 
@@ -883,7 +964,7 @@ def train_pytorch_ppo(
     def _save_attacker_ckpt(ep_total: int) -> str:
         nonlocal prev_intermediate_path, last_saved_ep
         fname = _get_ckpt_filename(ep_total)
-        path = os.path.join(TRAINED_MODELS_DIR, fname)
+        path = os.path.join(CHECKPOINTS_DIR, fname)
         compressed_hist = compress_training_history(
             base_history + history, session_boundaries=session_boundaries
         )
@@ -925,6 +1006,7 @@ def train_pytorch_ppo(
                 "best_reward": round(float(best_reward), 2),
                 "model_type": "live_attacker",
                 "hyperparams": hyperparams_meta,
+                "arch_config": live_attacker.get_arch_config(),
                 "army": trained_army,
                 "army_name": trained_army_name,
                 "army_slug": army_slug,
@@ -937,18 +1019,21 @@ def train_pytorch_ppo(
             _MODEL_META_CACHE[fname] = (mtime, size_kb, meta_entry)
         except Exception:
             pass
-        if (
-            prev_intermediate_path
-            and prev_intermediate_path != path
-            and prev_intermediate_path != resume_resolved_path
-            and os.path.exists(prev_intermediate_path)
-        ):
-            try:
-                os.remove(prev_intermediate_path)
-                _MODEL_META_CACHE.pop(os.path.basename(prev_intermediate_path), None)
-                _MODEL_HISTORY_CACHE.pop(os.path.basename(prev_intermediate_path), None)
-            except Exception:
-                pass
+        # Keep `trained_models/checkpoints/` clean by removing superseded intermediate checkpoints for this run
+        for stale_candidate in (prev_intermediate_path, resume_resolved_path):
+            if (
+                stale_candidate
+                and stale_candidate != path
+                and os.path.dirname(os.path.abspath(stale_candidate)) == os.path.abspath(CHECKPOINTS_DIR)
+                and os.path.basename(stale_candidate).startswith(f"{army_slug}_ep")
+                and os.path.exists(stale_candidate)
+            ):
+                try:
+                    os.remove(stale_candidate)
+                    _MODEL_META_CACHE.pop(os.path.basename(stale_candidate), None)
+                    _MODEL_HISTORY_CACHE.pop(os.path.basename(stale_candidate), None)
+                except Exception:
+                    pass
         prev_intermediate_path = path
         return path
 
@@ -1295,6 +1380,8 @@ def train_pytorch_ppo(
             avg_pct_10 = float(np.mean(recent_pcts))
             recent_pcts_50 = [h["destruction_pct"] for h in history[-49:]] + [pct]
             avg_pct_50 = float(np.mean(recent_pcts_50))
+            recent_pcts_300 = [h["destruction_pct"] for h in history[-299:]] + [pct]
+            avg_pct_300 = float(np.mean(recent_pcts_300))
             noop_pct = round(100.0 * noop_steps[w] / max(1, steps_run[w]), 1)
 
             with torch.no_grad():

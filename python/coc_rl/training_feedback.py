@@ -22,7 +22,8 @@ import torch
 from .envs import CoCAttackerEnv
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-LAST_FEEDBACK_PATH = os.path.join(REPO_ROOT, "trained_models", "last_ai_feedback.json")
+FEEDBACK_DIR = os.path.join(REPO_ROOT, "trained_models", "feedback")
+LAST_FEEDBACK_PATH = os.path.join(FEEDBACK_DIR, "last_ai_feedback.json")
 
 AI_PROVIDERS: Dict[str, Dict[str, str]] = {
     "opencode_argon": {
@@ -400,18 +401,25 @@ def gather_training_telemetry(
             if slice_recs:
                 phases.append(_summarize_slice(slice_recs, f"Phase {p_idx + 1}/{num_phases}"))
 
-    # 2. Rolling Window Comparisons
+    # 2. Rolling Window Comparisons (Primary evaluation window = last 300 episodes)
     windows: Dict[str, Any] = {}
     if n > 0:
         windows["first_50"] = _summarize_slice(history[: min(50, n)], "First 50 Eps")
+        if n > 300:
+            windows["prev_300"] = _summarize_slice(
+                history[max(0, n - 600) : max(1, n - 300)], "Prev 300 Eps (-600..-300)"
+            )
         if n > 100:
             windows["prev_100"] = _summarize_slice(
                 history[max(0, n - 150) : max(1, n - 50)], "Prev 100 Eps (-150..-50)"
             )
+        windows["recent_300"] = _summarize_slice(
+            history[-min(300, n) :], f"Recent {min(300, n)} Eps (300-Ep Mean)"
+        )
         windows["recent_50"] = _summarize_slice(history[-min(50, n) :], "Recent 50 Eps")
         windows["recent_10"] = _summarize_slice(history[-min(10, n) :], "Recent 10 Eps")
 
-    # 3. Slopes & Plateau Diagnostics
+    # 3. Slopes & Plateau Diagnostics (over the last 300 episodes)
     trends: Dict[str, Any] = {}
     if n >= 5:
         all_pcts = [float(r.get("destruction_pct", 0.0)) for r in history]
@@ -420,10 +428,19 @@ def gather_training_telemetry(
         all_vloss = [float(r.get("value_loss", 0.0)) for r in history]
         all_noops = [float(r.get("noop_pct", 0.0)) for r in history]
 
-        rec_window_len = max(10, min(300, n // 4))
+        rec_window_len = min(300, n)
         rec_slice = history[-rec_window_len:]
 
-        # Rolling 50 peak detection
+        # Rolling 300-ep and 50-ep peak detection
+        csum = np.cumsum([0.0] + all_pcts)
+        rolling300 = [
+            float((csum[i + 1] - csum[max(0, i + 1 - 300)]) / max(1, i + 1 - max(0, i + 1 - 300)))
+            for i in range(n)
+        ]
+        peak_r300_val = round(float(max(rolling300)), 2)
+        peak_r300_idx = int(np.argmax(rolling300))
+        eps_since_r300_peak = (n - 1) - peak_r300_idx
+
         rolling50 = [
             float(r.get("avg_pct_50") or r.get("destruction_pct", 0.0)) for r in history
         ]
@@ -455,6 +472,11 @@ def gather_training_telemetry(
             "recent_noop_slope_per_100ep": _linear_slope_per_100(
                 [float(r.get("noop_pct", 0.0)) for r in rec_slice]
             ),
+            "rolling300_peak_pct": peak_r300_val,
+            "rolling300_peak_at_episode": int(history[peak_r300_idx].get("episode", peak_r300_idx + 1)),
+            "episodes_since_rolling300_peak": eps_since_r300_peak,
+            "current_rolling300_pct": round(rolling300[-1], 2),
+            "drawdown_from_rolling300_peak_pct": round(rolling300[-1] - peak_r300_val, 2),
             "rolling50_peak_pct": peak_r50_val,
             "rolling50_peak_at_episode": int(history[peak_r50_idx].get("episode", peak_r50_idx + 1)),
             "episodes_since_rolling50_peak": eps_since_r50_peak,
@@ -468,13 +490,15 @@ def gather_training_telemetry(
         }
 
     # 4. Live Model Probe
-    recent50_mean_rew = (
-        windows.get("recent_50", {}).get("mean_reward") if "recent_50" in windows else None
+    recent300_mean_rew = (
+        windows.get("recent_300", {}).get("mean_reward")
+        if "recent_300" in windows
+        else (windows.get("recent_50", {}).get("mean_reward") if "recent_50" in windows else None)
     )
     live_probe = probe_live_model_diagnostics(
         device=device,
         model_file=active_ckpt_file,
-        empirical_recent_return=recent50_mean_rew,
+        empirical_recent_return=recent300_mean_rew,
     )
 
     # 5. Matchup Breakdown
@@ -487,9 +511,10 @@ def gather_training_telemetry(
     army_stats = matchup_stats.get("army_stats", [])
     village_stats = matchup_stats.get("village_stats", [])
 
-    # 5B. Expanded Deep Telemetry: Reward Decomposition, Optimization Health,
-    #     Star Conversion Funnel, Village Bottlenecks, and Per-Head Entropy Trajectory
-    rec50_slice = history[-min(50, n) :] if n > 0 else []
+    # 5B. Expanded Deep Telemetry over the 300-Episode Window:
+    #     Reward Decomposition, Optimization Health, Star Conversion Funnel,
+    #     Village Bottlenecks, and Per-Head Entropy Trajectory
+    rec50_slice = history[-min(300, n) :] if n > 0 else []
     reward_decomposition: Dict[str, Any] = {}
     optimization_health: Dict[str, Any] = {}
     star_conversion_funnel: Dict[str, Any] = {}

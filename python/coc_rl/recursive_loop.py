@@ -48,13 +48,20 @@ from .training_feedback import (
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 TRAINED_MODELS_DIR = os.path.join(REPO_ROOT, "trained_models")
+LOOP_DIR = os.path.join(TRAINED_MODELS_DIR, "loop")
+CHECKPOINTS_DIR = os.path.join(TRAINED_MODELS_DIR, "checkpoints")
+ARCHIVES_DIR = os.path.join(TRAINED_MODELS_DIR, "archives")
+STATE_DIR = os.path.join(TRAINED_MODELS_DIR, "state")
+FEEDBACK_DIR = os.path.join(TRAINED_MODELS_DIR, "feedback")
+PRESETS_DIR = os.path.join(TRAINED_MODELS_DIR, "presets")
+
 VAULT_DIR = os.path.join(REPO_ROOT, "obsidian_vault")
 EXPERIMENTS_DIR = os.path.join(VAULT_DIR, "experiments")
 DECISIONS_DIR = os.path.join(VAULT_DIR, "decisions")
 CHARTS_DIR = os.path.join(VAULT_DIR, "assets", "charts")
 
-ACTIVE_CONFIG_PATH = os.path.join(TRAINED_MODELS_DIR, "active_experiment_config.json")
-LOOP_STATE_PATH = os.path.join(TRAINED_MODELS_DIR, "recursive_improvement_loop.json")
+ACTIVE_CONFIG_PATH = os.path.join(LOOP_DIR, "active_experiment_config.json")
+LOOP_STATE_PATH = os.path.join(LOOP_DIR, "recursive_improvement_loop.json")
 VAULT_LOOP_NOTE_PATH = os.path.join(EXPERIMENTS_DIR, "Recursive_AI_Improvement_Loop.md")
 VAULT_LOOP_CHART_PATH = os.path.join(CHARTS_DIR, "recursive_improvement_loop_tracker.png")
 
@@ -89,8 +96,21 @@ def get_default_experiment_config() -> Dict[str, Any]:
     }
 
 
+def _ensure_loop_dirs() -> None:
+    for d in (
+        TRAINED_MODELS_DIR,
+        LOOP_DIR,
+        CHECKPOINTS_DIR,
+        ARCHIVES_DIR,
+        STATE_DIR,
+        FEEDBACK_DIR,
+        PRESETS_DIR,
+    ):
+        os.makedirs(d, exist_ok=True)
+
+
 def load_active_experiment_config() -> Dict[str, Any]:
-    os.makedirs(TRAINED_MODELS_DIR, exist_ok=True)
+    _ensure_loop_dirs()
     default_cfg = get_default_experiment_config()
     if os.path.exists(ACTIVE_CONFIG_PATH):
         try:
@@ -110,7 +130,7 @@ def load_active_experiment_config() -> Dict[str, Any]:
 
 
 def save_active_experiment_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
-    os.makedirs(TRAINED_MODELS_DIR, exist_ok=True)
+    _ensure_loop_dirs()
     with _config_lock:
         merged = get_default_experiment_config()
         for section in ("arch_config", "reward_config", "hyperparams"):
@@ -208,12 +228,25 @@ def merge_selected_solutions(
             if tf not in code_files:
                 code_files.append(tf)
 
+    requires_restart = any(
+        bool(s.get("requires_restart_from_scratch"))
+        or s.get("decision_type") == "stop_and_restart_new_arch"
+        or s.get("category") == "new_architecture_restart"
+        for s in chosen_solutions
+    )
+
     composite = {
         "solution_id": "+".join(str(s.get("solution_id", "")) for s in chosen_solutions),
         "selected_solution_ids": [str(s.get("solution_id", "")) for s in chosen_solutions],
         "rank": 1,
-        "category": "combined" if len(cats) > 1 else (cats[0] if cats else "combined"),
+        "category": (
+            "new_architecture_restart"
+            if requires_restart and len(cats) == 1
+            else ("combined" if len(cats) > 1 else (cats[0] if cats else "combined"))
+        ),
         "categories_combined": cats,
+        "decision_type": "stop_and_restart_new_arch" if requires_restart else "apply_in_place_solution",
+        "requires_restart_from_scratch": requires_restart,
         "title": f"Multi-Solution Bundle ({len(chosen_solutions)}): " + " + ".join(titles),
         "target_problem": " & ".join(target_problems),
         "rationale": " | ".join(str(s.get("rationale", "")) for s in chosen_solutions),
@@ -285,7 +318,7 @@ def restore_code_files_from_backup(cycle_id: int) -> List[str]:
     return restored
 
 
-def _smoke_test_rl_modules() -> Tuple[bool, Optional[str]]:
+def _smoke_test_rl_modules(arch_config: Optional[Dict[str, Any]] = None) -> Tuple[bool, Optional[str]]:
     """
     Reloads `coc_rl.networks` and `coc_rl.ppo` and runs a live forward-pass & reward
     smoke check to guarantee that code edits made by the OpenCode Argon 4 agent are valid.
@@ -296,7 +329,7 @@ def _smoke_test_rl_modules() -> Tuple[bool, Optional[str]]:
 
         importlib.reload(net_mod)
         importlib.reload(ppo_mod)
-        m = net_mod.CoCActorCritic(in_channels=59, army_context_dim=64)
+        m = net_mod.CoCActorCritic(in_channels=59, army_context_dim=64, arch_config=arch_config)
         obs = torch.zeros((1, 59, 50, 50), dtype=torch.float32)
         ctx = torch.zeros((1, 64), dtype=torch.float32)
         with torch.no_grad():
@@ -318,12 +351,14 @@ def execute_opencode_argon_code_edit(
     target_files: List[str],
     cycle_id: int,
     timeout_sec: int = 150,
+    allow_architecture_redesign: bool = False,
+    arch_config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Invokes the OpenCode CLI (`google-vertex/gemini-4-argon#medium`) inside `REPO_ROOT`
-    to perform surgical code improvements in `target_files`, validates the result with
-    `_smoke_test_rl_modules()`, captures the exact `git diff`, and automatically rolls
-    back to the pre-change backup if any validation check fails.
+    to perform surgical code improvements or new architecture upgrades in `target_files`,
+    validates the result with `_smoke_test_rl_modules()`, captures the exact `git diff`,
+    and automatically rolls back to the pre-change backup if any validation check fails.
     """
     t0 = time.perf_counter()
     backup_manifest = backup_code_files_before_change(cycle_id, target_files)
@@ -333,13 +368,25 @@ def execute_opencode_argon_code_edit(
         opencode_bin = shutil.which("opencode") or "opencode"
 
     files_str = ", ".join(target_files)
+    if allow_architecture_redesign:
+        invariant_line = (
+            "1. The model is being STOPPED and RESTARTED FROM SCRATCH with a new architecture to solve the "
+            "issues identified in the previous run. Preserve the outer class/method signatures (`CoCActorCritic`, "
+            "`CoCSpatialEncoder`, `forward`, `get_action_and_value`, `get_arch_config`, `apply_arch_config`) "
+            "while upgrading the neural architecture, defaults, or modules as instructed.\n"
+        )
+    else:
+        invariant_line = (
+            "1. Preserve all existing class/function signatures (`CoCActorCritic`, `CoCSpatialEncoder`, "
+            "`compute_custom_reward_components`, `ppo_minibatch_update`) and state_dict key names so saved `.pt` checkpoints load without error.\n"
+        )
+
     agent_prompt = (
         f"You are executing Cycle #{cycle_id} of the CoC TH18 Recursive Self-Improvement Loop.\n"
-        f"Perform the following targeted code modification in `{files_str}`:\n"
+        f"Perform the following targeted modification in `{files_str}`:\n"
         f"{instructions}\n\n"
         "CRITICAL INVARIANTS:\n"
-        "1. Preserve all existing class/function signatures (`CoCActorCritic`, `CoCSpatialEncoder`, "
-        "`compute_custom_reward_components`, `ppo_minibatch_update`) and state_dict key names so saved `.pt` checkpoints load without error.\n"
+        f"{invariant_line}"
         "2. Edit ONLY the specified target file(s) using the `edit` tool, and DO NOT run git commit or background scripts.\n"
         "3. Reply with a concise 2-sentence summary of the exact code change applied."
     )
@@ -383,7 +430,7 @@ def execute_opencode_argon_code_edit(
     except Exception as exc:
         error_msg = str(exc)
 
-    smoke_ok, smoke_err = _smoke_test_rl_modules()
+    smoke_ok, smoke_err = _smoke_test_rl_modules(arch_config=arch_config)
     if not smoke_ok:
         restore_code_files_from_backup(cycle_id)
         _smoke_test_rl_modules()
@@ -426,13 +473,27 @@ def execute_opencode_argon_code_edit(
 
 
 # ---------------------------------------------------------------------------
-# Pre-Change Baseline Snapshot Builder
+# Pre-Change Baseline Snapshot Builder (300-Episode Mean Evaluation Window)
 # ---------------------------------------------------------------------------
+
+EVAL_WINDOW_EPISODES = 300
+
+
+def compute_composite_combat_score(mean_pct: float, two_star_rate: float, three_star_rate: float) -> float:
+    """
+    Computes an un-gameable 0..100 composite combat performance score purely from
+    300-episode battlefield outcomes (50% Mean Destruction %, 20% 2★+ TH18 rate, 30% 3★ Triple rate).
+    Never influenced by reward-shaping scale changes.
+    """
+    return round(0.50 * float(mean_pct) + 0.20 * float(two_star_rate) + 0.30 * float(three_star_rate), 2)
+
 
 def extract_compact_metrics_from_telemetry(telemetry: Dict[str, Any]) -> Dict[str, Any]:
     session = telemetry.get("session", {})
     trends = telemetry.get("trends", {})
-    rec50 = telemetry.get("windows", {}).get("recent_50", {})
+    windows = telemetry.get("windows", {})
+    rec300 = windows.get("recent_300") or windows.get("recent_50") or {}
+    rec50 = windows.get("recent_50") or rec300
     rew_dec = telemetry.get("reward_decomposition", {})
     opt_h = telemetry.get("optimization_health", {})
     funnel = telemetry.get("star_conversion_funnel", {})
@@ -442,20 +503,60 @@ def extract_compact_metrics_from_telemetry(telemetry: Dict[str, Any]) -> Dict[st
     cal = probe.get("critic_calibration", {})
     tact = probe.get("tactical_rollout_behavior", {})
 
+    hist_len = int(session.get("history_length", 0))
+    eval_eps = int(rec300.get("episodes", min(EVAL_WINDOW_EPISODES, max(1, hist_len))))
+    mean_pct_300 = float(rec300.get("mean_pct", 0.0))
+    std_pct_300 = float(rec300.get("std_pct", 0.0))
+    sem_pct_300 = round(std_pct_300 / max(1.0, float(eval_eps) ** 0.5), 2)
+    one_star_300 = float(rec300.get("one_plus_star_rate_pct", 0.0))
+    two_star_300 = float(rec300.get("two_plus_star_th_rate_pct", 0.0))
+    three_star_300 = float(rec300.get("three_star_triple_rate_pct", 0.0))
+    mean_rew_300 = float(rec300.get("mean_reward", 0.0))
+    mean_noop_300 = float(rec300.get("mean_noop_pct", 0.0))
+    mean_steps_300 = float(rec300.get("mean_steps", 0.0))
+    combat_score_300 = compute_composite_combat_score(mean_pct_300, two_star_300, three_star_300)
+
+    peak_pct = float(
+        trends.get("rolling300_peak_pct")
+        or trends.get("rolling50_peak_pct")
+        or mean_pct_300
+    )
+    eps_since_peak = int(
+        trends.get("episodes_since_rolling300_peak")
+        if "episodes_since_rolling300_peak" in trends
+        else trends.get("episodes_since_rolling50_peak", 0)
+    )
+    drawdown_pct = float(
+        trends.get("drawdown_from_rolling300_peak_pct")
+        if "drawdown_from_rolling300_peak_pct" in trends
+        else trends.get("drawdown_from_rolling50_peak_pct", 0.0)
+    )
+
     return {
-        "episode": int(session.get("cumulative_episode") or session.get("history_length", 0)),
-        "history_length": int(session.get("history_length", 0)),
-        "mean_pct_50": float(rec50.get("mean_pct", 0.0)),
-        "std_pct_50": float(rec50.get("std_pct", 0.0)),
-        "rolling50_peak_pct": float(trends.get("rolling50_peak_pct", rec50.get("mean_pct", 0.0))),
-        "episodes_since_peak": int(trends.get("episodes_since_rolling50_peak", 0)),
-        "drawdown_from_peak_pct": float(trends.get("drawdown_from_rolling50_peak_pct", 0.0)),
-        "best_pct": int(session.get("best_pct", rec50.get("max_pct", 0))),
+        "episode": int(session.get("cumulative_episode") or hist_len),
+        "history_length": hist_len,
+        "eval_window_episodes": eval_eps,
+        "mean_pct_300": mean_pct_300,
+        "std_pct_300": std_pct_300,
+        "sem_pct_300": sem_pct_300,
+        "one_star_rate_300": one_star_300,
+        "two_star_th_rate_300": two_star_300,
+        "three_star_triple_rate_300": three_star_300,
+        "mean_reward_300": mean_rew_300,
+        "combat_score_300": combat_score_300,
+        "raw_mean_pct_50": float(rec50.get("mean_pct", mean_pct_300)),
+        # Primary evaluation fields populated with the 300-episode mean to eliminate short-window variance
+        "mean_pct_50": mean_pct_300,
+        "std_pct_50": std_pct_300,
+        "rolling50_peak_pct": peak_pct,
+        "episodes_since_peak": eps_since_peak,
+        "drawdown_from_peak_pct": drawdown_pct,
+        "best_pct": int(session.get("best_pct", rec300.get("max_pct", 0))),
         "best_stars": int(session.get("best_stars", 0)),
-        "one_star_rate_50": float(rec50.get("one_plus_star_rate_pct", 0.0)),
-        "two_star_th_rate_50": float(rec50.get("two_plus_star_th_rate_pct", 0.0)),
-        "three_star_triple_rate_50": float(rec50.get("three_star_triple_rate_pct", 0.0)),
-        "mean_reward_50": float(rec50.get("mean_reward", 0.0)),
+        "one_star_rate_50": one_star_300,
+        "two_star_th_rate_50": two_star_300,
+        "three_star_triple_rate_50": three_star_300,
+        "mean_reward_50": mean_rew_300,
         "reward_snr": float(rew_dec.get("signal_to_noise_ratio", 0.0)),
         "destr_share_pct": float(rew_dec.get("destr_share_pct", 35.0)),
         "stars_th_share_pct": float(rew_dec.get("stars_th_share_pct", 50.0)),
@@ -463,13 +564,13 @@ def extract_compact_metrics_from_telemetry(telemetry: Dict[str, Any]) -> Dict[st
         "pct_slope_per_100ep": float(trends.get("recent_pct_slope_per_100ep", 0.0)),
         "reward_slope_per_100ep": float(trends.get("recent_reward_slope_per_100ep", 0.0)),
         "entropy_slope_per_100ep": float(trends.get("recent_entropy_slope_per_100ep", 0.0)),
-        "mean_noop_pct_50": float(rec50.get("mean_noop_pct", 0.0)),
-        "mean_steps_50": float(rec50.get("mean_steps", 0.0)),
-        "explained_variance_50": float(opt_h.get("explained_variance_recent50", rec50.get("mean_explained_variance", 0.0))),
-        "approx_kl_50": float(opt_h.get("mean_approx_kl_recent50", rec50.get("mean_approx_kl", 0.0))),
+        "mean_noop_pct_50": mean_noop_300,
+        "mean_steps_50": mean_steps_300,
+        "explained_variance_50": float(opt_h.get("explained_variance_recent50", rec300.get("mean_explained_variance", 0.0))),
+        "approx_kl_50": float(opt_h.get("mean_approx_kl_recent50", rec300.get("mean_approx_kl", 0.0))),
         "kl_saturation_rate_pct": float(opt_h.get("kl_saturation_rate_pct", 0.0)),
-        "clip_fraction_50": float(opt_h.get("mean_clip_fraction_recent50", rec50.get("mean_clip_fraction", 0.0))),
-        "grad_norm_50": float(opt_h.get("mean_grad_norm_recent50", rec50.get("mean_grad_norm", 0.0))),
+        "clip_fraction_50": float(opt_h.get("mean_clip_fraction_recent50", rec300.get("mean_clip_fraction", 0.0))),
+        "grad_norm_50": float(opt_h.get("mean_grad_norm_recent50", rec300.get("mean_grad_norm", 0.0))),
         "critic_v_s0": float(cal.get("predicted_v_s0", 0.0)),
         "calibration_gap": float(cal.get("calibration_gap_v0_minus_return") or 0.0),
         "head_saturation_pct": {
@@ -481,7 +582,7 @@ def extract_compact_metrics_from_telemetry(telemetry: Dict[str, Any]) -> Dict[st
         "top5_tile_mass_pct": float(hb.get("tile_xy", {}).get("top5_tile_prob_mass_pct", 20.0)),
         "spatial_spread_std": float(tact.get("spatial_deploy_spread_std_tiles", 5.0)),
         "star_funnel": {
-            "p_1star_pct": float(funnel.get("p_1star_pct", rec50.get("one_plus_star_rate_pct", 0.0))),
+            "p_1star_pct": float(funnel.get("p_1star_pct", one_star_300)),
             "p_2star_given_1star_pct": float(funnel.get("p_2star_given_1star_pct", 0.0)),
             "p_3star_given_2star_pct": float(funnel.get("p_3star_given_2star_pct", 0.0)),
             "near_miss_85_to_99_pct_rate": float(funnel.get("near_miss_85_to_99_pct_rate", 0.0)),
@@ -543,27 +644,202 @@ def capture_pre_change_snapshot(
 # Quantitative Diagnosis & Multi-Domain Candidate Solutions Synthesis
 # ---------------------------------------------------------------------------
 
+def _build_targeted_new_architecture_solution(
+    metrics: Dict[str, Any],
+    reasons: List[Dict[str, Any]],
+    active_config: Dict[str, Any],
+    past_cycles: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Designs a new `CoCActorCritic` / `CoCSpatialEncoder` architecture configuration
+    specifically engineered to solve the bottlenecks identified in the previous run,
+    intended to be trained from scratch after stopping the current model.
+    """
+    arch_cfg = dict(DEFAULT_ARCH_CONFIG)
+    arch_cfg.update(active_config.get("arch_config", {}))
+    rew_cfg = dict(DEFAULT_REWARD_CONFIG)
+    rew_cfg.update(active_config.get("reward_config", {}))
+    hp_cfg = dict(DEFAULT_HYPERPARAMS)
+    hp_cfg.update(active_config.get("hyperparams", {}))
+
+    reason_ids = {str(r.get("id", "")) for r in reasons}
+    reason_titles = " & ".join(str(r.get("title", "")) for r in reasons[:2]) or "Structural Plateau"
+    cal_gap = abs(float(metrics.get("calibration_gap", 0.0)))
+    ev_300 = float(metrics.get("explained_variance_50", 0.0))
+    th_rate = float(metrics.get("two_star_th_rate_300", metrics.get("two_star_th_rate_50", 0.0)))
+    triple_rate = float(metrics.get("three_star_triple_rate_300", metrics.get("three_star_triple_rate_50", 0.0)))
+    tile_sat = float(metrics.get("head_saturation_pct", {}).get("tile_xy", 60.0))
+    type_sat = float(metrics.get("head_saturation_pct", {}).get("slot_type", 50.0))
+    worst_v = metrics.get("worst_village") or {"name": "Worst Layout", "recent_avg_pct": 0.0}
+
+    cur_base_ch = int(arch_cfg.get("base_ch", 32))
+    cur_spatial_dim = int(arch_cfg.get("spatial_dim", 32))
+    cur_embed_dim = int(arch_cfg.get("embed_dim", 256))
+    cur_head_dim = int(arch_cfg.get("head_hidden_dim", 128))
+    cur_dilated = bool(arch_cfg.get("use_dilated_context", False))
+    cur_se = bool(arch_cfg.get("use_se_attention", False))
+    cur_gated = bool(arch_cfg.get("use_gated_heads", False))
+    cur_critic_depth = int(arch_cfg.get("critic_depth", 2))
+
+    # Determine targeted structural upgrades based on diagnosed issues in the previous run
+    needs_compartment_context = (
+        "th18_core_penetration_ceiling" in reason_ids
+        or "late_battle_3star_cleanup_stall" in reason_ids
+        or "asymmetric_village_generalization_gap" in reason_ids
+        or th_rate < 88.0
+        or triple_rate < 45.0
+    )
+    needs_spatial_gate = (
+        "spatial_pointer_dispersion_vs_head_focus" in reason_ids
+        or tile_sat > 60.0
+        or type_sat < 55.0
+    )
+    needs_deep_critic = (
+        "critic_calibration_and_trust_region_stagnation" in reason_ids
+        or cal_gap >= 5.0
+        or ev_300 < 0.45
+    )
+
+    next_dilated = True if needs_compartment_context else (not cur_dilated)
+    next_se = True if (needs_compartment_context or needs_spatial_gate) else True
+    next_gated = True if needs_spatial_gate else (True if cur_dilated and cur_se else cur_gated)
+    next_critic_depth = 3 if (needs_deep_critic or cur_critic_depth < 3) else 3
+
+    # Step structural capacity so a restart never re-trains the exact same architecture that stalled
+    if cur_base_ch == 32 and not (cur_dilated and cur_se):
+        next_base_ch = 40
+        next_spatial_dim = 48
+        next_embed_dim = 320
+        next_head_dim = 192
+    elif cur_base_ch == 40:
+        next_base_ch = 48
+        next_spatial_dim = 48
+        next_embed_dim = 320
+        next_head_dim = 256
+    elif cur_base_ch >= 48:
+        next_base_ch = 32
+        next_spatial_dim = 48
+        next_embed_dim = 384
+        next_head_dim = 256
+    else:
+        next_base_ch = 40
+        next_spatial_dim = max(48, cur_spatial_dim)
+        next_embed_dim = max(320, cur_embed_dim)
+        next_head_dim = max(192, cur_head_dim)
+
+    arch_tags: List[str] = [f"{next_base_ch}ch"]
+    if next_dilated:
+        arch_tags.append("DilatedRes")
+    if next_se:
+        arch_tags.append("SE")
+    if next_gated:
+        arch_tags.append("GatedPtr")
+    if next_critic_depth >= 3:
+        arch_tags.append("DeepCritic")
+    next_arch_version = f"3.{len(past_cycles) + 1}-" + "-".join(arch_tags[:4])
+
+    new_arch_patch: Dict[str, Any] = {
+        "arch_version": next_arch_version,
+        "base_ch": next_base_ch,
+        "spatial_dim": next_spatial_dim,
+        "embed_dim": next_embed_dim,
+        "head_hidden_dim": next_head_dim,
+        "use_dilated_context": next_dilated,
+        "use_se_attention": next_se,
+        "use_gated_heads": next_gated,
+        "critic_depth": next_critic_depth,
+        "th_threat_weight": round(min(9.5, max(7.5, float(arch_cfg.get("th_threat_weight", 7.5)) + 0.5)), 2),
+        "breach_prior_weight": round(min(11.5, max(9.0, float(arch_cfg.get("breach_prior_weight", 9.0)) + 0.5)), 2),
+        "film_cond_scale": round(min(0.85, max(0.65, float(arch_cfg.get("film_cond_scale", 0.65)))), 2),
+    }
+
+    probe_cfg = dict(arch_cfg)
+    probe_cfg.update(new_arch_patch)
+    tmp_model = CoCActorCritic(in_channels=59, army_context_dim=64, arch_config=probe_cfg)
+    new_total_params = int(sum(p.numel() for p in tmp_model.parameters()))
+    new_arch_patch["total_params"] = new_total_params
+
+    architectural_remedies: List[str] = []
+    if next_dilated:
+        architectural_remedies.append(
+            "adds a Multi-Scale Dilated Residual Context Block (`DilatedResBlock`, dilation=2,4) in the U-Net encoder to expand cross-compartment receptive field for TH18 core breaches"
+        )
+    if next_se:
+        architectural_remedies.append(
+            "enables Squeeze-and-Excitation (`SEChannelAttention`) on the bottleneck and 50×50 spatial decoder to dynamically re-weight lethal defenses (Monolith, Hot Candle, TH18)"
+        )
+    if next_gated:
+        architectural_remedies.append(
+            f"introduces Gated Cross-Head Spatial Conditioning (`use_gated_heads=True`, `spatial_dim={next_spatial_dim}`) to sharpen 50×50 deployment focus"
+        )
+    if next_critic_depth >= 3:
+        architectural_remedies.append(
+            f"upgrades `critic_head` to a 3-layer LayerNorm tower (`critic_depth=3`, `head_hidden_dim={next_head_dim}`) to eliminate V(s₀) calibration lag ({metrics.get('calibration_gap', 0.0):+.1f} pts)"
+        )
+
+    return {
+        "solution_id": f"sol_restart_new_arch_v{len(past_cycles)+1}",
+        "rank": 5,
+        "category": "new_architecture_restart",
+        "decision_type": "stop_and_restart_new_arch",
+        "requires_restart_from_scratch": True,
+        "requires_code_edit": True,
+        "target_files": ["python/coc_rl/networks.py", "python/coc_rl/ppo.py"],
+        "title": f"Stop Model & Restart with New Architecture ({next_arch_version} • {new_total_params / 1e6:.2f}M Params)",
+        "target_problem": reason_titles,
+        "rationale": (
+            f"Stops the current model (arch `{arch_cfg.get('arch_version', '3.0-UNet')}` at 300-ep mean {metrics.get('mean_pct_300', 0.0):.1f}% destr, "
+            f"{triple_rate:.1f}% 3★, worst village `{worst_v.get('name')}` at {worst_v.get('recent_avg_pct')}%) and restarts training from scratch "
+            f"with a new `{next_arch_version}` architecture (`base_ch={next_base_ch}`, `embed_dim={next_embed_dim}`, `spatial_dim={next_spatial_dim}`, "
+            f"`{new_total_params:,}` params) that " + ", ".join(architectural_remedies) + "."
+        ),
+        "code_edit_instructions": (
+            f"We are stopping the current model and restarting from scratch with architecture `{next_arch_version}` "
+            f"to solve `{reason_titles}`. In `python/coc_rl/networks.py`, update `DEFAULT_ARCH_CONFIG` so "
+            f"`arch_version='{next_arch_version}'`, `base_ch={next_base_ch}`, `spatial_dim={next_spatial_dim}`, "
+            f"`embed_dim={next_embed_dim}`, `head_hidden_dim={next_head_dim}`, `use_dilated_context={next_dilated}`, "
+            f"`use_se_attention={next_se}`, `use_gated_heads={next_gated}`, and `critic_depth={next_critic_depth}`."
+        ),
+        "config_patch": {
+            "arch_config": new_arch_patch,
+            "hyperparams": {
+                "lr": 0.00028,
+                "critic_lr_mult": 3.0,
+                "vf_coef": 0.6,
+                "ent_coef": 0.015,
+                "matchup_mode": "round_robin",
+            },
+        },
+        "expected_verification_criteria": (
+            f"Stop current model, initialize new `{next_arch_version}` ({new_total_params:,} params) from scratch, "
+            "train for 300 episodes, and honestly evaluate 300-episode Mean Destruction %, 2★+ TH18 rate, and 3★ Triple rate."
+        ),
+    }
+
+
 def _build_deterministic_diagnosis_and_solutions(
     telemetry: Dict[str, Any],
     active_config: Dict[str, Any],
     past_cycles: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """
-    Synthesizes grounded quantitative plateau diagnosis and 4 concrete candidate solutions
-    (spanning Architecture, Reward Function, Hyperparameters, and Combined) tailored to
-    the exact bottlenecks observed in `telemetry`, while avoiding any solution_id that
-    was recently rolled back.
+    Synthesizes grounded quantitative plateau diagnosis over the last 300 episodes
+    and 5 concrete candidate solutions (spanning Reward Function, Architecture Conditioning,
+    Hyperparameters, Code Agent, and Stop & Restart with a New Architecture), while
+    recommending the best decision (`keep_monitoring`, `apply_in_place_solution`,
+    `rollback_to_baseline`, or `stop_and_restart_new_arch`).
     """
     metrics = extract_compact_metrics_from_telemetry(telemetry)
     arch_cfg = active_config.get("arch_config", DEFAULT_ARCH_CONFIG)
     rew_cfg = active_config.get("reward_config", DEFAULT_REWARD_CONFIG)
     hp_cfg = active_config.get("hyperparams", DEFAULT_HYPERPARAMS)
 
+    eval_eps = int(metrics.get("eval_window_episodes", EVAL_WINDOW_EPISODES))
     slope = metrics["pct_slope_per_100ep"]
     eps_since_peak = metrics["episodes_since_peak"]
-    mean_pct = metrics["mean_pct_50"]
-    th_rate = metrics["two_star_th_rate_50"]
-    triple_rate = metrics["three_star_triple_rate_50"]
+    mean_pct = metrics["mean_pct_300"]
+    th_rate = metrics["two_star_th_rate_300"]
+    triple_rate = metrics["three_star_triple_rate_300"]
     p2_given_1 = metrics["star_funnel"]["p_2star_given_1star_pct"]
     p3_given_2 = metrics["star_funnel"]["p_3star_given_2star_pct"]
     near_miss = metrics["star_funnel"]["near_miss_85_to_99_pct_rate"]
@@ -575,20 +851,21 @@ def _build_deterministic_diagnosis_and_solutions(
     tile_sat = metrics["head_saturation_pct"]["tile_xy"]
     type_sat = metrics["head_saturation_pct"]["slot_type"]
 
-    # Determine health & plateau status
+    # Determine health & plateau status using the 300-episode mean window
     is_plateaued = (
-        (metrics["history_length"] >= 40 and slope < 0.45 and eps_since_peak >= 35)
-        or (mean_pct < 78.0 and slope < 0.65)
-        or (triple_rate < 25.0 and slope < 0.80)
+        (metrics["history_length"] >= 60 and slope < 0.35 and eps_since_peak >= 100)
+        or (mean_pct < 78.0 and slope < 0.55)
+        or (triple_rate < 25.0 and slope < 0.65)
+        or slope < -0.25
         or len(telemetry.get("detected_signals", [])) >= 1
     )
 
-    if not is_plateaued and slope >= 0.65 and mean_pct >= 75.0:
+    if not is_plateaued and slope >= 0.45 and mean_pct >= 75.0:
         status = "healthy_progressing"
         health_score = min(95, int(74 + slope * 6 + triple_rate * 0.3))
-    elif slope < -0.60:
+    elif slope < -0.35 or metrics["drawdown_from_peak_pct"] <= -2.5:
         status = "degrading"
-        health_score = max(28, int(52 + slope * 5))
+        health_score = max(25, int(52 + slope * 5 + metrics["drawdown_from_peak_pct"] * 2))
         is_plateaued = True
     else:
         status = "plateaued"
@@ -605,8 +882,8 @@ def _build_deterministic_diagnosis_and_solutions(
             "severity": "critical" if th_rate < 45.0 else "warning",
             "category": "reward_function",
             "symptom": (
-                f"2★+ TH18 takedown rate is {th_rate:.1f}% (conditional P(2★|1★) = {p2_given_1:.1f}%) "
-                f"with recent 50-ep destruction at {mean_pct:.1f}% (slope {slope:+.2f}%/100ep)."
+                f"300-ep 2★+ TH18 takedown rate is {th_rate:.1f}% (conditional P(2★|1★) = {p2_given_1:.1f}%) "
+                f"with {eval_eps}-ep mean destruction at {mean_pct:.1f}% ± {metrics['sem_pct_300']:.2f}% (slope {slope:+.2f}%/100ep)."
             ),
             "root_cause": (
                 "Exterior building destruction rewards (0.35 pts/%) provide easier immediate gradient signal than "
@@ -614,20 +891,20 @@ def _build_deterministic_diagnosis_and_solutions(
                 "units to drift around the perimeter instead of committing to a deep core funnel."
             ),
         })
-    elif triple_rate < 30.0 or p3_given_2 < 35.0:
+    elif triple_rate < 35.0 or p3_given_2 < 40.0:
         reasons.append({
             "id": "late_battle_3star_cleanup_stall",
             "title": "2★ → 3★ Back-End Cleanup Plateau",
             "severity": "warning",
             "category": "reward_function",
             "symptom": (
-                f"Policy achieves {th_rate:.1f}% 2★ TH18 takedowns, but only converts P(3★|2★) = {p3_given_2:.1f}% "
-                f"into full 3★ triples ({triple_rate:.1f}% overall; {near_miss:.1f}% near-miss finishes at 85–99%)."
+                f"Over the last {eval_eps} episodes, policy achieves {th_rate:.1f}% 2★ TH18 takedowns, but only converts "
+                f"P(3★|2★) = {p3_given_2:.1f}% into full 3★ triples ({triple_rate:.1f}% overall; {near_miss:.1f}% near-miss finishes at 85–99%)."
             ),
             "root_cause": (
                 "Once the 2nd star and TH18 bonus are secured around 65–75% destruction, marginal reward per surviving "
-                "defense drops, giving insufficient late-battle gradient incentive to preserve spell/ability sustain for "
-                "75%→90%→100% back-end compartment cleanup."
+                "defense drops, giving insufficient late-battle gradient incentive and cross-compartment receptive field "
+                "to preserve spell/ability sustain for 75%→90%→100% back-end compartment cleanup."
             ),
         })
 
@@ -654,17 +931,17 @@ def _build_deterministic_diagnosis_and_solutions(
     if v_gap >= 10.0:
         reasons.append({
             "id": "asymmetric_village_generalization_gap",
-            "title": f"High Cross-Village Performance Gap ({v_gap:.1f}% Spread)",
+            "title": f"High Cross-Village Performance Gap ({v_gap:.1f}% Spread Over 300 Eps)",
             "severity": "warning",
             "category": "hyperparameters",
             "symptom": (
-                f"Worst base `{worst_v.get('name')}` averages {worst_v.get('recent_avg_pct')}% vs "
+                f"Over the 300-ep window, worst base `{worst_v.get('name')}` averages {worst_v.get('recent_avg_pct')}% vs "
                 f"Best base `{metrics['best_village'].get('name')}` at {metrics['best_village'].get('recent_avg_pct')}% "
                 f"(Δ={v_gap:.1f}%)."
             ),
             "root_cause": (
-                "Random village sampling with high variance across compartment geometries causes PPO minibatches to "
-                "overfit easier symmetrical bases while under-updating on harder anti-3★ layouts."
+                "Compartment geometry differences across reference layouts cause standard 3×3 U-Net blocks to under-generalize "
+                "on deep killzone/diamond bases without dilated multi-scale context and balanced round-robin updates."
             ),
         })
     elif cal_gap >= 5.0 or ev_50 < 0.35 or abs(slope) < 0.45:
@@ -674,40 +951,45 @@ def _build_deterministic_diagnosis_and_solutions(
             "severity": "info",
             "category": "hyperparameters",
             "symptom": (
-                f"Critic calibration gap |V(s₀)−R̄| = {cal_gap:.2f} pts, Explained Variance = {ev_50*100:.1f}%, "
-                f"Approx KL = {metrics['approx_kl_50']:.4f} (Slope {slope:+.2f}%/100ep, {eps_since_peak} eps since peak)."
+                f"Critic calibration gap |V(s₀)−R̄₃₀₀| = {cal_gap:.2f} pts, Explained Variance = {ev_50*100:.1f}%, "
+                f"Approx KL = {metrics['approx_kl_50']:.4f} (Slope {slope:+.2f}%/100ep, {eps_since_peak} eps since 300-ep peak)."
             ),
             "root_cause": (
-                "As policy returns shift into higher destruction regimes, the Critic value head lags behind the new "
-                "return distribution, increasing GAE advantage noise and causing small policy updates to stall."
+                "As policy returns shift into higher destruction regimes, the 2-layer Critic value head lags behind the "
+                "return distribution, increasing GAE advantage noise and causing policy updates to stall or oscillate."
             ),
         })
 
     if not reasons:
         reasons.append({
             "id": "local_optimum_consolidation",
-            "title": "Rolling Destruction Consolidation Plateau",
+            "title": "300-Episode Destruction Consolidation Plateau",
             "severity": "info",
             "category": "combined",
             "symptom": (
-                f"Rolling 50-ep destruction is {mean_pct:.1f}% (Peak {metrics['rolling50_peak_pct']:.1f}% "
-                f"{eps_since_peak} eps ago, slope {slope:+.2f}%/100ep)."
+                f"Last {eval_eps}-ep mean destruction is {mean_pct:.1f}% ± {metrics['sem_pct_300']:.2f}% "
+                f"(Peak 300-ep mean {metrics['rolling50_peak_pct']:.1f}% {eps_since_peak} eps ago, slope {slope:+.2f}%/100ep)."
             ),
             "root_cause": (
-                "Policy has converged on a stable 2★ core entry pattern and requires sharper late-game milestone "
-                "rewards and refined learning rate / spatial conditioning to break through to consistent 3★ wipes."
+                "Policy has converged on a local 2★ core entry optimum and requires either sharper late-game milestone "
+                "shaping or a structural architecture upgrade to break through to consistent 3★ wipes."
             ),
         })
 
-    # Track recently failed solution IDs so we don't repeat them
+    # Track recently failed or degraded solution IDs so we don't repeat them
     failed_ids = {
         c.get("selected_solution", {}).get("solution_id")
+        for c in past_cycles[-4:]
+        if isinstance(c.get("verification_result"), dict)
+        and not bool(c["verification_result"].get("problem_solved", False))
+    }
+    recent_unsolved_count = sum(
+        1
         for c in past_cycles[-3:]
         if isinstance(c.get("verification_result"), dict)
-        and c["verification_result"].get("verdict") == "NOT_SOLVED_ROLLED_BACK"
-    }
+        and not bool(c["verification_result"].get("problem_solved", False))
+    )
 
-    # Build 4 concrete candidate solutions across Reward Function, Architecture, Hyperparameters, and Combined
     cur_th_bonus = float(rew_cfg.get("th_bonus", 14.0))
     cur_dmg_w = float(rew_cfg.get("damage_weight", 15.0))
     cur_funnel_w = float(rew_cfg.get("funnel_weight", 0.08))
@@ -729,11 +1011,20 @@ def _build_deterministic_diagnosis_and_solutions(
     cur_vf = float(hp_cfg.get("vf_coef", 0.5))
     cur_kl = float(hp_cfg.get("target_kl", 0.03))
 
+    new_arch_restart_candidate = _build_targeted_new_architecture_solution(
+        metrics=metrics,
+        reasons=reasons,
+        active_config=active_config,
+        past_cycles=past_cycles,
+    )
+
     candidates: List[Dict[str, Any]] = [
         {
             "solution_id": f"sol_reward_milestone_push_v{len(past_cycles)+1}",
             "rank": 1,
             "category": "reward_function",
+            "decision_type": "apply_in_place_solution",
+            "requires_restart_from_scratch": False,
             "title": "High-Destruction Milestone & Core HP Shaping Boost",
             "target_problem": reasons[0]["title"],
             "rationale": (
@@ -752,13 +1043,15 @@ def _build_deterministic_diagnosis_and_solutions(
                 }
             },
             "expected_verification_criteria": (
-                "Improve recent 50-ep Mean Destruction % by ≥ +0.5% or increase 2★+ TH18 / 3★ Triple conversion rate."
+                "Improve 300-ep Mean Destruction % by ≥ +0.35% with non-negative 2★+ TH18 and 3★ Triple rates."
             ),
         },
         {
             "solution_id": f"sol_arch_spatial_breach_and_film_v{len(past_cycles)+1}",
             "rank": 2,
             "category": "architecture",
+            "decision_type": "apply_in_place_solution",
+            "requires_restart_from_scratch": False,
             "title": "U-Net FiLM Conditioning & TH18 Spatial Breach Attraction Amplification",
             "target_problem": (
                 reasons[1]["title"] if len(reasons) > 1 else "Spatial Breach Focus & Spell Placement Conditioning"
@@ -781,17 +1074,17 @@ def _build_deterministic_diagnosis_and_solutions(
                 }
             },
             "expected_verification_criteria": (
-                "Increase Top-5 Tile Probability Mass %, reduce perimeter scatter σ, and improve 2★+ TH18 breach rate."
+                "Increase Top-5 Tile Probability Mass %, reduce perimeter scatter σ, and improve 300-ep 2★+ TH18 breach rate."
             ),
         },
         {
             "solution_id": f"sol_hyperparams_critic_and_round_robin_v{len(past_cycles)+1}",
             "rank": 3,
             "category": "hyperparameters",
+            "decision_type": "apply_in_place_solution",
+            "requires_restart_from_scratch": False,
             "title": "Critic Calibration Acceleration, Trust-Region Fine-Tuning & Round-Robin Sampling",
-            "target_problem": (
-                reasons[-1]["title"]
-            ),
+            "target_problem": reasons[-1]["title"],
             "rationale": (
                 "Refines actor learning rate for fine-grained late-stage convergence while boosting `critic_lr_mult` "
                 "and `vf_coef` to eliminate V(s₀) calibration lag, and enforces `round_robin` village sampling so "
@@ -808,13 +1101,15 @@ def _build_deterministic_diagnosis_and_solutions(
                 }
             },
             "expected_verification_criteria": (
-                "Reduce inter-village destruction gap, improve Critic Explained Variance, and resume positive destruction slope."
+                "Reduce 300-ep inter-village destruction gap, improve Critic Explained Variance, and resume positive destruction slope."
             ),
         },
         {
             "solution_id": f"sol_code_agent_argon_spatial_reward_v{len(past_cycles)+1}",
             "rank": 4,
             "category": "code_agent",
+            "decision_type": "apply_in_place_solution",
+            "requires_restart_from_scratch": False,
             "title": "OpenCode Argon 4 Medium Surgical Code Upgrade (Spatial Prior & Reward Shaping)",
             "target_problem": reasons[0]["title"],
             "rationale": (
@@ -852,47 +1147,71 @@ def _build_deterministic_diagnosis_and_solutions(
                 },
             },
             "expected_verification_criteria": (
-                "Simultaneously lift recent 50-ep Destruction %, 2★+ TH18 rate, and worst-village performance via code + config synergy."
+                "Simultaneously lift 300-ep Mean Destruction %, 2★+ TH18 rate, and worst-village performance via code + config synergy."
             ),
         },
+        new_arch_restart_candidate,
     ]
 
-    # Rotate ranking based on cycle history so each cycle tests the most relevant untried lever
-    cycle_mod = len(past_cycles) % len(candidates)
-    if cycle_mod > 0:
-        candidates = candidates[cycle_mod:] + candidates[:cycle_mod]
+    # Decide whether the agent should recommend stopping the model & restarting with a new architecture
+    should_restart_new_arch = (
+        recent_unsolved_count >= 2
+        or (metrics["episodes_since_peak"] >= 1200 and metrics["drawdown_from_peak_pct"] <= -3.0 and slope <= 0.0)
+        or (status == "degrading" and recent_unsolved_count >= 1)
+    )
+
+    if not is_plateaued:
+        recommended_decision = "keep_monitoring"
+    elif should_restart_new_arch:
+        recommended_decision = "stop_and_restart_new_arch"
+    else:
+        recommended_decision = "apply_in_place_solution"
+
+    if should_restart_new_arch:
+        # Promote the New Architecture Restart solution to Rank #1
+        ordered_cands = [new_arch_restart_candidate] + [
+            c for c in candidates if c["solution_id"] != new_arch_restart_candidate["solution_id"]
+        ]
+        for idx, c in enumerate(ordered_cands):
+            c["rank"] = idx + 1
+        candidates = ordered_cands
+        rec_ids = [new_arch_restart_candidate["solution_id"]]
+    else:
+        in_place_cands = [c for c in candidates if not c.get("requires_restart_from_scratch")]
+        cycle_mod = len(past_cycles) % len(in_place_cands)
+        if cycle_mod > 0:
+            in_place_cands = in_place_cands[cycle_mod:] + in_place_cands[:cycle_mod]
+        in_place_cands.sort(key=lambda c: (1 if c["solution_id"] in failed_ids else 0, c["rank"]))
+        candidates = in_place_cands + [new_arch_restart_candidate]
         for idx, c in enumerate(candidates):
             c["rank"] = idx + 1
 
-    # Deprioritize any solution_id in failed_ids
-    candidates.sort(key=lambda c: (1 if c["solution_id"] in failed_ids else 0, c["rank"]))
-    for idx, c in enumerate(candidates):
-        c["rank"] = idx + 1
-
-    # Recommend multiple complementary solutions at once when multiple bottlenecks are active
-    rec_ids = [candidates[0]["solution_id"]]
-    if len(reasons) >= 2 and len(candidates) >= 2:
-        first_cat = candidates[0].get("category")
-        for cand in candidates[1:]:
-            if cand.get("category") != first_cat and cand["solution_id"] not in failed_ids:
-                rec_ids.append(cand["solution_id"])
-                break
+        rec_ids = [candidates[0]["solution_id"]]
+        if len(reasons) >= 2 and len(in_place_cands) >= 2:
+            first_cat = in_place_cands[0].get("category")
+            for cand in in_place_cands[1:]:
+                if cand.get("category") != first_cat and cand["solution_id"] not in failed_ids:
+                    rec_ids.append(cand["solution_id"])
+                    break
 
     headline = (
-        f"Training {'PLATEAUED' if is_plateaued else 'PROGRESSING'} at {mean_pct:.1f}% recent destruction "
-        f"({slope:+.2f}%/100ep, {th_rate:.1f}% 2★ TH18, {triple_rate:.1f}% 3★) — "
-        f"{reasons[0]['title']}."
+        f"Training {status.upper()} at {mean_pct:.1f}% 300-ep mean destruction "
+        f"(±{metrics['sem_pct_300']:.2f}% SEM, {slope:+.2f}%/100ep, {th_rate:.1f}% 2★ TH18, {triple_rate:.1f}% 3★) — "
+        f"Decision: {recommended_decision.upper()} ({reasons[0]['title']})."
     )
 
     return {
         "status": status,
         "health_score": health_score,
         "is_plateaued": is_plateaued,
+        "recommended_decision": recommended_decision,
         "headline": headline,
         "progression_summary": (
-            f"At cumulative episode {metrics['episode']:,}, recent 50-ep average destruction is {mean_pct:.1f}% "
-            f"(peak rolling-50: {metrics['rolling50_peak_pct']:.1f}% {eps_since_peak} eps ago; slope {slope:+.2f}%/100ep). "
-            f"Star conversion funnel: 1★={metrics['one_star_rate_50']:.1f}% → P(2★|1★)={p2_given_1:.1f}% → "
+            f"At cumulative episode {metrics['episode']:,} (evaluated over the last {eval_eps} episodes), "
+            f"mean destruction is {mean_pct:.1f}% ± {metrics['sem_pct_300']:.2f}% "
+            f"(peak 300-ep mean: {metrics['rolling50_peak_pct']:.1f}% {eps_since_peak} eps ago; slope {slope:+.2f}%/100ep; "
+            f"Combat Score: {metrics['combat_score_300']:.1f}/100). "
+            f"Star conversion funnel: 1★={metrics['one_star_rate_300']:.1f}% → P(2★|1★)={p2_given_1:.1f}% → "
             f"P(3★|2★)={p3_given_2:.1f}% (Worst village: {worst_v.get('name')} at {worst_v.get('recent_avg_pct')}%)."
         ),
         "reasons": reasons,
@@ -915,6 +1234,7 @@ def _build_recursive_loop_llm_prompt(
             "applied_solution": (c.get("selected_solution") or {}).get("title"),
             "category": (c.get("selected_solution") or {}).get("category"),
             "verification_verdict": (c.get("verification_result") or {}).get("verdict"),
+            "decision_taken": (c.get("verification_result") or {}).get("decision_taken"),
             "deltas": (c.get("verification_result") or {}).get("metric_deltas"),
             "lesson_learned": (c.get("verification_result") or {}).get("analysis_summary"),
         }
@@ -922,7 +1242,7 @@ def _build_recursive_loop_llm_prompt(
     ]
     payload = {
         "active_config": active_config,
-        "compact_metrics": extract_compact_metrics_from_telemetry(telemetry),
+        "compact_metrics_300ep": extract_compact_metrics_from_telemetry(telemetry),
         "detected_signals": telemetry.get("detected_signals", []),
         "past_cycles_memory": past_summary,
         "candidate_solutions_baseline": deterministic_draft["candidate_solutions"],
@@ -930,10 +1250,13 @@ def _build_recursive_loop_llm_prompt(
     return f"""CRITICAL INSTRUCTION: Respond immediately in a single turn with ZERO tool calls. Output ONLY the raw JSON object (no markdown fences).
 
 You are the Autonomous Recursive Self-Improvement Architect for the Clash of Clans Town Hall 18 (TH18) Deep RL Attacker (`CoCActorCritic` + PPO + GAE).
-Every 10 minutes you analyze training telemetry, determine if training is healthy or plateaued, identify quantitative root causes, and propose 3–4 concrete candidate solutions across `architecture`, `reward_function`, `hyperparameters`, and `code_agent`.
-You may select MULTIPLE solutions at once in `recommended_solution_indices` (e.g. `[0, 1]` or `[0, 1, 2]`) whenever combining them will have a positive synergistic impact!
+Every 10 minutes you analyze training telemetry over the **last 300 episodes** (to eliminate short-window episode variance), determine honestly whether training is progressing, plateaued, or degrading, identify quantitative root causes, and choose one of the 4 strategic decisions:
+  1. `"keep_monitoring"`: Training is genuinely progressing over the 300-episode window.
+  2. `"apply_in_place_solution"`: Apply 1 or more in-place candidate solutions (`reward_function`, `architecture`, `hyperparameters`, `code_agent`) while continuing the current model.
+  3. `"rollback_to_baseline"`: Revert a recent change that degraded 300-episode combat performance.
+  4. `"stop_and_restart_new_arch"`: Stop the current model and restart training from scratch with the new neural architecture (`new_architecture_restart`, candidate index 4 or rank #1 if promoted) designed to solve the structural issues identified in the previous run!
 
-### Live Telemetry, Active Configuration & Past Cycles Memory
+### Live 300-Episode Telemetry, Active Configuration & Past Cycles Memory
 {json.dumps(payload, indent=2)}
 
 ### Required JSON Schema
@@ -942,19 +1265,20 @@ Return ONLY a raw JSON object with this structure:
   "status": "healthy_progressing" | "plateaued" | "degrading",
   "health_score": <int 0..100>,
   "is_plateaued": <boolean>,
-  "headline": "<1-sentence quantitative verdict>",
-  "progression_summary": "<2-3 sentences citing exact metrics, star funnel rates, slopes, and village bottlenecks>",
+  "recommended_decision": "keep_monitoring" | "apply_in_place_solution" | "rollback_to_baseline" | "stop_and_restart_new_arch",
+  "headline": "<1-sentence honest quantitative verdict citing 300-episode mean metrics>",
+  "progression_summary": "<2-3 sentences citing exact 300-episode means, star funnel rates, slopes, and village bottlenecks>",
   "reasons": [
     {{
       "id": "<snake_case_id>",
       "title": "<short diagnostic title>",
       "severity": "critical" | "warning" | "info",
       "category": "architecture" | "reward_function" | "hyperparameters" | "tactical_pacing",
-      "symptom": "<exact numbers from telemetry>",
+      "symptom": "<exact numbers from 300-ep telemetry>",
       "root_cause": "<why this happens mathematically in the network, reward shaping, or PPO update>"
     }}
   ],
-  "recommended_solution_indices": [<int 0..3>, ...]
+  "recommended_solution_indices": [<int 0..4>, ...]
 }}"""
 
 
@@ -966,9 +1290,9 @@ def diagnose_and_propose_solutions(
     use_llm: bool = True,
 ) -> Dict[str, Any]:
     """
-    Runs quantitative + LLM root-cause diagnosis and generates ranked candidate solutions
-    with exact `diff_summary` previews against `active_config`.
-    Supports recommending multiple solutions at once (`recommended_solution_ids`).
+    Runs quantitative + LLM root-cause diagnosis over the last 300 episodes and generates
+    ranked candidate solutions (including `new_architecture_restart`) with exact `diff_summary`
+    previews against `active_config`.
     """
     draft = _build_deterministic_diagnosis_and_solutions(
         telemetry=telemetry,
@@ -1001,6 +1325,13 @@ def diagnose_and_propose_solutions(
                     draft["is_plateaued"] = parsed["is_plateaued"]
                 if "status" in parsed and parsed["status"] in ("healthy_progressing", "plateaued", "degrading"):
                     draft["status"] = parsed["status"]
+                if "recommended_decision" in parsed and parsed["recommended_decision"] in (
+                    "keep_monitoring",
+                    "apply_in_place_solution",
+                    "rollback_to_baseline",
+                    "stop_and_restart_new_arch",
+                ):
+                    draft["recommended_decision"] = parsed["recommended_decision"]
                 if isinstance(parsed.get("reasons"), list) and len(parsed["reasons"]) > 0:
                     valid_reasons = [
                         r for r in parsed["reasons"]
@@ -1019,14 +1350,24 @@ def diagnose_and_propose_solutions(
                     if 0 <= idx_val < len(draft["candidate_solutions"]):
                         rec_indices.append(idx_val)
 
-                if rec_indices:
+                # If LLM chose stop_and_restart_new_arch, ensure the new_architecture_restart candidate is selected
+                if draft.get("recommended_decision") == "stop_and_restart_new_arch":
+                    restart_cands = [
+                        c["solution_id"]
+                        for c in draft["candidate_solutions"]
+                        if c.get("requires_restart_from_scratch") or c.get("category") == "new_architecture_restart"
+                    ]
+                    if restart_cands:
+                        draft["recommended_solution_ids"] = restart_cands
+                elif rec_indices:
                     rec_ids = [
                         draft["candidate_solutions"][idx_val]["solution_id"]
                         for idx_val in rec_indices
                     ]
                     draft["recommended_solution_ids"] = rec_ids
-                    # Reorder so recommended solutions appear first
-                    rec_set = set(rec_ids)
+
+                rec_set = set(draft.get("recommended_solution_ids") or [])
+                if rec_set:
                     ordered = [c for c in draft["candidate_solutions"] if c["solution_id"] in rec_set] + [
                         c for c in draft["candidate_solutions"] if c["solution_id"] not in rec_set
                     ]
@@ -1036,6 +1377,14 @@ def diagnose_and_propose_solutions(
         except Exception:
             pass
 
+    # If any recommended solution requires restarting from scratch with a new architecture, sync recommended_decision
+    rec_set_final = set(draft.get("recommended_solution_ids") or [])
+    if any(
+        c.get("requires_restart_from_scratch") and c.get("solution_id") in rec_set_final
+        for c in draft["candidate_solutions"]
+    ):
+        draft["recommended_decision"] = "stop_and_restart_new_arch"
+
     # Attach exact diff summaries to each candidate solution
     for cand in draft["candidate_solutions"]:
         _, diffs = apply_config_patch(active_config, cand.get("config_patch", {}))
@@ -1044,24 +1393,32 @@ def diagnose_and_propose_solutions(
             f"{d['section']}.{d['parameter']}: {d['before']} → {d['after']}"
             for d in diffs
         ]
-        cand["is_recommended"] = cand.get("solution_id") in set(draft.get("recommended_solution_ids") or [])
+        cand["is_recommended"] = cand.get("solution_id") in rec_set_final
 
     draft["model_used"] = llm_used
     return draft
 
 
 # ---------------------------------------------------------------------------
-# Solution Verification Engine (Before vs After Analysis)
+# Solution Verification Engine (Honest 300-Episode Before vs After Analysis)
 # ---------------------------------------------------------------------------
 
 def verify_solution_outcome(
     cycle: Dict[str, Any],
     post_telemetry: Dict[str, Any],
     current_config: Dict[str, Any],
+    past_cycles: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
-    Compares the `pre_change_snapshot` baseline metrics against `post_telemetry` metrics
-    to verify whether the applied solution solved the problem it targeted.
+    Honestly compares the `pre_change_snapshot` 300-episode baseline metrics against
+    `post_telemetry` 300-episode metrics to verify whether the applied solution solved
+    the targeted bottleneck.
+    Never flags degraded or stagnant performance as IMPROVED or SOLVED.
+    Supports 4 decisions (`decision_taken`):
+      - `kept_and_promoted` (`SOLVED`)
+      - `kept_and_continuing` (`IMPROVED` or first-time mild `STAGNANT`)
+      - `rolled_back_to_baseline` (`DEGRADED_ROLLED_BACK`)
+      - `stopped_and_restarted_new_arch` (`DEGRADED_RESTART_NEW_ARCH` / `PLATEAU_RESTART_NEW_ARCH`)
     Returns `(verification_result, updated_active_config)`.
     """
     pre_snap = cycle.get("pre_change_snapshot", {})
@@ -1069,9 +1426,16 @@ def verify_solution_outcome(
     post_m = extract_compact_metrics_from_telemetry(post_telemetry)
     selected_sol = cycle.get("selected_solution") or {}
 
-    delta_pct = round(post_m["mean_pct_50"] - float(base_m.get("mean_pct_50", 0.0)), 2)
-    delta_2s = round(post_m["two_star_th_rate_50"] - float(base_m.get("two_star_th_rate_50", 0.0)), 2)
-    delta_3s = round(post_m["three_star_triple_rate_50"] - float(base_m.get("three_star_triple_rate_50", 0.0)), 2)
+    base_pct = float(base_m.get("mean_pct_300", base_m.get("mean_pct_50", 0.0)))
+    post_pct = float(post_m.get("mean_pct_300", post_m.get("mean_pct_50", 0.0)))
+    base_2s = float(base_m.get("two_star_th_rate_300", base_m.get("two_star_th_rate_50", 0.0)))
+    post_2s = float(post_m.get("two_star_th_rate_300", post_m.get("two_star_th_rate_50", 0.0)))
+    base_3s = float(base_m.get("three_star_triple_rate_300", base_m.get("three_star_triple_rate_50", 0.0)))
+    post_3s = float(post_m.get("three_star_triple_rate_300", post_m.get("three_star_triple_rate_50", 0.0)))
+
+    delta_pct = round(post_pct - base_pct, 2)
+    delta_2s = round(post_2s - base_2s, 2)
+    delta_3s = round(post_3s - base_3s, 2)
     delta_rew = round(post_m["mean_reward_50"] - float(base_m.get("mean_reward_50", 0.0)), 2)
     delta_slope = round(post_m["pct_slope_per_100ep"] - float(base_m.get("pct_slope_per_100ep", 0.0)), 2)
     delta_noop = round(post_m["mean_noop_pct_50"] - float(base_m.get("mean_noop_pct_50", 0.0)), 2)
@@ -1082,90 +1446,207 @@ def verify_solution_outcome(
     delta_wv = round(post_wv - base_wv, 2)
     delta_v_gap = round(post_m["inter_village_gap_pct"] - float(base_m.get("inter_village_gap_pct", 0.0)), 2)
 
-    eps_tested = max(0, int(post_m["episode"]) - int(base_m.get("episode", 0)))
+    base_combat = compute_composite_combat_score(base_pct, base_2s, base_3s)
+    post_combat = compute_composite_combat_score(post_pct, post_2s, post_3s)
+    delta_combat_score = round(post_combat - base_combat, 2)
 
-    # Evaluate if the target problem was solved or improved
-    significant_regression = (delta_pct <= -2.5 and delta_2s <= -4.0)
+    restarted_from_scratch = bool(
+        cycle.get("restarted_from_scratch")
+        or selected_sol.get("requires_restart_from_scratch")
+        or int(post_m["episode"]) < int(base_m.get("episode", 0))
+    )
+    if restarted_from_scratch:
+        start_ep = 0
+        eps_tested = max(0, int(post_m["episode"]))
+    else:
+        start_ep = int(base_m.get("episode", 0))
+        eps_tested = max(0, int(post_m["episode"]) - start_ep)
+
+    # Strictly honest evaluation criteria based on 300-episode combat outcomes (never fooled by shaped reward)
+    is_degraded = (
+        delta_combat_score < -0.20
+        or delta_pct < -0.25
+        or delta_3s <= -2.0
+        or delta_2s <= -2.5
+        or (delta_pct < 0.0 and delta_2s <= 0.0 and delta_3s <= 0.0)
+    )
     strong_solve = (
-        delta_pct >= 0.8
-        or delta_2s >= 2.5
-        or delta_3s >= 1.5
-        or (delta_wv >= 1.5 and delta_pct >= -0.3)
-        or (post_m["pct_slope_per_100ep"] >= 0.50 and delta_pct >= 0.2)
+        not is_degraded
+        and delta_pct >= 0.0
+        and delta_2s >= -1.0
+        and delta_3s >= -1.0
+        and delta_combat_score >= 0.65
+        and (
+            delta_pct >= 0.75
+            or delta_3s >= 2.0
+            or delta_2s >= 2.5
+            or (delta_wv >= 2.0 and delta_pct >= 0.35)
+        )
     )
     moderate_improvement = (
-        not significant_regression
+        not is_degraded
+        and not strong_solve
+        and delta_pct >= 0.0
+        and delta_2s >= -1.0
+        and delta_3s >= -1.0
+        and delta_combat_score >= 0.20
         and (
-            delta_pct >= 0.0
-            or delta_2s >= 0.5
-            or delta_3s >= 0.5
-            or delta_rew >= 0.5
-            or delta_ev >= 0.02
-            or delta_v_gap <= -1.0
+            delta_pct >= 0.25
+            or delta_3s >= 1.0
+            or delta_2s >= 1.0
+            or (delta_wv >= 1.2 and delta_pct >= 0.10)
         )
+    )
+
+    prior_cycles = [c for c in (past_cycles or []) if c.get("cycle_id") != cycle.get("cycle_id")]
+    recent_unsolved = sum(
+        1
+        for c in prior_cycles[-3:]
+        if isinstance(c.get("verification_result"), dict)
+        and not bool(c["verification_result"].get("problem_solved", False))
     )
 
     next_active_cfg = copy.deepcopy(current_config)
-    if significant_regression:
-        verdict = "NOT_SOLVED_ROLLED_BACK"
+    trigger_new_arch_restart = False
+    new_arch_solution: Optional[Dict[str, Any]] = None
+
+    if is_degraded:
         problem_solved = False
-        decision_taken = "rolled_back_to_baseline"
-        # Roll back to pre-change snapshot config & restore any code backups
         if cycle.get("code_agent_execution"):
             restore_code_files_from_backup(int(cycle.get("cycle_id", 1)))
             _smoke_test_rl_modules()
-        next_active_cfg = {
-            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "arch_config": copy.deepcopy(pre_snap.get("arch_config", DEFAULT_ARCH_CONFIG)),
-            "reward_config": copy.deepcopy(pre_snap.get("reward_config", DEFAULT_REWARD_CONFIG)),
-            "hyperparams": copy.deepcopy(pre_snap.get("hyperparams", DEFAULT_HYPERPARAMS)),
-        }
-        save_active_experiment_config(next_active_cfg)
-        summary = (
-            f"Tested `{selected_sol.get('title', 'Solution')}` over +{eps_tested} episodes "
-            f"(Ep {base_m.get('episode', 0):,} → {post_m['episode']:,}). "
-            f"Mean destruction shifted by {delta_pct:+.2f}% ({base_m.get('mean_pct_50', 0):.1f}% → {post_m['mean_pct_50']:.1f}%) "
-            f"and 2★+ TH18 rate by {delta_2s:+.1f}%. Rolled back to the pre-change baseline configuration "
-            f"and recorded this parameter combination to avoid in future cycles."
+
+        # Decide between rolling back to baseline vs stopping the model & restarting with a new architecture
+        should_escalate_to_new_arch = (
+            recent_unsolved >= 2
+            or (delta_combat_score <= -3.5 and post_m["episodes_since_peak"] >= 900)
         )
+        if should_escalate_to_new_arch:
+            verdict = "DEGRADED_RESTART_NEW_ARCH"
+            decision_taken = "stopped_and_restarted_new_arch"
+            trigger_new_arch_restart = True
+            reasons_list = (cycle.get("health_verdict") or {}).get("reasons") or []
+            new_arch_solution = _build_targeted_new_architecture_solution(
+                metrics=post_m,
+                reasons=reasons_list,
+                active_config=current_config,
+                past_cycles=prior_cycles + [cycle],
+            )
+            next_active_cfg, _ = apply_config_patch(
+                {
+                    "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "arch_config": copy.deepcopy(pre_snap.get("arch_config", DEFAULT_ARCH_CONFIG)),
+                    "reward_config": copy.deepcopy(pre_snap.get("reward_config", DEFAULT_REWARD_CONFIG)),
+                    "hyperparams": copy.deepcopy(pre_snap.get("hyperparams", DEFAULT_HYPERPARAMS)),
+                },
+                new_arch_solution.get("config_patch", {}),
+            )
+            save_active_experiment_config(next_active_cfg)
+            summary = (
+                f"Honest 300-ep evaluation of `{selected_sol.get('title', 'Solution')}` over +{eps_tested} episodes "
+                f"(Ep {start_ep:,} → {post_m['episode']:,}) detected performance DEGRADATION: "
+                f"300-ep Mean Destruction shifted {delta_pct:+.2f}% ({base_pct:.1f}% → {post_pct:.1f}%), "
+                f"2★+ TH18 rate {delta_2s:+.1f}% ({base_2s:.1f}% → {post_2s:.1f}%), "
+                f"3★ triple rate {delta_3s:+.1f}% ({base_3s:.1f}% → {post_3s:.1f}%), "
+                f"and Composite Combat Score moved {delta_combat_score:+.2f} pts. "
+                f"Because in-place adjustments failed to resolve the bottleneck, decided to STOP the current model "
+                f"and RESTART from scratch with new architecture `{next_active_cfg['arch_config'].get('arch_version')}`."
+            )
+        else:
+            verdict = "NOT_SOLVED_ROLLED_BACK"
+            decision_taken = "rolled_back_to_baseline"
+            next_active_cfg = {
+                "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "arch_config": copy.deepcopy(pre_snap.get("arch_config", DEFAULT_ARCH_CONFIG)),
+                "reward_config": copy.deepcopy(pre_snap.get("reward_config", DEFAULT_REWARD_CONFIG)),
+                "hyperparams": copy.deepcopy(pre_snap.get("hyperparams", DEFAULT_HYPERPARAMS)),
+            }
+            save_active_experiment_config(next_active_cfg)
+            summary = (
+                f"Honest 300-ep evaluation of `{selected_sol.get('title', 'Solution')}` over +{eps_tested} episodes "
+                f"(Ep {start_ep:,} → {post_m['episode']:,}) detected performance DEGRADATION: "
+                f"300-ep Mean Destruction shifted by {delta_pct:+.2f}% ({base_pct:.1f}% → {post_pct:.1f}%), "
+                f"2★+ TH18 rate by {delta_2s:+.1f}% ({base_2s:.1f}% → {post_2s:.1f}%), "
+                f"3★ triple rate by {delta_3s:+.1f}% ({base_3s:.1f}% → {post_3s:.1f}%), "
+                f"and Composite Combat Score by {delta_combat_score:+.2f} pts. "
+                f"Rolled back to the pre-change baseline configuration."
+            )
     elif strong_solve:
         verdict = "SOLVED"
         problem_solved = True
         decision_taken = "kept_and_promoted"
         summary = (
             f"Verified `{selected_sol.get('title', 'Solution')}` over +{eps_tested} episodes "
-            f"(Ep {base_m.get('episode', 0):,} → {post_m['episode']:,}): "
-            f"Mean 50-ep destruction improved by {delta_pct:+.2f}% ({base_m.get('mean_pct_50', 0):.1f}% → {post_m['mean_pct_50']:.1f}%), "
-            f"2★+ TH18 rate {delta_2s:+.1f}% ({post_m['two_star_th_rate_50']:.1f}%), "
-            f"3★ triple rate {delta_3s:+.1f}% ({post_m['three_star_triple_rate_50']:.1f}%), "
+            f"(Ep {start_ep:,} → {post_m['episode']:,}) on the 300-episode mean window: "
+            f"Mean 300-ep destruction improved by {delta_pct:+.2f}% ({base_pct:.1f}% → {post_pct:.1f}%), "
+            f"2★+ TH18 rate {delta_2s:+.1f}% ({post_2s:.1f}%), "
+            f"3★ triple rate {delta_3s:+.1f}% ({post_3s:.1f}%), "
+            f"Composite Combat Score {delta_combat_score:+.2f} pts, "
             f"and worst village moved {delta_wv:+.1f}%. Promoted configuration as the new baseline."
         )
-    else:
-        verdict = "IMPROVED" if moderate_improvement else "PARTIAL"
-        problem_solved = bool(moderate_improvement)
+    elif moderate_improvement:
+        verdict = "IMPROVED"
+        problem_solved = True
         decision_taken = "kept_and_continuing"
         summary = (
             f"Evaluated `{selected_sol.get('title', 'Solution')}` over +{eps_tested} episodes "
-            f"(Ep {base_m.get('episode', 0):,} → {post_m['episode']:,}): "
-            f"Destruction Δ={delta_pct:+.2f}% ({post_m['mean_pct_50']:.1f}%), "
-            f"2★+ TH18 Δ={delta_2s:+.1f}% ({post_m['two_star_th_rate_50']:.1f}%), "
-            f"3★ Δ={delta_3s:+.1f}% ({post_m['three_star_triple_rate_50']:.1f}%), "
-            f"Return Δ={delta_rew:+.2f} pts. Retained configuration for continued consolidation."
+            f"(Ep {start_ep:,} → {post_m['episode']:,}) on the 300-episode mean window: "
+            f"300-ep Destruction Δ={delta_pct:+.2f}% ({base_pct:.1f}% → {post_pct:.1f}%), "
+            f"2★+ TH18 Δ={delta_2s:+.1f}% ({post_2s:.1f}%), "
+            f"3★ Δ={delta_3s:+.1f}% ({post_3s:.1f}%), "
+            f"Composite Combat Score Δ={delta_combat_score:+.2f} pts. Retained configuration for continued consolidation."
         )
+    else:
+        problem_solved = False
+        if recent_unsolved >= 2 and post_m["episodes_since_peak"] >= 900:
+            verdict = "PLATEAU_RESTART_NEW_ARCH"
+            decision_taken = "stopped_and_restarted_new_arch"
+            trigger_new_arch_restart = True
+            reasons_list = (cycle.get("health_verdict") or {}).get("reasons") or []
+            new_arch_solution = _build_targeted_new_architecture_solution(
+                metrics=post_m,
+                reasons=reasons_list,
+                active_config=current_config,
+                past_cycles=prior_cycles + [cycle],
+            )
+            next_active_cfg, _ = apply_config_patch(current_config, new_arch_solution.get("config_patch", {}))
+            save_active_experiment_config(next_active_cfg)
+            summary = (
+                f"Evaluated `{selected_sol.get('title', 'Solution')}` over +{eps_tested} episodes "
+                f"(Ep {start_ep:,} → {post_m['episode']:,}): 300-ep performance remained STAGNANT "
+                f"(Destruction Δ={delta_pct:+.2f}%, 2★ Δ={delta_2s:+.1f}%, 3★ Δ={delta_3s:+.1f}%, "
+                f"Combat Score Δ={delta_combat_score:+.2f}). Because consecutive in-place cycles plateaued, "
+                f"decided to STOP the current model and RESTART from scratch with new architecture "
+                f"`{next_active_cfg['arch_config'].get('arch_version')}`."
+            )
+        else:
+            verdict = "STAGNANT"
+            decision_taken = "kept_and_continuing"
+            summary = (
+                f"Evaluated `{selected_sol.get('title', 'Solution')}` over +{eps_tested} episodes "
+                f"(Ep {start_ep:,} → {post_m['episode']:,}) on the 300-episode mean window: "
+                f"No statistically significant gain yet (Destruction Δ={delta_pct:+.2f}%, "
+                f"2★+ TH18 Δ={delta_2s:+.1f}%, 3★ Δ={delta_3s:+.1f}%, Combat Score Δ={delta_combat_score:+.2f})."
+            )
 
-    verification_result = {
+    verification_result: Dict[str, Any] = {
         "verified_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "start_episode": int(base_m.get("episode", 0)),
+        "start_episode": start_ep,
         "end_episode": int(post_m["episode"]),
         "episodes_tested": eps_tested,
+        "eval_window_episodes": int(post_m.get("eval_window_episodes", EVAL_WINDOW_EPISODES)),
         "problem_solved": problem_solved,
         "verdict": verdict,
         "decision_taken": decision_taken,
+        "trigger_new_arch_restart": trigger_new_arch_restart,
+        "new_arch_solution": new_arch_solution,
         "post_change_metrics": post_m,
         "metric_deltas": {
             "delta_mean_pct_50": delta_pct,
+            "delta_mean_pct_300": delta_pct,
             "delta_two_star_th_rate": delta_2s,
             "delta_three_star_rate": delta_3s,
+            "delta_combat_score": delta_combat_score,
             "delta_mean_reward": delta_rew,
             "delta_pct_slope": delta_slope,
             "delta_noop_pct": delta_noop,
@@ -1261,13 +1742,13 @@ def generate_recursive_loop_chart(loop_state: Dict[str, Any], out_png_path: str)
     # Panel 1: Before vs After Mean Destruction % per Cycle
     ax = axes[0, 0]
     bw = 0.34
-    ax.bar(x - bw / 2, pre_pcts, width=bw, color="#38bdf8", alpha=0.85, label="Pre-Change Baseline %")
-    ax.bar(x + bw / 2, post_pcts, width=bw, color="#4ade80", alpha=0.9, label="Post-Test Verified %")
+    ax.bar(x - bw / 2, pre_pcts, width=bw, color="#38bdf8", alpha=0.85, label="Pre-Change 300-Ep Mean %")
+    ax.bar(x + bw / 2, post_pcts, width=bw, color="#4ade80", alpha=0.9, label="Post-Test 300-Ep Mean %")
     ax.set_xticks(x)
     ax.set_xticklabels(c_labels, fontsize=8)
     ax.set_ylim(0, 105)
-    ax.set_ylabel("Mean 50-Ep Destruction %", color="#f8fafc", fontsize=9, fontweight="bold")
-    ax.set_title("1. Pre-Change Baseline vs. Post-Test Verified Destruction %", color="#f8fafc", fontsize=10, fontweight="bold")
+    ax.set_ylabel("Mean 300-Ep Destruction %", color="#f8fafc", fontsize=9, fontweight="bold")
+    ax.set_title("1. Pre-Change Baseline vs. Post-Test Verified Destruction % (300-Ep Mean)", color="#f8fafc", fontsize=10, fontweight="bold")
     ax.legend(loc="lower right", facecolor="#0b1324", edgecolor="#293b59", labelcolor="#f8fafc", fontsize=8)
 
     # Panel 2: 2★+ TH18 Takedown & 3★ Triple Rate Progression Across Cycles
@@ -1426,12 +1907,13 @@ def sync_recursive_loop_to_vault(loop_state: Dict[str, Any]) -> str:
 - **Target Problem Solved**: **`{'YES ✅' if ver.get('problem_solved') else 'NO ❌'}`**
 - **Empirical Takeaway**: {ver.get('analysis_summary')}
 
-| Verification Metric | Pre-Change Baseline | Post-Test Result | Verified Delta ($\Delta$) |
+| Verification Metric (300-Ep Mean) | Pre-Change Baseline | Post-Test Result | Verified Delta ($\Delta$) |
 | :--- | :---: | :---: | :---: |
-| **Recent 50-Ep Mean Destruction %** | `{s_m.get('mean_pct_50', 0):.2f}%` | **`{pm.get('mean_pct_50', 0):.2f}%`** | **`{d.get('delta_mean_pct_50', 0):+.2f}%`** |
+| **300-Ep Mean Destruction %** | `{s_m.get('mean_pct_50', 0):.2f}%` | **`{pm.get('mean_pct_50', 0):.2f}%`** | **`{d.get('delta_mean_pct_50', 0):+.2f}%`** |
 | **2★+ Town Hall 18 Takedown Rate** | `{s_m.get('two_star_th_rate_50', 0):.1f}%` | **`{pm.get('two_star_th_rate_50', 0):.1f}%`** | **`{d.get('delta_two_star_th_rate', 0):+.1f}%`** |
 | **3★ Triple Wipe Rate** | `{s_m.get('three_star_triple_rate_50', 0):.1f}%` | **`{pm.get('three_star_triple_rate_50', 0):.1f}%`** | **`{d.get('delta_three_star_rate', 0):+.1f}%`** |
-| **Mean Episode Return ($R_{50}$)** | `{s_m.get('mean_reward_50', 0):.2f} pts` | **`{pm.get('mean_reward_50', 0):.2f} pts`** | **`{d.get('delta_mean_reward', 0):+.2f} pts`** |
+| **Composite Combat Score (0–100)** | `{s_m.get('combat_score_300', compute_composite_combat_score(s_m.get('mean_pct_50', 0), s_m.get('two_star_th_rate_50', 0), s_m.get('three_star_triple_rate_50', 0))):.2f}` | **`{pm.get('combat_score_300', compute_composite_combat_score(pm.get('mean_pct_50', 0), pm.get('two_star_th_rate_50', 0), pm.get('three_star_triple_rate_50', 0))):.2f}`** | **`{d.get('delta_combat_score', 0):+.2f}`** |
+| **Mean Episode Return ($R_{300}$)** | `{s_m.get('mean_reward_50', 0):.2f} pts` | **`{pm.get('mean_reward_50', 0):.2f} pts`** | **`{d.get('delta_mean_reward', 0):+.2f} pts`** |
 | **Destruction Slope (per 100 ep)** | `{s_m.get('pct_slope_per_100ep', 0):+.2f}%` | **`{pm.get('pct_slope_per_100ep', 0):+.2f}%`** | **`{d.get('delta_pct_slope', 0):+.2f}%`** |
 | **Worst Village Destruction %** | `{(s_m.get('worst_village') or {}).get('recent_avg_pct', 0):.1f}%` | **`{(pm.get('worst_village') or {}).get('recent_avg_pct', 0):.1f}%`** | **`{d.get('delta_worst_village_pct', 0):+.1f}%`** |
 | **Critic Explained Variance** | `{s_m.get('explained_variance_50', 0)*100:.1f}%` | **`{pm.get('explained_variance_50', 0)*100:.1f}%`** | **`{d.get('delta_explained_variance', 0)*100:+.1f}%`** |"""
@@ -1526,6 +2008,61 @@ The **Recursive AI Self-Improvement Loop** inspects training telemetry every **`
 # Recursive Loop State Manager & Execution Controller
 # ---------------------------------------------------------------------------
 
+def reconcile_historical_verdicts_honestly(cycles: List[Dict[str, Any]]) -> bool:
+    """
+    Audits any loaded cycle verification results against the strict, honest
+    combat outcome criteria so that no historical cycle where destruction %
+    or star rates degraded is ever dishonestly labeled as IMPROVED or SOLVED.
+    """
+    modified = False
+    for c in cycles:
+        ver = c.get("verification_result")
+        if not isinstance(ver, dict) or not ver.get("post_change_metrics"):
+            continue
+        base_m = (c.get("pre_change_snapshot") or {}).get("baseline_metrics") or {}
+        post_m = ver.get("post_change_metrics") or {}
+        d = ver.setdefault("metric_deltas", {})
+
+        base_pct = float(base_m.get("mean_pct_300", base_m.get("mean_pct_50", 0.0)))
+        post_pct = float(post_m.get("mean_pct_300", post_m.get("mean_pct_50", 0.0)))
+        base_2s = float(base_m.get("two_star_th_rate_300", base_m.get("two_star_th_rate_50", 0.0)))
+        post_2s = float(post_m.get("two_star_th_rate_300", post_m.get("two_star_th_rate_50", 0.0)))
+        base_3s = float(base_m.get("three_star_triple_rate_300", base_m.get("three_star_triple_rate_50", 0.0)))
+        post_3s = float(post_m.get("three_star_triple_rate_300", post_m.get("three_star_triple_rate_50", 0.0)))
+
+        delta_pct = round(post_pct - base_pct, 2)
+        delta_2s = round(post_2s - base_2s, 2)
+        delta_3s = round(post_3s - base_3s, 2)
+        delta_combat = round(
+            compute_composite_combat_score(post_pct, post_2s, post_3s)
+            - compute_composite_combat_score(base_pct, base_2s, base_3s),
+            2,
+        )
+        d["delta_combat_score"] = delta_combat
+        d["delta_mean_pct_300"] = delta_pct
+
+        is_degraded = (
+            delta_combat < -0.20
+            or delta_pct < -0.25
+            or delta_3s <= -2.0
+            or delta_2s <= -2.5
+            or (delta_pct < 0.0 and delta_2s <= 0.0 and delta_3s <= 0.0)
+        )
+        is_flat = not is_degraded and delta_combat < 0.20 and delta_pct < 0.25
+
+        if is_degraded and ver.get("verdict") in ("SOLVED", "IMPROVED", "PARTIAL"):
+            ver["verdict"] = "NOT_SOLVED_ROLLED_BACK"
+            ver["problem_solved"] = False
+            if ver.get("decision_taken") not in ("rolled_back_to_baseline", "stopped_and_restarted_new_arch"):
+                ver["decision_taken"] = "rolled_back_to_baseline"
+            modified = True
+        elif is_flat and ver.get("verdict") in ("SOLVED", "IMPROVED"):
+            ver["verdict"] = "STAGNANT"
+            ver["problem_solved"] = False
+            modified = True
+    return modified
+
+
 def _init_default_loop_state() -> Dict[str, Any]:
     active_cfg = load_active_experiment_config()
     now_ts = time.time()
@@ -1533,7 +2070,7 @@ def _init_default_loop_state() -> Dict[str, Any]:
         "enabled": False,
         "interval_seconds": 600,
         "auto_apply_and_test": True,
-        "test_episodes_per_cycle": 48,
+        "test_episodes_per_cycle": 300,
         "provider": "opencode_argon",
         "phase": "idle",
         "is_running_cycle": False,
@@ -1550,7 +2087,7 @@ def _init_default_loop_state() -> Dict[str, Any]:
 
 
 def load_recursive_loop_state() -> Dict[str, Any]:
-    os.makedirs(TRAINED_MODELS_DIR, exist_ok=True)
+    _ensure_loop_dirs()
     state = _init_default_loop_state()
     if os.path.exists(LOOP_STATE_PATH):
         try:
@@ -1561,6 +2098,8 @@ def load_recursive_loop_state() -> Dict[str, Any]:
                 state["is_running_cycle"] = False
                 if state.get("phase") in ("analyzing", "documenting_baseline", "applying_solution", "verifying_solution"):
                     state["phase"] = "testing_solution" if state.get("active_hypothesis") else ("monitoring" if state.get("enabled") else "idle")
+                if isinstance(state.get("cycles"), list):
+                    reconcile_historical_verdicts_honestly(state["cycles"])
         except Exception:
             pass
     state["active_config"] = load_active_experiment_config()
@@ -1568,7 +2107,7 @@ def load_recursive_loop_state() -> Dict[str, Any]:
 
 
 def save_recursive_loop_state(state: Dict[str, Any]) -> None:
-    os.makedirs(TRAINED_MODELS_DIR, exist_ok=True)
+    _ensure_loop_dirs()
     with _loop_lock:
         with open(LOOP_STATE_PATH, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=2)
@@ -1584,18 +2123,20 @@ def run_recursive_improvement_cycle(
     run_code_agent: bool = True,
     use_llm: bool = True,
     start_training_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+    restart_new_arch_callback: Optional[Callable[[Dict[str, Any], int], None]] = None,
 ) -> Dict[str, Any]:
     """
     Executes one full cycle of the Recursive Improvement Loop:
-      1. Gathers expanded training telemetry.
+      1. Gathers expanded 300-episode training telemetry.
       2. If a previous cycle has an unverified `active_hypothesis` and training has advanced
-         (or the user triggered verification), verifies the outcome (Before vs After),
-         keeps or rolls back the config, and records the result.
-      3. Runs plateau & root-cause diagnosis and proposes 3–4 solutions (Architecture, Reward, Hyperparams, Code Agent).
+         (or the user triggered verification), honestly verifies the outcome over the last 300 episodes,
+         taking one of the 4 decisions (`kept_and_promoted`, `kept_and_continuing`,
+         `rolled_back_to_baseline`, or `stopped_and_restarted_new_arch`).
+      3. Runs plateau & root-cause diagnosis and proposes 5 candidate solutions (Reward, Architecture,
+         Hyperparams, Code Agent, and Stop & Restart with a New Architecture).
       4. Captures the mandatory Pre-Change Baseline Snapshot BEFORE making any change.
-      5. Applies 1 or MORE chosen solutions at once (merging config patches + invoking the OpenCode
-         `google-vertex/gemini-4-argon#medium` code agent if a selected solution requires code edits)
-         and optionally triggers/updates training to verify the solution.
+      5. Applies 1 or MORE chosen solutions at once (or stops the current model and restarts from
+         scratch with a new architecture designed to solve the issues identified in the previous run).
       6. Syncs all snapshots, actions, and verification results to the Obsidian Vault.
     """
     if loop_state.get("is_running_cycle"):
@@ -1616,6 +2157,7 @@ def run_recursive_improvement_cycle(
         )
 
         cycles: List[Dict[str, Any]] = list(loop_state.get("cycles") or [])
+        verified_triggered_restart = False
 
         # Step 1: Verify previous active hypothesis if one was under test
         if cycles and cycles[-1].get("verification_result") is None and cycles[-1].get("selected_solution"):
@@ -1629,19 +2171,26 @@ def run_recursive_improvement_cycle(
                 telemetry.get("session", {}).get("cumulative_episode")
                 or telemetry.get("session", {}).get("history_length", 0)
             )
-            if cur_ep > pre_ep or trigger in ("verify_now", "post_test_verification", "scheduled_10m"):
+            was_restart = bool(
+                last_cycle.get("restarted_from_scratch")
+                or (last_cycle.get("selected_solution") or {}).get("requires_restart_from_scratch")
+            )
+            has_progressed = (cur_ep > 0) if was_restart else (cur_ep > pre_ep)
+            if has_progressed or trigger in ("verify_now", "post_test_verification", "scheduled_10m"):
                 loop_state["phase"] = "verifying_solution"
                 ver_res, active_config = verify_solution_outcome(
                     cycle=last_cycle,
                     post_telemetry=telemetry,
                     current_config=active_config,
+                    past_cycles=cycles,
                 )
                 last_cycle["verification_result"] = ver_res
                 last_cycle["completed_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
                 loop_state["active_hypothesis"] = None
                 loop_state["active_config"] = active_config
+                verified_triggered_restart = bool(ver_res.get("trigger_new_arch_restart", False))
 
-                if trigger == "post_test_verification" and not loop_state.get("enabled"):
+                if trigger == "post_test_verification" and not loop_state.get("enabled") and not verified_triggered_restart:
                     loop_state["cycles"] = cycles
                     loop_state["phase"] = "idle"
                     now_ts = time.time()
@@ -1656,7 +2205,7 @@ def run_recursive_improvement_cycle(
                     save_recursive_loop_state(loop_state)
                     return loop_state
 
-        # Step 2: Diagnose current training state & propose multi-domain solutions
+        # Step 2: Diagnose current training state & propose multi-domain solutions (including new architecture restart)
         diag = diagnose_and_propose_solutions(
             telemetry=telemetry,
             active_config=active_config,
@@ -1684,15 +2233,30 @@ def run_recursive_improvement_cycle(
             chosen_solutions_list = [c for c in candidates if c.get("solution_id") in id_set]
             if not chosen_solutions_list and candidates:
                 chosen_solutions_list = [candidates[0]]
-        elif (diag.get("is_plateaued") or trigger == "manual_trigger") and loop_state.get("auto_apply_and_test", True):
-            rec_ids = set(diag.get("recommended_solution_ids") or [])
-            if rec_ids:
-                chosen_solutions_list = [c for c in candidates if c.get("solution_id") in rec_ids]
-            if not chosen_solutions_list and candidates:
-                chosen_solutions_list = [candidates[0]]
+        elif verified_triggered_restart:
+            restart_cands = [
+                c for c in candidates
+                if c.get("requires_restart_from_scratch") or c.get("category") == "new_architecture_restart"
+            ]
+            chosen_solutions_list = restart_cands[:1] if restart_cands else candidates[:1]
+        elif (diag.get("is_plateaued") or trigger in ("manual_trigger", "restart_new_arch")) and loop_state.get("auto_apply_and_test", True):
+            if trigger == "restart_new_arch" or diag.get("recommended_decision") == "stop_and_restart_new_arch":
+                restart_cands = [
+                    c for c in candidates
+                    if c.get("requires_restart_from_scratch") or c.get("category") == "new_architecture_restart"
+                ]
+                chosen_solutions_list = restart_cands[:1] if restart_cands else candidates[:1]
+            else:
+                rec_ids = set(diag.get("recommended_solution_ids") or [])
+                if rec_ids:
+                    chosen_solutions_list = [c for c in candidates if c.get("solution_id") in rec_ids]
+                if not chosen_solutions_list and candidates:
+                    chosen_solutions_list = [candidates[0]]
 
         chosen_solution: Optional[Dict[str, Any]] = None
         code_agent_exec: Optional[Dict[str, Any]] = None
+        restarted_from_scratch = False
+
         if chosen_solutions_list:
             loop_state["phase"] = "applying_solution"
             new_cfg, _, composite_sol = merge_selected_solutions(
@@ -1702,6 +2266,11 @@ def run_recursive_improvement_cycle(
             loop_state["active_config"] = active_config
             composite_sol["applied_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
             chosen_solution = composite_sol
+            restarted_from_scratch = bool(
+                composite_sol.get("requires_restart_from_scratch")
+                or composite_sol.get("decision_type") == "stop_and_restart_new_arch"
+                or composite_sol.get("category") == "new_architecture_restart"
+            )
 
             if (
                 run_code_agent
@@ -1712,6 +2281,8 @@ def run_recursive_improvement_cycle(
                     instructions=str(composite_sol["code_edit_instructions"]),
                     target_files=list(composite_sol.get("target_files") or ["python/coc_rl/networks.py", "python/coc_rl/ppo.py"]),
                     cycle_id=next_cycle_id,
+                    allow_architecture_redesign=restarted_from_scratch,
+                    arch_config=active_config.get("arch_config"),
                 )
 
         cycle_record: Dict[str, Any] = {
@@ -1720,10 +2291,16 @@ def run_recursive_improvement_cycle(
             "completed_at": None if chosen_solution else time.strftime("%Y-%m-%d %H:%M:%S"),
             "trigger": trigger,
             "episode_at_analysis": pre_snapshot["cumulative_episode"],
+            "restarted_from_scratch": restarted_from_scratch,
             "health_verdict": {
                 "status": diag["status"],
                 "health_score": diag["health_score"],
                 "is_plateaued": diag["is_plateaued"],
+                "recommended_decision": (
+                    "stop_and_restart_new_arch"
+                    if restarted_from_scratch
+                    else diag.get("recommended_decision", "apply_in_place_solution")
+                ),
                 "headline": diag["headline"],
                 "progression_summary": diag["progression_summary"],
                 "model_used": diag.get("model_used", provider),
@@ -1751,13 +2328,19 @@ def run_recursive_improvement_cycle(
             "%Y-%m-%d %H:%M:%S", time.localtime(now_ts + interval)
         )
 
+        target_test_eps = int(loop_state.get("test_episodes_per_cycle", 300))
+        if restarted_from_scratch:
+            target_test_eps = max(300, target_test_eps)
+
         if chosen_solution:
             loop_state["phase"] = "testing_solution"
             loop_state["active_hypothesis"] = {
                 "cycle_id": next_cycle_id,
                 "solution": chosen_solution,
-                "baseline_episode": pre_snapshot["cumulative_episode"],
-                "target_episodes": int(loop_state.get("test_episodes_per_cycle", 48)),
+                "baseline_episode": 0 if restarted_from_scratch else pre_snapshot["cumulative_episode"],
+                "pre_restart_episode": pre_snapshot["cumulative_episode"],
+                "restarted_from_scratch": restarted_from_scratch,
+                "target_episodes": target_test_eps,
                 "baseline_metrics": pre_snapshot["baseline_metrics"],
             }
         else:
@@ -1768,14 +2351,12 @@ def run_recursive_improvement_cycle(
         sync_recursive_loop_to_vault(loop_state)
         save_recursive_loop_state(loop_state)
 
-        # Step 6: If a solution was applied and training is currently idle, launch verification burst
-        if (
-            chosen_solution
-            and start_training_callback is not None
-            and not training_state.get("is_training", False)
-            and loop_state.get("auto_apply_and_test", True)
-        ):
-            start_training_callback(active_config)
+        # Step 6: Execute model stop & new architecture restart OR in-place verification burst
+        if chosen_solution and loop_state.get("auto_apply_and_test", True):
+            if restarted_from_scratch and restart_new_arch_callback is not None:
+                restart_new_arch_callback(active_config, next_cycle_id)
+            elif start_training_callback is not None and not training_state.get("is_training", False):
+                start_training_callback(active_config)
 
         return loop_state
     finally:
