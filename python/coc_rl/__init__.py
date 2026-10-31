@@ -25,6 +25,7 @@ from .recursive_loop import (
     capture_pre_change_snapshot,
     diagnose_and_propose_solutions,
     execute_opencode_argon_code_edit,
+    get_default_experiment_config,
     load_active_experiment_config,
     load_recursive_loop_state,
     merge_selected_solutions,

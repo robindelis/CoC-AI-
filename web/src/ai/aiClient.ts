@@ -382,3 +382,16 @@ export async function restartRecursiveLoopNewArchitecture(params?: {
     return null;
   }
 }
+
+export async function resetRecursiveLoop(): Promise<AIRecursiveLoopState | null> {
+  try {
+    const res = await fetch(`${AI_API_BASE}/loop/reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as AIRecursiveLoopState;
+  } catch {
+    return null;
+  }
+}

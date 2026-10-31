@@ -36,6 +36,7 @@ from coc_rl import (
     gather_training_telemetry,
     generate_ai_training_feedback,
     get_compressed_history_meta,
+    get_default_experiment_config,
     load_active_experiment_config,
     load_cached_ai_feedback,
     load_recursive_loop_state,
@@ -464,6 +465,33 @@ def start_ppo_training(req: TrainStartRequest) -> Dict[str, Any]:
         _training_state["total_episodes"] = req.episodes
         _training_state["history"] = []
 
+        # Reset recursive loop timer for this training session so first diagnostic starts after 10 min
+        interval = max(60, int(_loop_state.get("interval_seconds", 600)))
+        now_ts = time.time()
+        _loop_state["remaining_training_seconds"] = float(interval)
+        _loop_state["next_check_ts"] = now_ts + float(interval)
+        _loop_state["next_check_at"] = time.strftime(
+            "%Y-%m-%d %H:%M:%S", time.localtime(now_ts + float(interval))
+        )
+        _loop_state["is_running_cycle"] = False
+
+        # When starting a new training from scratch, wipe any previous cycles & active hypothesis
+        is_scratch = not req.resume_from or str(req.resume_from).strip().lower() in ("scratch", "none", "")
+        if is_scratch:
+            _loop_state["cycles"] = []
+            _loop_state["current_cycle_id"] = 0
+            _loop_state["active_hypothesis"] = None
+            _loop_state["phase"] = "monitoring" if _loop_state.get("enabled", False) else "idle"
+            default_cfg = get_default_experiment_config()
+            save_active_experiment_config(default_cfg)
+            _loop_state["active_config"] = default_cfg
+        else:
+            if _loop_state.get("phase") in ("analyzing", "documenting_baseline", "applying_solution"):
+                _loop_state["phase"] = "testing_solution" if _loop_state.get("active_hypothesis") else ("monitoring" if _loop_state.get("enabled", False) else "idle")
+
+        save_recursive_loop_state(_loop_state)
+        sync_recursive_loop_to_vault(_loop_state)
+
     def _worker() -> None:
         def _on_ep(rec: Dict[str, Any]) -> bool:
             ep_copy = dict(rec)
@@ -723,6 +751,13 @@ def configure_recursive_loop(req: LoopConfigureRequest) -> Dict[str, Any]:
 
 @app.post("/api/ai/loop/run-cycle")
 def trigger_recursive_loop_cycle(req: LoopRunCycleRequest) -> Dict[str, Any]:
+    hist_len = len(_training_state.get("history", []))
+    cum_ep = int(_training_state.get("cumulative_episode", 0) or _training_state.get("current_episode", 0))
+    if hist_len == 0 and cum_ep == 0:
+        return {
+            "error": "Cannot run diagnostic: No training episodes completed yet. Please allow training to run for at least 10 minutes to gather telemetry.",
+            **_get_loop_status_payload(),
+        }
     prev_auto = _loop_state.get("auto_apply_and_test", True)
     _loop_state["auto_apply_and_test"] = bool(req.auto_test)
     try:
@@ -795,26 +830,10 @@ def apply_specific_loop_solution(req: LoopApplySolutionRequest) -> Dict[str, Any
     req_ids = list(req.solution_ids or ([] if not req.solution_id else [req.solution_id]))
     cycles = list(_loop_state.get("cycles") or [])
     if not cycles:
-        run_recursive_improvement_cycle(
-            loop_state=_loop_state,
-            training_state=_training_state,
-            device=DEVICE,
-            trigger="manual_trigger",
-            selected_solution_ids=req_ids or None,
-            run_code_agent=req.run_code_agent,
-            use_llm=False,
-            start_training_callback=(
-                (lambda cfg: _launch_verification_training(cfg, req.test_episodes))
-                if req.auto_test
-                else None
-            ),
-            restart_new_arch_callback=(
-                (lambda cfg, cid: _stop_and_restart_new_architecture_training(cfg, cid, req.test_episodes))
-                if req.auto_test
-                else None
-            ),
-        )
-        return _get_loop_status_payload()
+        return {
+            "error": "No diagnostic cycle available to apply solutions from yet. A diagnostic must run first.",
+            **_get_loop_status_payload(),
+        }
 
     target_cycle = cycles[-1]
     if req.cycle_id is not None:
@@ -935,19 +954,41 @@ def verify_current_loop_solution() -> Dict[str, Any]:
     return _get_loop_status_payload()
 
 
+@app.post("/api/ai/loop/reset")
+def reset_recursive_loop() -> Dict[str, Any]:
+    """
+    Clears all recursive improvement loop cycles, cancels active hypotheses,
+    restores default experiment configuration, and resets the 10-minute diagnostic timer.
+    """
+    _loop_state["cycles"] = []
+    _loop_state["current_cycle_id"] = 0
+    _loop_state["active_hypothesis"] = None
+    _loop_state["phase"] = "monitoring" if _loop_state.get("enabled", False) else "idle"
+    _loop_state["is_running_cycle"] = False
+    interval = max(60, int(_loop_state.get("interval_seconds", 600)))
+    now_ts = time.time()
+    _loop_state["remaining_training_seconds"] = float(interval)
+    _loop_state["next_check_ts"] = now_ts + float(interval)
+    _loop_state["next_check_at"] = time.strftime(
+        "%Y-%m-%d %H:%M:%S", time.localtime(now_ts + float(interval))
+    )
+    default_cfg = get_default_experiment_config()
+    save_active_experiment_config(default_cfg)
+    _loop_state["active_config"] = default_cfg
+    save_recursive_loop_state(_loop_state)
+    sync_recursive_loop_to_vault(_loop_state)
+    return _get_loop_status_payload()
+
+
 def _init_and_start_recursive_loop_daemon() -> None:
-    if not _loop_state.get("cycles"):
-        try:
-            run_recursive_improvement_cycle(
-                loop_state=_loop_state,
-                training_state=_training_state,
-                device=DEVICE,
-                trigger="initial_baseline_audit",
-                use_llm=False,
-                start_training_callback=None,
-            )
-        except Exception as exc:
-            print(f"[recursive_loop] Initial audit note: {exc}")
+    interval = max(60, int(_loop_state.get("interval_seconds", 600)))
+    if "remaining_training_seconds" not in _loop_state or _loop_state["remaining_training_seconds"] <= 0:
+        _loop_state["remaining_training_seconds"] = float(interval)
+        now_ts = time.time()
+        _loop_state["next_check_ts"] = now_ts + float(interval)
+        _loop_state["next_check_at"] = time.strftime(
+            "%Y-%m-%d %H:%M:%S", time.localtime(now_ts + float(interval))
+        )
 
     def _daemon() -> None:
         last_tick = time.time()
@@ -972,6 +1013,14 @@ def _init_and_start_recursive_loop_daemon() -> None:
 
                 if rem <= 0.0:
                     _loop_state["remaining_training_seconds"] = float(interval)
+                    now_ts = time.time()
+                    _loop_state["next_check_ts"] = now_ts + float(interval)
+                    _loop_state["next_check_at"] = time.strftime(
+                        "%Y-%m-%d %H:%M:%S", time.localtime(now_ts + float(interval))
+                    )
+                    # Safeguard: do not run if training has no recorded episodes
+                    if len(_training_state.get("history", [])) == 0 and int(_training_state.get("current_episode", 0)) == 0:
+                        continue
                     run_recursive_improvement_cycle(
                         loop_state=_loop_state,
                         training_state=_training_state,

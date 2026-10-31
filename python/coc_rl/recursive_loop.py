@@ -851,26 +851,32 @@ def _build_deterministic_diagnosis_and_solutions(
     tile_sat = metrics["head_saturation_pct"]["tile_xy"]
     type_sat = metrics["head_saturation_pct"]["slot_type"]
 
-    # Determine health & plateau status using the 300-episode mean window
-    is_plateaued = (
-        (metrics["history_length"] >= 60 and slope < 0.35 and eps_since_peak >= 100)
-        or (mean_pct < 78.0 and slope < 0.55)
-        or (triple_rate < 25.0 and slope < 0.65)
-        or slope < -0.25
-        or len(telemetry.get("detected_signals", [])) >= 1
-    )
-
-    if not is_plateaued and slope >= 0.45 and mean_pct >= 75.0:
+    # Early warmup / exploration check: cannot diagnose plateau before sufficient data
+    if metrics["history_length"] < 20 and metrics["cumulative_episode"] < 20:
+        is_plateaued = False
         status = "healthy_progressing"
-        health_score = min(95, int(74 + slope * 6 + triple_rate * 0.3))
-    elif slope < -0.35 or metrics["drawdown_from_peak_pct"] <= -2.5:
-        status = "degrading"
-        health_score = max(25, int(52 + slope * 5 + metrics["drawdown_from_peak_pct"] * 2))
-        is_plateaued = True
+        health_score = 75
     else:
-        status = "plateaued"
-        health_score = max(38, min(72, int(45 + mean_pct * 0.25 + slope * 4)))
-        is_plateaued = True
+        # Determine health & plateau status using the 300-episode mean window
+        is_plateaued = (
+            (metrics["history_length"] >= 60 and slope < 0.35 and eps_since_peak >= 100)
+            or (mean_pct < 78.0 and slope < 0.55)
+            or (triple_rate < 25.0 and slope < 0.65)
+            or slope < -0.25
+            or len(telemetry.get("detected_signals", [])) >= 1
+        )
+
+        if not is_plateaued and slope >= 0.45 and mean_pct >= 75.0:
+            status = "healthy_progressing"
+            health_score = min(95, int(74 + slope * 6 + triple_rate * 0.3))
+        elif slope < -0.35 or metrics["drawdown_from_peak_pct"] <= -2.5:
+            status = "degrading"
+            health_score = max(25, int(52 + slope * 5 + metrics["drawdown_from_peak_pct"] * 2))
+            is_plateaued = True
+        else:
+            status = "plateaued"
+            health_score = max(38, min(72, int(45 + mean_pct * 0.25 + slope * 4)))
+            is_plateaued = True
 
     reasons: List[Dict[str, Any]] = []
 
@@ -2155,6 +2161,21 @@ def run_recursive_improvement_cycle(
             training_state=training_state,
             device=device,
         )
+
+        hist_len = int(telemetry.get("session", {}).get("history_length", 0))
+        cur_ep = int(telemetry.get("session", {}).get("cumulative_episode", 0))
+        if hist_len == 0 and cur_ep == 0:
+            print("[recursive_loop] Telemetry history is empty (0 episodes). Skipping diagnosis until training progresses.")
+            interval = max(60, int(loop_state.get("interval_seconds", 600)))
+            now_ts = time.time()
+            loop_state["remaining_training_seconds"] = float(interval)
+            loop_state["next_check_ts"] = now_ts + float(interval)
+            loop_state["next_check_at"] = time.strftime(
+                "%Y-%m-%d %H:%M:%S", time.localtime(now_ts + float(interval))
+            )
+            loop_state["phase"] = "monitoring" if loop_state.get("enabled", False) else "idle"
+            save_recursive_loop_state(loop_state)
+            return loop_state
 
         cycles: List[Dict[str, Any]] = list(loop_state.get("cycles") or [])
         verified_triggered_restart = False

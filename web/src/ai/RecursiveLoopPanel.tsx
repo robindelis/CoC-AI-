@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   applyRecursiveLoopSolution,
   configureRecursiveLoop,
+  resetRecursiveLoop,
   restartRecursiveLoopNewArchitecture,
   runRecursiveLoopCycle,
   verifyRecursiveLoopSolution,
@@ -180,6 +181,12 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
   };
 
   const handleRunCycleNow = async (autoTest: boolean) => {
+    if (currentCumulativeEp === 0 && !isTraining) {
+      alert(
+        'Cannot run diagnostic: No training episodes completed yet. Please start training and allow it to run for at least 10 minutes to gather telemetry.'
+      );
+      return;
+    }
     setIsBusy(true);
     try {
       const res = await runRecursiveLoopCycle({
@@ -190,6 +197,23 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
       if (res && res.cycles.length > 0) {
         setSelectedCycleId(res.cycles[res.cycles.length - 1].cycle_id);
       }
+      await onRefreshStatus();
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleResetLoop = async () => {
+    if (cycles.length > 0) {
+      const ok = window.confirm(
+        'Reset recursive loop history and restore default baseline configuration?'
+      );
+      if (!ok) return;
+    }
+    setIsBusy(true);
+    try {
+      await resetRecursiveLoop();
+      setSelectedCycleId(null);
       await onRefreshStatus();
     } finally {
       setIsBusy(false);
@@ -398,6 +422,21 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
               🛑🔄 Stop &amp; Restart New Arch
             </button>
 
+            <button
+              type="button"
+              className="clash-btn"
+              style={{
+                borderColor: '#64748b',
+                color: '#94a3b8',
+                background: 'rgba(100, 116, 139, 0.12)',
+              }}
+              disabled={isBusy || Boolean(loopState?.is_running_cycle)}
+              onClick={() => void handleResetLoop()}
+              title="Reset diagnostic history and restore default baseline parameters"
+            >
+              🧹 Reset History
+            </button>
+
             {activeHyp && (
               <button
                 type="button"
@@ -498,7 +537,7 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
       )}
 
       {/* 3. THREE-COLUMN ACTIVE CYCLE WORKBENCH */}
-      {activeCycle && snap && bm && hv && (
+      {activeCycle && snap && bm && hv ? (
         <div className="rl-three-col-grid">
           {/* COLUMN 1: MANDATORY PRE-CHANGE BASELINE SNAPSHOT */}
           <section className="ai-card rl-col-card">
@@ -879,6 +918,73 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
             </div>
           </section>
         </div>
+      ) : (
+        <section
+          className="ai-card rl-col-card"
+          style={{ padding: '36px 24px', textAlign: 'center' }}
+        >
+          <div style={{ fontSize: '38px', marginBottom: '12px' }}>⏳</div>
+          <h3
+            style={{
+              fontSize: '18px',
+              fontWeight: 700,
+              color: '#f8fafc',
+              marginBottom: '8px',
+            }}
+          >
+            {isTraining
+              ? 'Training in Progress — Awaiting First 10-Minute Diagnostic'
+              : 'Awaiting Active Training Telemetry'}
+          </h3>
+          <p
+            style={{
+              color: '#94a3b8',
+              maxWidth: '640px',
+              margin: '0 auto 16px',
+              lineHeight: 1.6,
+              fontSize: '13px',
+            }}
+          >
+            {isTraining
+              ? `The first diagnostic and plateau analysis will automatically begin after the first 10 minutes of training (in ${formatCountdown(
+                  countdownSec
+                )}). Telemetry must accumulate across completed episodes before meaningful bottlenecks can be diagnosed.`
+              : 'The recursive self-improvement loop inspects training telemetry every 10 minutes of active training. Start training to begin the 10-minute cadence and gather episode data.'}
+          </p>
+          <div
+            className="rl-loop-pill-group"
+            style={{ justifyContent: 'center' }}
+          >
+            <span className="rl-loop-meta-chip">
+              <span>First Diagnostic In</span>
+              <strong
+                style={{
+                  color: enabled && isTraining ? '#4ade80' : '#facc15',
+                }}
+              >
+                {formatCountdown(countdownSec)}
+              </strong>
+            </span>
+            <span className="rl-loop-meta-chip">
+              <span>Loop Status</span>
+              <strong
+                style={{
+                  color: enabled
+                    ? isTraining
+                      ? '#4ade80'
+                      : '#38bdf8'
+                    : '#94a3b8',
+                }}
+              >
+                {enabled
+                  ? isTraining
+                    ? 'Active (Counting Down)'
+                    : 'Armed (Paused)'
+                  : 'Manual / On-Demand'}
+              </strong>
+            </span>
+          </div>
+        </section>
       )}
 
       {/* OPENCODE ARGON 4 MEDIUM CODE AGENT EXECUTION & GIT DIFF */}

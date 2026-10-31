@@ -54,6 +54,8 @@ MANIFEST
 
 # --- PyTorch / Deep RL Training & Checkpoints ---
 checkpoints/
+trained_models/code_backups/
+trained_models/state/
 *.pt
 *.pth
 *.onnx
