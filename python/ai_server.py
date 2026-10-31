@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import threading
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -23,13 +24,24 @@ import coc_py
 from coc_rl import (
     AI_PROVIDERS,
     CoCAttackerEnv,
+    apply_config_patch,
+    capture_pre_change_snapshot,
     compress_training_history,
     decompress_training_history,
+    diagnose_and_propose_solutions,
     ensure_architecture_diagrams,
+    format_reward_formula,
     gather_training_telemetry,
     generate_ai_training_feedback,
     get_compressed_history_meta,
+    load_active_experiment_config,
     load_cached_ai_feedback,
+    load_recursive_loop_state,
+    run_recursive_improvement_cycle,
+    save_active_experiment_config,
+    save_recursive_loop_state,
+    sync_recursive_loop_to_vault,
+    verify_solution_outcome,
 )
 from train_ai import (
     ARMY_SHORT_NAMES,
@@ -147,6 +159,44 @@ class FeedbackRequest(BaseModel):
     model_file: Optional[str] = None
 
 
+class LoopConfigureRequest(BaseModel):
+    enabled: Optional[bool] = None
+    interval_seconds: Optional[int] = None
+    auto_apply_and_test: Optional[bool] = None
+    test_episodes_per_cycle: Optional[int] = None
+    provider: Optional[str] = None
+
+
+class LoopRunCycleRequest(BaseModel):
+    selected_solution_id: Optional[str] = None
+    auto_test: bool = True
+    use_llm: bool = True
+    trigger: str = "manual_trigger"
+
+
+class LoopApplySolutionRequest(BaseModel):
+    cycle_id: Optional[int] = None
+    solution_id: str
+    auto_test: bool = True
+    test_episodes: Optional[int] = None
+
+
+_loop_state: Dict[str, Any] = load_recursive_loop_state()
+
+
+def _get_loop_status_payload() -> Dict[str, Any]:
+    now_ts = time.time()
+    next_ts = float(_loop_state.get("next_check_ts") or (now_ts + 600))
+    rem_sec = max(0, int(round(next_ts - now_ts)))
+    active_cfg = _loop_state.get("active_config") or load_active_experiment_config()
+    return {
+        **_loop_state,
+        "active_config": active_cfg,
+        "reward_formula": format_reward_formula(active_cfg.get("reward_config")),
+        "seconds_until_next_check": rem_sec,
+    }
+
+
 _ARCH_MANIFEST_CACHE: Tuple[float, Dict[str, Any]] = (0.0, {})
 
 
@@ -199,6 +249,7 @@ def get_ai_status() -> Dict[str, Any]:
         "architecture_spec": arch_manifest.get("live_spec"),
         "checkpoint": ckpt_meta,
         "training": _training_state,
+        "recursive_loop": _get_loop_status_payload(),
     }
 
 
@@ -450,14 +501,280 @@ def start_ppo_training(req: TrainStartRequest) -> Dict[str, Any]:
                 except Exception:
                     pass
 
+            # If a Recursive Improvement Loop hypothesis was being tested, verify it automatically!
+            if _loop_state.get("active_hypothesis") and not _loop_state.get("is_running_cycle"):
+                def _verify_after_train() -> None:
+                    try:
+                        run_recursive_improvement_cycle(
+                            loop_state=_loop_state,
+                            training_state=_training_state,
+                            device=DEVICE,
+                            trigger="post_test_verification",
+                            use_llm=False,
+                        )
+                    except Exception:
+                        pass
+
+                threading.Thread(target=_verify_after_train, daemon=True).start()
+
     threading.Thread(target=_worker, daemon=True).start()
     return {"started": True, "training": _training_state}
+
+
+def _launch_verification_training(active_cfg: Dict[str, Any], test_episodes_override: Optional[int] = None) -> bool:
+    """
+    Launches a verification training burst resuming from the latest checkpoint
+    using the updated `active_cfg` (arch_config, reward_config, hyperparams).
+    """
+    if _training_state.get("is_training"):
+        return False
+    saved = list_trained_models()
+    resume_target = (
+        _training_state.get("saved_filename")
+        or (saved[0]["filename"] if saved else "scratch")
+    )
+    hp = active_cfg.get("hyperparams", {})
+    eps_to_run = int(
+        test_episodes_override
+        or _loop_state.get("test_episodes_per_cycle")
+        or 48
+    )
+    req = TrainStartRequest(
+        episodes=max(12, eps_to_run),
+        batch_episodes=int(hp.get("batch_episodes", 12)),
+        minibatch_size=int(hp.get("minibatch_size", 128)),
+        ppo_epochs=int(hp.get("ppo_epochs", 4)),
+        lr=float(hp.get("lr", 3e-4)),
+        ticks_per_step=int(hp.get("ticks_per_step", 8)),
+        matchup_mode=str(hp.get("matchup_mode", "random")),
+        resume_from=resume_target,
+    )
+    res = start_ppo_training(req)
+    return bool(res.get("started"))
 
 
 @app.post("/api/ai/train/stop")
 def stop_ppo_training() -> Dict[str, Any]:
     _training_state["stop_requested"] = True
     return {"stopping": True, "training": _training_state}
+
+
+@app.get("/api/ai/loop/status")
+def get_recursive_loop_status() -> Dict[str, Any]:
+    return _get_loop_status_payload()
+
+
+@app.post("/api/ai/loop/configure")
+def configure_recursive_loop(req: LoopConfigureRequest) -> Dict[str, Any]:
+    if req.enabled is not None:
+        _loop_state["enabled"] = bool(req.enabled)
+        if req.enabled:
+            now_ts = time.time()
+            interval = max(60, int(req.interval_seconds or _loop_state.get("interval_seconds", 600)))
+            _loop_state["next_check_ts"] = now_ts + interval
+            _loop_state["next_check_at"] = time.strftime(
+                "%Y-%m-%d %H:%M:%S", time.localtime(now_ts + interval)
+            )
+            if _loop_state.get("phase") == "idle":
+                _loop_state["phase"] = "monitoring"
+        else:
+            if _loop_state.get("phase") == "monitoring":
+                _loop_state["phase"] = "idle"
+    if req.interval_seconds is not None:
+        interval = max(60, int(req.interval_seconds))
+        _loop_state["interval_seconds"] = interval
+        now_ts = time.time()
+        _loop_state["next_check_ts"] = now_ts + interval
+        _loop_state["next_check_at"] = time.strftime(
+            "%Y-%m-%d %H:%M:%S", time.localtime(now_ts + interval)
+        )
+    if req.auto_apply_and_test is not None:
+        _loop_state["auto_apply_and_test"] = bool(req.auto_apply_and_test)
+    if req.test_episodes_per_cycle is not None:
+        _loop_state["test_episodes_per_cycle"] = max(12, int(req.test_episodes_per_cycle))
+    if req.provider and req.provider in AI_PROVIDERS:
+        _loop_state["provider"] = req.provider
+
+    save_recursive_loop_state(_loop_state)
+    sync_recursive_loop_to_vault(_loop_state)
+    return _get_loop_status_payload()
+
+
+@app.post("/api/ai/loop/run-cycle")
+def trigger_recursive_loop_cycle(req: LoopRunCycleRequest) -> Dict[str, Any]:
+    prev_auto = _loop_state.get("auto_apply_and_test", True)
+    _loop_state["auto_apply_and_test"] = bool(req.auto_test)
+    try:
+        run_recursive_improvement_cycle(
+            loop_state=_loop_state,
+            training_state=_training_state,
+            device=DEVICE,
+            trigger=req.trigger or "manual_trigger",
+            selected_solution_id=req.selected_solution_id,
+            use_llm=req.use_llm,
+            start_training_callback=(
+                (lambda cfg: _launch_verification_training(cfg))
+                if req.auto_test
+                else None
+            ),
+        )
+    finally:
+        _loop_state["auto_apply_and_test"] = prev_auto
+        save_recursive_loop_state(_loop_state)
+    return _get_loop_status_payload()
+
+
+@app.post("/api/ai/loop/apply-solution")
+def apply_specific_loop_solution(req: LoopApplySolutionRequest) -> Dict[str, Any]:
+    """
+    Applies a specific candidate solution from the specified or latest cycle
+    (ensuring the Pre-Change Baseline Snapshot is documented first), updates
+    `active_experiment_config.json`, logs to the Obsidian Vault, and optionally
+    launches a verification training run.
+    """
+    cycles = list(_loop_state.get("cycles") or [])
+    if not cycles:
+        run_recursive_improvement_cycle(
+            loop_state=_loop_state,
+            training_state=_training_state,
+            device=DEVICE,
+            trigger="manual_trigger",
+            selected_solution_id=req.solution_id,
+            use_llm=False,
+            start_training_callback=(
+                (lambda cfg: _launch_verification_training(cfg, req.test_episodes))
+                if req.auto_test
+                else None
+            ),
+        )
+        return _get_loop_status_payload()
+
+    target_cycle = cycles[-1]
+    if req.cycle_id is not None:
+        found = next((c for c in cycles if c.get("cycle_id") == req.cycle_id), None)
+        if found:
+            target_cycle = found
+
+    candidates = target_cycle.get("candidate_solutions", [])
+    chosen = next(
+        (c for c in candidates if c.get("solution_id") == req.solution_id),
+        candidates[0] if candidates else None,
+    )
+    if not chosen:
+        return _get_loop_status_payload()
+
+    # Ensure pre-change baseline snapshot is documented before applying change
+    active_config = load_active_experiment_config()
+    telemetry = gather_training_telemetry(_training_state, DEVICE)
+    pre_snap = capture_pre_change_snapshot(
+        cycle_id=target_cycle.get("cycle_id", len(cycles)),
+        telemetry=telemetry,
+        active_config=active_config,
+    )
+    target_cycle["pre_change_snapshot"] = pre_snap
+
+    new_cfg, applied_diffs = apply_config_patch(
+        active_config, chosen.get("config_patch", {})
+    )
+    active_config = save_active_experiment_config(new_cfg)
+    chosen["applied_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    chosen["diffs"] = applied_diffs
+    target_cycle["selected_solution"] = chosen
+    target_cycle["verification_result"] = None
+
+    test_eps = int(req.test_episodes or _loop_state.get("test_episodes_per_cycle", 48))
+    _loop_state["active_config"] = active_config
+    _loop_state["phase"] = "testing_solution"
+    _loop_state["active_hypothesis"] = {
+        "cycle_id": target_cycle.get("cycle_id", len(cycles)),
+        "solution": chosen,
+        "baseline_episode": pre_snap["cumulative_episode"],
+        "target_episodes": test_eps,
+        "baseline_metrics": pre_snap["baseline_metrics"],
+    }
+    sync_recursive_loop_to_vault(_loop_state)
+    save_recursive_loop_state(_loop_state)
+
+    if req.auto_test and not _training_state.get("is_training", False):
+        _launch_verification_training(active_config, test_eps)
+
+    return _get_loop_status_payload()
+
+
+@app.post("/api/ai/loop/verify")
+def verify_current_loop_solution() -> Dict[str, Any]:
+    """
+    Immediately verifies the currently active solution against the Pre-Change Baseline Snapshot
+    and logs the Before vs After empirical verification dossier to the Obsidian Vault.
+    """
+    cycles = list(_loop_state.get("cycles") or [])
+    if not cycles:
+        return _get_loop_status_payload()
+    last_cycle = cycles[-1]
+    if not last_cycle.get("selected_solution"):
+        return _get_loop_status_payload()
+
+    telemetry = gather_training_telemetry(_training_state, DEVICE)
+    active_cfg = load_active_experiment_config()
+    ver_res, next_cfg = verify_solution_outcome(
+        cycle=last_cycle,
+        post_telemetry=telemetry,
+        current_config=active_cfg,
+    )
+    last_cycle["verification_result"] = ver_res
+    last_cycle["completed_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    _loop_state["active_hypothesis"] = None
+    _loop_state["active_config"] = next_cfg
+    _loop_state["phase"] = "monitoring" if _loop_state.get("enabled") else "idle"
+    sync_recursive_loop_to_vault(_loop_state)
+    save_recursive_loop_state(_loop_state)
+    return _get_loop_status_payload()
+
+
+def _init_and_start_recursive_loop_daemon() -> None:
+    if not _loop_state.get("cycles"):
+        try:
+            run_recursive_improvement_cycle(
+                loop_state=_loop_state,
+                training_state=_training_state,
+                device=DEVICE,
+                trigger="initial_baseline_audit",
+                use_llm=False,
+                start_training_callback=None,
+            )
+        except Exception as exc:
+            print(f"[recursive_loop] Initial audit note: {exc}")
+
+    def _daemon() -> None:
+        while True:
+            time.sleep(2.0)
+            try:
+                if not _loop_state.get("enabled", False):
+                    continue
+                if _loop_state.get("is_running_cycle", False):
+                    continue
+                now_ts = time.time()
+                next_ts = float(_loop_state.get("next_check_ts") or 0.0)
+                if now_ts >= next_ts:
+                    run_recursive_improvement_cycle(
+                        loop_state=_loop_state,
+                        training_state=_training_state,
+                        device=DEVICE,
+                        trigger="scheduled_10m",
+                        use_llm=True,
+                        start_training_callback=(
+                            (lambda cfg: _launch_verification_training(cfg))
+                            if _loop_state.get("auto_apply_and_test", True)
+                            else None
+                        ),
+                    )
+            except Exception as exc:
+                print(f"[recursive_loop] Daemon tick error: {exc}")
+
+    threading.Thread(target=_daemon, daemon=True).start()
+
+
+_init_and_start_recursive_loop_daemon()
 
 
 

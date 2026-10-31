@@ -9,7 +9,7 @@ PyTorch Neural Network Architectures for Clash of Clans TH18 Deep RL:
      Autoregressive Conditioning, U-Net Spatial Tile Segmentation Head, and Invalid-Action Logit Masking
 """
 
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -239,6 +239,28 @@ class CoCSpatialEncoder(nn.Module):
 
 DEPLOY_FRACTION_BINS: Tuple[float, ...] = (0.0, 0.25, 0.50, 0.75, 1.00)
 
+DEFAULT_ARCH_CONFIG: Dict[str, Any] = {
+    "arch_version": "3.0-UNet",
+    "in_channels": 59,
+    "base_ch": 32,
+    "spatial_dim": 32,
+    "embed_dim": 256,
+    "head_hidden_dim": 128,
+    "logit_temp_type": 1.4,
+    "logit_temp_idx": 1.6,
+    "logit_temp_frac": 1.4,
+    "tile_logit_scale": 2.2,
+    "th_threat_weight": 6.0,
+    "defense_threat_weight": 1.8,
+    "breach_prior_weight": 8.0,
+    "spell_combat_prior_weight": 7.5,
+    "film_cond_scale": 0.5,
+    "reg_ent_type_weight": 2.2,
+    "reg_ent_idx_weight": 2.2,
+    "reg_ent_frac_weight": 2.2,
+    "reg_ent_tile_weight": 0.12,
+}
+
 
 def fraction_bin_to_value(bin_idx: int) -> float:
     idx = max(0, min(len(DEPLOY_FRACTION_BINS) - 1, int(bin_idx)))
@@ -275,18 +297,43 @@ class CoCActorCritic(nn.Module):
         in_channels: int = 59,
         army_context_dim: int = 64,
         num_fraction_bins: int = 5,
+        arch_config: Optional[Dict[str, Any]] = None,
     ):
         super().__init__()
+        cfg = dict(DEFAULT_ARCH_CONFIG)
+        if isinstance(arch_config, dict):
+            cfg.update({k: v for k, v in arch_config.items() if v is not None})
         self.in_channels = in_channels
         self.army_context_dim = army_context_dim
         self.num_fraction_bins = num_fraction_bins
 
+        base_ch = int(cfg.get("base_ch", 32))
+        spatial_dim_cfg = int(cfg.get("spatial_dim", 32))
+        embed_dim_cfg = int(cfg.get("embed_dim", 256))
+        head_hidden_dim = int(cfg.get("head_hidden_dim", 128))
+        self.head_hidden_dim = head_hidden_dim
+
+        # Dynamic architectural conditioning & regularization coefficients
+        self.logit_temp_type: float = float(cfg.get("logit_temp_type", 1.4))
+        self.logit_temp_idx: float = float(cfg.get("logit_temp_idx", 1.6))
+        self.logit_temp_frac: float = float(cfg.get("logit_temp_frac", 1.4))
+        self.tile_logit_scale: float = float(cfg.get("tile_logit_scale", 2.2))
+        self.th_threat_weight: float = float(cfg.get("th_threat_weight", 6.0))
+        self.defense_threat_weight: float = float(cfg.get("defense_threat_weight", 1.8))
+        self.breach_prior_weight: float = float(cfg.get("breach_prior_weight", 8.0))
+        self.spell_combat_prior_weight: float = float(cfg.get("spell_combat_prior_weight", 7.5))
+        self.film_cond_scale: float = float(cfg.get("film_cond_scale", 0.5))
+        self.reg_ent_type_weight: float = float(cfg.get("reg_ent_type_weight", 2.2))
+        self.reg_ent_idx_weight: float = float(cfg.get("reg_ent_idx_weight", 2.2))
+        self.reg_ent_frac_weight: float = float(cfg.get("reg_ent_frac_weight", 2.2))
+        self.reg_ent_tile_weight: float = float(cfg.get("reg_ent_tile_weight", 0.12))
+
         # U-Net Contracting-Expansive Spatial Backbone
         self.encoder = CoCSpatialEncoder(
             in_channels=in_channels,
-            base_ch=32,
-            spatial_dim=32,
-            embed_dim=256,
+            base_ch=base_ch,
+            spatial_dim=spatial_dim_cfg,
+            embed_dim=embed_dim_cfg,
         )
         spatial_dim = self.encoder.spatial_dim  # 32
         embed_dim = self.encoder.embed_dim  # 256
@@ -303,17 +350,17 @@ class CoCActorCritic(nn.Module):
 
         # Head 2: Army Slot Index logits, conditioned on global_emb + one_hot(slot_type)
         self.slot_idx_head = nn.Sequential(
-            nn.Linear(embed_dim + 7, 128),
+            nn.Linear(embed_dim + 7, head_hidden_dim),
             nn.SiLU(),
-            nn.Linear(128, 10),
+            nn.Linear(head_hidden_dim, 10),
         )
 
         # Head 3: Troop Deployment Fraction logits (bins in [0.0, 0.25, 0.50, 0.75, 1.00]),
         # conditioned on global_emb + one_hot(slot_type) + one_hot(slot_idx)
         self.deploy_fraction_head = nn.Sequential(
-            nn.Linear(embed_dim + 7 + 10, 128),
+            nn.Linear(embed_dim + 7 + 10, head_hidden_dim),
             nn.SiLU(),
-            nn.Linear(128, num_fraction_bins),
+            nn.Linear(head_hidden_dim, num_fraction_bins),
         )
 
         # Head 4: Spatial Tile Pointer (projects conditioned embedding onto the spatial map)
@@ -326,15 +373,60 @@ class CoCActorCritic(nn.Module):
 
         # Head 5: State-Value Critic V(s)
         self.critic_head = nn.Sequential(
-            nn.Linear(embed_dim, 128),
+            nn.Linear(embed_dim, head_hidden_dim),
             nn.SiLU(),
-            nn.Linear(128, 1),
+            nn.Linear(head_hidden_dim, 1),
         )
         self.register_buffer(
             "_frac_bins_tensor",
             torch.tensor(DEPLOY_FRACTION_BINS, dtype=torch.float32),
             persistent=False,
         )
+
+    def apply_arch_config(self, cfg: Optional[Dict[str, Any]]) -> None:
+        if not isinstance(cfg, dict):
+            return
+        for attr in (
+            "logit_temp_type",
+            "logit_temp_idx",
+            "logit_temp_frac",
+            "tile_logit_scale",
+            "th_threat_weight",
+            "defense_threat_weight",
+            "breach_prior_weight",
+            "spell_combat_prior_weight",
+            "film_cond_scale",
+            "reg_ent_type_weight",
+            "reg_ent_idx_weight",
+            "reg_ent_frac_weight",
+            "reg_ent_tile_weight",
+        ):
+            if attr in cfg and cfg[attr] is not None:
+                setattr(self, attr, float(cfg[attr]))
+
+    def get_arch_config(self) -> Dict[str, Any]:
+        return {
+            "arch_version": "3.0-UNet",
+            "in_channels": int(self.in_channels),
+            "base_ch": int(self.encoder.base_ch),
+            "spatial_dim": int(self.encoder.spatial_dim),
+            "embed_dim": int(self.encoder.embed_dim),
+            "head_hidden_dim": int(getattr(self, "head_hidden_dim", 128)),
+            "total_params": int(sum(p.numel() for p in self.parameters())),
+            "logit_temp_type": round(float(self.logit_temp_type), 4),
+            "logit_temp_idx": round(float(self.logit_temp_idx), 4),
+            "logit_temp_frac": round(float(self.logit_temp_frac), 4),
+            "tile_logit_scale": round(float(self.tile_logit_scale), 4),
+            "th_threat_weight": round(float(self.th_threat_weight), 4),
+            "defense_threat_weight": round(float(self.defense_threat_weight), 4),
+            "breach_prior_weight": round(float(self.breach_prior_weight), 4),
+            "spell_combat_prior_weight": round(float(self.spell_combat_prior_weight), 4),
+            "film_cond_scale": round(float(self.film_cond_scale), 4),
+            "reg_ent_type_weight": round(float(self.reg_ent_type_weight), 4),
+            "reg_ent_idx_weight": round(float(self.reg_ent_idx_weight), 4),
+            "reg_ent_frac_weight": round(float(self.reg_ent_frac_weight), 4),
+            "reg_ent_tile_weight": round(float(self.reg_ent_tile_weight), 4),
+        }
 
     def forward(
         self, obs: torch.Tensor, army_context: Optional[torch.Tensor] = None
@@ -410,7 +502,7 @@ class CoCActorCritic(nn.Module):
 
         # 1. Action Type Distribution (0=NoOp is always valid as a fallback)
         # Smooth logit bounding prevents premature discrete-head entropy collapse
-        type_logits = 1.4 * torch.tanh(self.slot_type_head(global_emb) / 3.0)
+        type_logits = self.logit_temp_type * torch.tanh(self.slot_type_head(global_emb) / 3.0)
         if masks is not None and "slot_type" in masks:
             type_mask = masks["slot_type"].to(device=device, dtype=torch.bool).clone()
             has_undeployed_units = type_mask[:, 1] | type_mask[:, 2] | type_mask[:, 4]
@@ -440,7 +532,7 @@ class CoCActorCritic(nn.Module):
         cond_emb = torch.cat([global_emb, type_onehot], dim=-1)
 
         # 2. Army Slot Index Distribution (masked per chosen_type)
-        idx_logits = 1.6 * torch.tanh(self.slot_idx_head(cond_emb) / 3.0)
+        idx_logits = self.logit_temp_idx * torch.tanh(self.slot_idx_head(cond_emb) / 3.0)
         if masks is not None and "slot_idx" in masks:
             batch_indices = torch.arange(B, device=device)
             idx_mask = masks["slot_idx"].to(device=device, dtype=torch.bool)[
@@ -464,7 +556,7 @@ class CoCActorCritic(nn.Module):
         # 3. Troop Deployment Fraction Distribution (bins in [0.0, 0.25, 0.50, 0.75, 1.00])
         idx_onehot = F.one_hot(chosen_idx.clamp(0, 9), num_classes=10).float()
         frac_cond_emb = torch.cat([cond_emb, idx_onehot], dim=-1)
-        frac_logits = 1.4 * torch.tanh(self.deploy_fraction_head(frac_cond_emb) / 3.0)
+        frac_logits = self.logit_temp_frac * torch.tanh(self.deploy_fraction_head(frac_cond_emb) / 3.0)
         frac_dist = Categorical(logits=frac_logits)
         if action is None:
             chosen_frac_bin = (
@@ -477,11 +569,15 @@ class CoCActorCritic(nn.Module):
         # FiLM-style multiplicative + additive spatial conditioning & multi-scale core/defense proximity focus
         cond_spatial = self.tile_cond_proj(frac_cond_emb).unsqueeze(-1).unsqueeze(-1)
         fused_spatial = F.silu(
-            spatial_feat * (1.0 + 0.5 * torch.tanh(cond_spatial)) + cond_spatial
+            spatial_feat * (1.0 + self.film_cond_scale * torch.tanh(cond_spatial)) + cond_spatial
         )
         raw_tile_logits = self.tile_conv_head(fused_spatial).reshape(B, 2500)
         is_spell = (chosen_type == 6).float().unsqueeze(-1)
-        threat_field = 0.6 * obs[:, 0:1] + 1.8 * obs[:, 1:2] + 6.0 * obs[:, 2:3]
+        threat_field = (
+            0.6 * obs[:, 0:1]
+            + self.defense_threat_weight * obs[:, 1:2]
+            + self.th_threat_weight * obs[:, 2:3]
+        )
         breach_stage1 = F.avg_pool2d(threat_field, kernel_size=15, stride=1, padding=7)
         breach_prox = F.avg_pool2d(
             breach_stage1, kernel_size=15, stride=1, padding=7
@@ -494,10 +590,10 @@ class CoCActorCritic(nn.Module):
             stride=1,
             padding=3,
         ).reshape(B, 2500)
-        spatial_prior = (1.0 - is_spell) * (8.0 * breach_prox) + is_spell * (
-            7.5 * combat_focus
-        )
-        tile_logits = raw_tile_logits * 2.2 + spatial_prior
+        spatial_prior = (1.0 - is_spell) * (
+            self.breach_prior_weight * breach_prox
+        ) + is_spell * (self.spell_combat_prior_weight * combat_focus)
+        tile_logits = raw_tile_logits * self.tile_logit_scale + spatial_prior
 
         if masks is not None and "tile" in masks:
             valid_green = masks["tile"].to(device=device, dtype=torch.bool)
@@ -586,10 +682,10 @@ class CoCActorCritic(nn.Module):
         h_frac_norm = e_frac / 1.60944
         h_tile_norm = e_tile / 6.74288
         reg_entropy = (
-            2.2 * h_type_norm
-            + 2.2 * h_idx_norm
-            + 2.2 * h_frac_norm
-            + 0.12 * h_tile_norm
+            self.reg_ent_type_weight * h_type_norm
+            + self.reg_ent_idx_weight * h_idx_norm
+            + self.reg_ent_frac_weight * h_frac_norm
+            + self.reg_ent_tile_weight * h_tile_norm
         )
         value = self.critic_head(global_emb).squeeze(-1)
 

@@ -1,0 +1,53 @@
+{
+  "updated_at": "2026-10-31 14:50:24",
+  "arch_config": {
+    "arch_version": "3.0-UNet",
+    "in_channels": 59,
+    "base_ch": 32,
+    "spatial_dim": 32,
+    "embed_dim": 256,
+    "head_hidden_dim": 128,
+    "logit_temp_type": 1.4,
+    "logit_temp_idx": 1.6,
+    "logit_temp_frac": 1.4,
+    "tile_logit_scale": 2.4,
+    "th_threat_weight": 7.8,
+    "defense_threat_weight": 1.8,
+    "breach_prior_weight": 9.8,
+    "spell_combat_prior_weight": 8.3,
+    "film_cond_scale": 0.72,
+    "reg_ent_type_weight": 2.4,
+    "reg_ent_idx_weight": 2.2,
+    "reg_ent_frac_weight": 2.2,
+    "reg_ent_tile_weight": 0.1
+  },
+  "reward_config": {
+    "destr_weight": 0.35,
+    "star_weight": 12.0,
+    "th_bonus": 16.0,
+    "damage_weight": 15.0,
+    "funnel_weight": 0.08,
+    "invalid_penalty": 0.05,
+    "early_noop_penalty": 0.02,
+    "high_pct_milestone_75": 4.0,
+    "high_pct_milestone_90": 5.0,
+    "triple_wipe_bonus": 6.0,
+    "pacing_wait_bonus": 0.0
+  },
+  "hyperparams": {
+    "lr": 0.0003,
+    "critic_lr_mult": 2.9,
+    "batch_episodes": 12,
+    "minibatch_size": 128,
+    "ppo_epochs": 4,
+    "clip_coef": 0.2,
+    "ent_coef": 0.015,
+    "vf_coef": 0.5,
+    "target_kl": 0.03,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "max_grad_norm": 0.5,
+    "ticks_per_step": 8,
+    "matchup_mode": "round_robin"
+  }
+}

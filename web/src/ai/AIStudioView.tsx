@@ -37,6 +37,7 @@ import {
   SPATIAL_CHANNELS,
 } from './aiTypes';
 import { NetworkBuilderPanel } from './NetworkBuilderPanel';
+import { RecursiveLoopPanel } from './RecursiveLoopPanel';
 import { TelemetryChart, TelemetrySeries } from './TelemetryChart';
 
 interface AIStudioViewProps {
@@ -340,7 +341,9 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   const [minibatchSize, setMinibatchSize] = useState<number>(128);
   const [ppoEpochs, setPpoEpochs] = useState<number>(4);
   const [lr, setLr] = useState<number>(0.0003);
-  const [trainerTab, setTrainerTab] = useState<'configs' | 'stats'>('configs');
+  const [trainerTab, setTrainerTab] = useState<
+    'configs' | 'stats' | 'recursive_loop'
+  >('configs');
 
   // TensorBoard Telemetry Workbench state
   const [inspectedModelFile, setInspectedModelFile] = useState<string>('__live__');
@@ -1357,6 +1360,42 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
               </span>
             )}
           </button>
+          <button
+            type="button"
+            className={`ai-trainer-subtab ${
+              trainerTab === 'recursive_loop' ? 'active' : ''
+            }`}
+            onClick={() => setTrainerTab('recursive_loop')}
+          >
+            ♾️ Recursive AI Loop (10m Self-Improver)
+            {serverStatus?.recursive_loop?.active_hypothesis ? (
+              <span
+                className="ai-live-pulse-badge"
+                style={{ background: '#0284c7', color: '#fff' }}
+              >
+                🧪 TESTING #{serverStatus.recursive_loop.active_hypothesis.cycle_id}
+              </span>
+            ) : serverStatus?.recursive_loop?.enabled ? (
+              <span className="ai-live-pulse-badge">
+                ● AUTO (
+                {Math.floor(
+                  (serverStatus.recursive_loop.seconds_until_next_check ?? 600) /
+                    60
+                )}
+                m)
+              </span>
+            ) : (
+              <span
+                className="ai-live-pulse-badge"
+                style={{
+                  background: 'rgba(250, 204, 21, 0.16)',
+                  color: '#fde047',
+                }}
+              >
+                Cycle #{serverStatus?.recursive_loop?.current_cycle_id ?? 1}
+              </span>
+            )}
+          </button>
         </div>
 
         {/* ================================================================= */}
@@ -2144,6 +2183,13 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   onClick={() => setShowDiagnosticsDrawer((v) => !v)}
                 >
                   🩺 AI Diagnostics
+                </button>
+                <button
+                  type="button"
+                  className="clash-btn green"
+                  onClick={() => setTrainerTab('recursive_loop')}
+                >
+                  ♾️ Recursive Loop (10m)
                 </button>
               </div>
             </div>
@@ -3084,6 +3130,21 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
               })}
             </div>
           </>
+        )}
+
+        {/* ================================================================= */}
+        {/* SUBTAB 3: RECURSIVE AI SELF-IMPROVEMENT LOOP (10-MINUTE CADENCE)  */}
+        {/* ================================================================= */}
+        {trainerTab === 'recursive_loop' && (
+          <RecursiveLoopPanel
+            loopState={serverStatus?.recursive_loop ?? null}
+            isTraining={isTraining}
+            currentCumulativeEp={cumEp}
+            onRefreshStatus={async () => {
+              const st = await fetchAIServerStatus();
+              if (st) setServerStatus(st);
+            }}
+          />
         )}
       </div>
     );

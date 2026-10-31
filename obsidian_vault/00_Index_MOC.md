@@ -31,7 +31,7 @@ Open the interactive 2D whiteboard visualizer presenting the 59-channel stacked 
 
 | Model Run | Arch | Inputs (`obs` + `army_context`) | Dedicated Army Composition | Total Episodes | Peak Combat Record | Status |
 | :--- | :---: | :---: | :--- | :---: | :---: | :---: |
-| [[runs/v3_per_defense_31ch\|v3.0 — 50-Channel Dedicated CNN & Single-Army Specialist Actor-Critic]] | `v3.0` | `(59, 50, 50)` + `64D` | **TH18 Thrower + Healer + Totem Smash (Meta)** | **`2`** (13 sessions) | **`100%` (3★)** | **ACTIVE** |
+| [[runs/v3_per_defense_31ch\|v3.0 — 50-Channel Dedicated CNN & Single-Army Specialist Actor-Critic]] | `v3.0` | `(59, 50, 50)` + `64D` | **TH18 Thrower + Healer + Totem Smash (Meta)** | **`9,132`** (15 sessions) | **`100%` (3★)** | **ACTIVE** |
 
 ---
 
@@ -51,5 +51,6 @@ Open the interactive 2D whiteboard visualizer presenting the 59-channel stacked 
 - [[decisions/Architecture_Decisions_And_System_Memory|Project Memory, Architectural Decision Records (ADRs) & Source of Truth]]
 
 ### 4. Empirical Benchmark Logs & AI Training Diagnostics (`experiments/`)
+- [[experiments/Recursive_AI_Improvement_Loop|Recursive AI Self-Improvement Loop — 10-Minute Autonomous Diagnosis, Pre-Change Baselines & Verification Ledger]]
 - [[experiments/Experiment_Log_And_Benchmarks|Master Experiment Log & Single-Army Specialist Benchmarks]]
 - [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Telemetry Architecture & PPO Pathology Fixes]]

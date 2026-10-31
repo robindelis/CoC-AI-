@@ -11,19 +11,82 @@ import torch.nn.functional as F
 
 from .networks import CoCActorCritic
 
+DEFAULT_REWARD_CONFIG: Dict[str, float] = {
+    "destr_weight": 0.35,
+    "star_weight": 12.0,
+    "th_bonus": 14.0,
+    "damage_weight": 15.0,
+    "funnel_weight": 0.08,
+    "invalid_penalty": 0.05,
+    "early_noop_penalty": 0.02,
+    "high_pct_milestone_75": 0.0,
+    "high_pct_milestone_90": 0.0,
+    "triple_wipe_bonus": 0.0,
+    "pacing_wait_bonus": 0.0,
+}
+
+DEFAULT_HYPERPARAMS: Dict[str, Any] = {
+    "lr": 0.0003,
+    "critic_lr_mult": 2.5,
+    "batch_episodes": 12,
+    "minibatch_size": 128,
+    "ppo_epochs": 4,
+    "clip_coef": 0.2,
+    "ent_coef": 0.015,
+    "vf_coef": 0.5,
+    "target_kl": 0.03,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "max_grad_norm": 0.5,
+    "ticks_per_step": 8,
+    "matchup_mode": "random",
+}
+
+
+def format_reward_formula(cfg: Optional[Dict[str, Any]] = None) -> str:
+    rc = dict(DEFAULT_REWARD_CONFIG)
+    if isinstance(cfg, dict):
+        for k, v in cfg.items():
+            if k in rc and v is not None:
+                rc[k] = float(v)
+    parts = [
+        f"{rc['destr_weight']:.2f}·Δ%destr",
+        f"{rc['damage_weight']:.1f}·ΔHPratio",
+        f"{rc['star_weight']:.1f}·Δstars",
+        f"{rc['th_bonus']:.1f}·I(TH18)",
+        f"{rc['funnel_weight']:.2f}·C_funnel",
+    ]
+    if rc.get("high_pct_milestone_75", 0.0) > 0:
+        parts.append(f"{rc['high_pct_milestone_75']:.1f}·I(%≥75)")
+    if rc.get("high_pct_milestone_90", 0.0) > 0:
+        parts.append(f"{rc['high_pct_milestone_90']:.1f}·I(%≥90)")
+    if rc.get("triple_wipe_bonus", 0.0) > 0:
+        parts.append(f"{rc['triple_wipe_bonus']:.1f}·I(3★)")
+    if rc.get("pacing_wait_bonus", 0.0) > 0:
+        parts.append(f"{rc['pacing_wait_bonus']:.3f}·I(wait_core)")
+    parts.append(f"- {rc['invalid_penalty']:.2f}·I(invalid)")
+    return "R_t = " + " + ".join(parts).replace("+ - ", "- ")
+
 
 def compute_custom_reward_components(
-    step_info: Dict[str, Any]
+    step_info: Dict[str, Any],
+    reward_config: Optional[Dict[str, Any]] = None,
 ) -> Tuple[float, float, float, float]:
     """
     Calibrated 100-Point Dense & Milestone Reward Shaping for TH18 Combat:
-      - 35.0 pts max for Destruction Percentage: delta_pct * 0.35
-      - 50.0 pts max for 3 Stars & TH18 milestone: delta_stars * 12.0 + (14.0 if TH takedown)
-      - 15.0+ pts max for Core HP damage & tactical cohesion: delta_damage_ratio * 15.0 + funnel_cohesion * 0.08 - penalty
+      - 35.0 pts max for Destruction Percentage: delta_pct * destr_weight (0.35)
+      - 50.0 pts max for 3 Stars & TH18 milestone: delta_stars * star_weight (12.0) + th_bonus (14.0)
+      - 15.0+ pts max for Core HP damage & tactical cohesion: delta_damage_ratio * damage_weight (15.0) + funnel_cohesion * funnel_weight (0.08)
 
     Returns:
       (total_reward, reward_destr, reward_stars_th, reward_damage_tactical)
     """
+    rc = dict(DEFAULT_REWARD_CONFIG)
+    if isinstance(reward_config, dict):
+        for k, v in reward_config.items():
+            if k in rc and v is not None:
+                rc[k] = float(v)
+
     delta_pct = float(step_info.get("delta_pct", 0))
     delta_stars = float(step_info.get("delta_stars", 0))
     delta_dmg_ratio = float(step_info.get("delta_damage_ratio", 0.0))
@@ -31,19 +94,22 @@ def compute_custom_reward_components(
     funnel_cohesion = float(step_info.get("funnel_cohesion", 0.0))
     invalid_action = bool(step_info.get("invalid_action", False))
 
-    r_destr = delta_pct * 0.35
-    th_bonus = 14.0 if th_just_destroyed else 0.0
-    r_stars = delta_stars * 12.0 + th_bonus
-    r_damage = delta_dmg_ratio * 15.0 + funnel_cohesion * 0.08
+    r_destr = delta_pct * rc["destr_weight"]
+    th_bonus = rc["th_bonus"] if th_just_destroyed else 0.0
+    r_stars = delta_stars * rc["star_weight"] + th_bonus
+    r_damage = delta_dmg_ratio * rc["damage_weight"] + funnel_cohesion * rc["funnel_weight"]
     if invalid_action:
-        r_damage -= 0.05
+        r_damage -= rc["invalid_penalty"]
 
     total = r_destr + r_stars + r_damage
     return float(total), float(r_destr), float(r_stars), float(r_damage)
 
 
-def compute_custom_reward(step_info: Dict[str, Any]) -> float:
-    total, _, _, _ = compute_custom_reward_components(step_info)
+def compute_custom_reward(
+    step_info: Dict[str, Any],
+    reward_config: Optional[Dict[str, Any]] = None,
+) -> float:
+    total, _, _, _ = compute_custom_reward_components(step_info, reward_config=reward_config)
     return float(total)
 
 

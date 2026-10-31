@@ -1164,6 +1164,7 @@ Open the interactive 2D whiteboard visualizer presenting the 59-channel stacked 
 - [[decisions/Architecture_Decisions_And_System_Memory|Project Memory, Architectural Decision Records (ADRs) & Source of Truth]]
 
 ### 4. Empirical Benchmark Logs & AI Training Diagnostics (`experiments/`)
+- [[experiments/Recursive_AI_Improvement_Loop|Recursive AI Self-Improvement Loop — 10-Minute Autonomous Diagnosis, Pre-Change Baselines & Verification Ledger]]
 - [[experiments/Experiment_Log_And_Benchmarks|Master Experiment Log & Single-Army Specialist Benchmarks]]
 - [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Telemetry Architecture & PPO Pathology Fixes]]
 """
@@ -1464,6 +1465,42 @@ Full Dossier: [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagno
         "toSide": "top",
         "color": "4",
         "label": "Live Telemetry & 6-Panel AI Diagnostic Suite",
+    })
+
+    loop_y = diag_y + 820
+    nodes.append({
+        "id": "recursive-loop-summary",
+        "type": "text",
+        "x": 0,
+        "y": loop_y,
+        "width": 1500,
+        "height": 720,
+        "color": "6",
+        "text": """### ♾️ Recursive AI Self-Improvement Loop (10-Minute Autonomous Cycle)
+
+Full Long-Term Memory Ledger: [[experiments/Recursive_AI_Improvement_Loop|Recursive AI Self-Improvement Loop — Pre-Change Snapshots, Solutions & Verified Results]]
+
+- **Autonomous Cadence**: Analyses training results every **10 minutes** (`600s`) or immediately after a verification training burst completes.
+- **Mandatory Pre-Change Baseline Snapshot**: Before every modification, documents the exact **Network Architecture** (`arch_config`), **Reward Shaping Formula & Weights** (`reward_config`), **PPO Hyperparameters** (`hyperparams`), and **Baseline Telemetry** (`pre_change_snapshot`) so we can rigorously analyze what worked when and learn from every intervention.
+- **Multi-Domain Hypothesis Generation**: Proposes 3–4 ranked candidate solutions across `architecture`, `reward_function`, `hyperparameters`, and `combined`, tests the selected solution, verifies whether the diagnosed plateau root cause was solved (`SOLVED` / `IMPROVED` / `ROLLED BACK`), and feeds the empirical lessons into subsequent cycles.""",
+    })
+    nodes.append({
+        "id": "recursive-loop-chart",
+        "type": "file",
+        "file": "assets/charts/recursive_improvement_loop_tracker.png",
+        "x": 1560,
+        "y": loop_y,
+        "width": 1540,
+        "height": 720,
+    })
+    edges.append({
+        "id": "edge-diag-to-loop",
+        "fromNode": "ai-diagnostics-summary",
+        "fromSide": "bottom",
+        "toNode": "recursive-loop-summary",
+        "toSide": "top",
+        "color": "6",
+        "label": "10m Recursive Diagnosis → Pre-Change Snapshot → Test → Verify",
     })
 
     canvas_data = {

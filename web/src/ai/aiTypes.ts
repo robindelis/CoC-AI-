@@ -211,6 +211,7 @@ export interface AIServerStatus {
     best_reward?: number;
   };
   training: AITrainingState;
+  recursive_loop?: AIRecursiveLoopState;
 }
 
 export interface AIInspectResponse {
@@ -497,4 +498,197 @@ export interface AITrainingFeedbackResponse {
     string,
     { id: string; label: string; model: string; cli: string }
   >;
+}
+
+export interface AIConfigDiffItem {
+  section: 'arch_config' | 'reward_config' | 'hyperparams' | string;
+  parameter: string;
+  before: unknown;
+  after: unknown;
+}
+
+export interface AICandidateSolution {
+  solution_id: string;
+  rank: number;
+  category: 'architecture' | 'reward_function' | 'hyperparameters' | 'combined' | string;
+  title: string;
+  target_problem: string;
+  rationale: string;
+  config_patch: {
+    arch_config?: Record<string, number | string>;
+    reward_config?: Record<string, number>;
+    hyperparams?: Record<string, number | string>;
+  };
+  diffs?: AIConfigDiffItem[];
+  diff_summary?: string[];
+  expected_verification_criteria: string;
+  applied_at?: string;
+}
+
+export interface AICompactBaselineMetrics {
+  episode: number;
+  history_length: number;
+  mean_pct_50: number;
+  std_pct_50: number;
+  rolling50_peak_pct: number;
+  episodes_since_peak: number;
+  drawdown_from_peak_pct: number;
+  best_pct: number;
+  best_stars: number;
+  one_star_rate_50: number;
+  two_star_th_rate_50: number;
+  three_star_triple_rate_50: number;
+  mean_reward_50: number;
+  reward_snr: number;
+  destr_share_pct: number;
+  stars_th_share_pct: number;
+  damage_funnel_share_pct: number;
+  pct_slope_per_100ep: number;
+  reward_slope_per_100ep: number;
+  entropy_slope_per_100ep: number;
+  mean_noop_pct_50: number;
+  mean_steps_50: number;
+  explained_variance_50: number;
+  approx_kl_50: number;
+  kl_saturation_rate_pct: number;
+  clip_fraction_50: number;
+  grad_norm_50: number;
+  critic_v_s0: number;
+  calibration_gap: number;
+  head_saturation_pct: {
+    slot_type: number;
+    slot_idx: number;
+    deploy_fraction: number;
+    tile_xy: number;
+  };
+  top5_tile_mass_pct: number;
+  spatial_spread_std: number;
+  star_funnel: {
+    p_1star_pct: number;
+    p_2star_given_1star_pct: number;
+    p_3star_given_2star_pct: number;
+    near_miss_85_to_99_pct_rate: number;
+  };
+  worst_village: {
+    name?: string;
+    full_name?: string;
+    recent_avg_pct: number;
+    avg_stars?: number;
+    triple_rate?: number;
+  };
+  best_village: {
+    name?: string;
+    full_name?: string;
+    recent_avg_pct: number;
+    avg_stars?: number;
+    triple_rate?: number;
+  };
+  inter_village_gap_pct: number;
+}
+
+export interface AIPreChangeSnapshot {
+  snapshot_id: string;
+  cycle_id: number;
+  documented_at: string;
+  git_commit: string;
+  checkpoint_file: string;
+  cumulative_episode: number;
+  arch_config: Record<string, number | string>;
+  reward_config: Record<string, number>;
+  reward_formula: string;
+  hyperparams: Record<string, number | string>;
+  baseline_metrics: AICompactBaselineMetrics;
+}
+
+export interface AISolutionVerificationResult {
+  verified_at: string;
+  start_episode: number;
+  end_episode: number;
+  episodes_tested: number;
+  problem_solved: boolean;
+  verdict: 'SOLVED' | 'IMPROVED' | 'PARTIAL' | 'NOT_SOLVED_ROLLED_BACK' | string;
+  decision_taken: 'kept_and_promoted' | 'kept_and_continuing' | 'rolled_back_to_baseline' | string;
+  post_change_metrics: AICompactBaselineMetrics;
+  metric_deltas: {
+    delta_mean_pct_50: number;
+    delta_two_star_th_rate: number;
+    delta_three_star_rate: number;
+    delta_mean_reward: number;
+    delta_pct_slope: number;
+    delta_noop_pct: number;
+    delta_explained_variance: number;
+    delta_worst_village_pct: number;
+    delta_inter_village_gap_pct: number;
+  };
+  analysis_summary: string;
+}
+
+export interface AIRecursiveLoopReason {
+  id: string;
+  title: string;
+  severity: 'critical' | 'warning' | 'info';
+  category: 'architecture' | 'reward_function' | 'hyperparameters' | 'tactical_pacing' | 'combined' | string;
+  symptom: string;
+  root_cause: string;
+}
+
+export interface AIRecursiveLoopCycle {
+  cycle_id: number;
+  started_at: string;
+  completed_at: string | null;
+  trigger: string;
+  episode_at_analysis: number;
+  health_verdict: {
+    status: 'healthy_progressing' | 'plateaued' | 'degrading' | string;
+    health_score: number;
+    is_plateaued: boolean;
+    headline: string;
+    progression_summary: string;
+    model_used: string;
+    reasons: AIRecursiveLoopReason[];
+  };
+  pre_change_snapshot: AIPreChangeSnapshot;
+  candidate_solutions: AICandidateSolution[];
+  selected_solution: AICandidateSolution | null;
+  verification_result: AISolutionVerificationResult | null;
+}
+
+export interface AIRecursiveLoopState {
+  enabled: boolean;
+  interval_seconds: number;
+  auto_apply_and_test: boolean;
+  test_episodes_per_cycle: number;
+  provider: AIFeedbackProviderId;
+  phase:
+    | 'idle'
+    | 'monitoring'
+    | 'analyzing'
+    | 'documenting_baseline'
+    | 'applying_solution'
+    | 'testing_solution'
+    | 'verifying_solution'
+    | string;
+  is_running_cycle: boolean;
+  last_check_at: string | null;
+  last_check_ts: number;
+  next_check_ts: number;
+  next_check_at: string | null;
+  seconds_until_next_check?: number;
+  current_cycle_id: number;
+  active_hypothesis: {
+    cycle_id: number;
+    solution: AICandidateSolution;
+    baseline_episode: number;
+    target_episodes: number;
+    baseline_metrics: AICompactBaselineMetrics;
+  } | null;
+  active_config: {
+    updated_at?: string;
+    arch_config: Record<string, number | string>;
+    reward_config: Record<string, number>;
+    hyperparams: Record<string, number | string>;
+  };
+  reward_formula?: string;
+  vault_note_path: string;
+  cycles: AIRecursiveLoopCycle[];
 }

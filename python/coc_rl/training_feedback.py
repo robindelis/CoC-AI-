@@ -368,7 +368,7 @@ def gather_training_telemetry(
         or "latest_attacker.pt"
     )
 
-    from train_ai import resolve_model_path
+    from train_ai import compute_matchup_stats, get_model_training_history, resolve_model_path
 
     ckpt_hyperparams: Dict[str, Any] = {}
     resolved = resolve_model_path(active_ckpt_file)
@@ -377,6 +377,15 @@ def gather_training_telemetry(
             ckpt_obj = torch.load(resolved, map_location="cpu", weights_only=False)
             if isinstance(ckpt_obj.get("hyperparams"), dict):
                 ckpt_hyperparams = ckpt_obj["hyperparams"]
+        except Exception:
+            pass
+
+    if not history or (model_file and model_file != training_state.get("saved_filename")):
+        try:
+            hist_res = get_model_training_history(active_ckpt_file)
+            if hist_res.get("found") and hist_res.get("history"):
+                history = list(hist_res["history"])
+                n = len(history)
         except Exception:
             pass
 
@@ -470,8 +479,154 @@ def gather_training_telemetry(
 
     # 5. Matchup Breakdown
     matchup_stats = training_state.get("matchup_stats") or {}
+    if (not matchup_stats or not matchup_stats.get("village_stats")) and history:
+        try:
+            matchup_stats = compute_matchup_stats(history=history)
+        except Exception:
+            matchup_stats = {}
     army_stats = matchup_stats.get("army_stats", [])
     village_stats = matchup_stats.get("village_stats", [])
+
+    # 5B. Expanded Deep Telemetry: Reward Decomposition, Optimization Health,
+    #     Star Conversion Funnel, Village Bottlenecks, and Per-Head Entropy Trajectory
+    rec50_slice = history[-min(50, n) :] if n > 0 else []
+    reward_decomposition: Dict[str, Any] = {}
+    optimization_health: Dict[str, Any] = {}
+    star_conversion_funnel: Dict[str, Any] = {}
+    village_bottlenecks: Dict[str, Any] = {}
+    head_entropy_trajectory: Dict[str, Any] = {}
+
+    if rec50_slice:
+        n_r = len(rec50_slice)
+        r_tots = [float(r.get("reward", 0.0)) for r in rec50_slice]
+        r_dests = [
+            float(r.get("reward_destr", float(r.get("destruction_pct", 0.0)) * 0.35))
+            for r in rec50_slice
+        ]
+        r_strs = [
+            float(
+                r.get(
+                    "reward_stars",
+                    int(r.get("stars", 0)) * 12.0
+                    + (14.0 if int(r.get("stars", 0)) >= 2 else 0.0),
+                )
+            )
+            for r in rec50_slice
+        ]
+        r_dmgs = [
+            float(
+                r.get(
+                    "reward_damage",
+                    max(0.0, r_tots[i] - r_dests[i] - r_strs[i]),
+                )
+            )
+            for i, r in enumerate(rec50_slice)
+        ]
+        mean_r_tot = max(1e-6, float(np.mean(r_tots)))
+        std_r_tot = float(np.std(r_tots))
+        mean_rd = float(np.mean(r_dests))
+        mean_rs = float(np.mean(r_strs))
+        mean_rdm = float(np.mean(r_dmgs))
+        sum_parts = max(1e-6, mean_rd + mean_rs + max(0.0, mean_rdm))
+        reward_decomposition = {
+            "mean_reward_total": round(mean_r_tot, 2),
+            "std_reward_total": round(std_r_tot, 2),
+            "signal_to_noise_ratio": round(mean_r_tot / max(1e-4, std_r_tot), 2),
+            "mean_reward_destr": round(mean_rd, 2),
+            "mean_reward_stars_th": round(mean_rs, 2),
+            "mean_reward_damage_funnel": round(mean_rdm, 2),
+            "destr_share_pct": round(100.0 * mean_rd / sum_parts, 1),
+            "stars_th_share_pct": round(100.0 * mean_rs / sum_parts, 1),
+            "damage_funnel_share_pct": round(100.0 * max(0.0, mean_rdm) / sum_parts, 1),
+        }
+
+        target_kl_val = float(ckpt_hyperparams.get("target_kl", 0.03))
+        kls_r = [float(r.get("approx_kl", 0.0)) for r in rec50_slice]
+        clips_r = [float(r.get("clip_fraction", 0.0)) for r in rec50_slice]
+        gnorms_r = [float(r.get("grad_norm", 0.0)) for r in rec50_slice]
+        ev_r = [float(r.get("explained_variance", 0.0)) for r in rec50_slice]
+        optimization_health = {
+            "explained_variance_recent50": round(float(np.mean(ev_r)), 4),
+            "kl_saturation_rate_pct": round(
+                100.0 * sum(1 for k in kls_r if k >= 0.85 * target_kl_val) / n_r, 1
+            ),
+            "mean_approx_kl_recent50": round(float(np.mean(kls_r)), 4),
+            "mean_clip_fraction_recent50": round(float(np.mean(clips_r)), 4),
+            "max_clip_fraction_recent50": round(float(max(clips_r, default=0.0)), 4),
+            "mean_grad_norm_recent50": round(float(np.mean(gnorms_r)), 4),
+            "max_grad_norm_recent50": round(float(max(gnorms_r, default=0.0)), 4),
+            "grad_spike_rate_pct": round(
+                100.0 * sum(1 for g in gnorms_r if g >= 0.45) / n_r, 1
+            ),
+        }
+
+        cnt_1plus = sum(1 for r in rec50_slice if int(r.get("stars", 0)) >= 1)
+        cnt_2plus = sum(1 for r in rec50_slice if int(r.get("stars", 0)) >= 2)
+        cnt_3 = sum(1 for r in rec50_slice if int(r.get("stars", 0)) >= 3)
+        cnt_near_miss = sum(
+            1
+            for r in rec50_slice
+            if 85 <= int(r.get("destruction_pct", 0)) < 100 and int(r.get("stars", 0)) < 3
+        )
+        star_conversion_funnel = {
+            "p_1star_pct": round(100.0 * cnt_1plus / n_r, 1),
+            "p_2star_given_1star_pct": round(
+                100.0 * cnt_2plus / max(1, cnt_1plus), 1
+            ),
+            "p_3star_given_2star_pct": round(
+                100.0 * cnt_3 / max(1, cnt_2plus), 1
+            ),
+            "near_miss_85_to_99_pct_rate": round(100.0 * cnt_near_miss / n_r, 1),
+        }
+
+        ht_seq = [float(r.get("entropy_type", 0.9)) for r in rec50_slice]
+        hi_seq = [float(r.get("entropy_idx", 1.1)) for r in rec50_slice]
+        hf_seq = [float(r.get("entropy_frac", 0.8)) for r in rec50_slice]
+        htl_seq = [float(r.get("entropy_tile", 3.8)) for r in rec50_slice]
+        head_entropy_trajectory = {
+            "recent50_mean": {
+                "slot_type": round(float(np.mean(ht_seq)), 3),
+                "slot_idx": round(float(np.mean(hi_seq)), 3),
+                "deploy_fraction": round(float(np.mean(hf_seq)), 3),
+                "tile_xy": round(float(np.mean(htl_seq)), 3),
+            },
+            "slope_per_100ep": {
+                "slot_type": _linear_slope_per_100(ht_seq),
+                "slot_idx": _linear_slope_per_100(hi_seq),
+                "deploy_fraction": _linear_slope_per_100(hf_seq),
+                "tile_xy": _linear_slope_per_100(htl_seq),
+            },
+        }
+
+    active_villages = [v for v in village_stats if int(v.get("episodes", 0)) > 0]
+    if active_villages:
+        worst_v = min(
+            active_villages,
+            key=lambda v: float(v.get("recent_avg_pct") or v.get("avg_pct", 0.0)),
+        )
+        best_v = max(
+            active_villages,
+            key=lambda v: float(v.get("recent_avg_pct") or v.get("avg_pct", 0.0)),
+        )
+        w_pct = float(worst_v.get("recent_avg_pct") or worst_v.get("avg_pct", 0.0))
+        b_pct = float(best_v.get("recent_avg_pct") or best_v.get("avg_pct", 0.0))
+        village_bottlenecks = {
+            "worst_village": {
+                "name": worst_v.get("name"),
+                "full_name": worst_v.get("full_name"),
+                "recent_avg_pct": w_pct,
+                "avg_stars": worst_v.get("avg_stars", 0.0),
+                "triple_rate": worst_v.get("triple_rate", 0.0),
+            },
+            "best_village": {
+                "name": best_v.get("name"),
+                "full_name": best_v.get("full_name"),
+                "recent_avg_pct": b_pct,
+                "avg_stars": best_v.get("avg_stars", 0.0),
+                "triple_rate": best_v.get("triple_rate", 0.0),
+            },
+            "inter_village_gap_pct": round(b_pct - w_pct, 1),
+        }
 
     # 6. Automated Quantitative Signals (Grounded evidence for both UI and LLM)
     signals: List[Dict[str, str]] = []
@@ -530,6 +685,42 @@ def gather_training_telemetry(
             ),
         })
 
+    if village_bottlenecks and float(village_bottlenecks.get("inter_village_gap_pct", 0.0)) >= 12.0:
+        wv = village_bottlenecks.get("worst_village", {})
+        bv = village_bottlenecks.get("best_village", {})
+        signals.append({
+            "id": "village_layout_bottleneck",
+            "severity": "warning",
+            "metric": f"Worst: {wv.get('name')} ({wv.get('recent_avg_pct')}%) vs Best: {bv.get('name')} ({bv.get('recent_avg_pct')}%)",
+            "detail": (
+                f"{village_bottlenecks.get('inter_village_gap_pct')}% destruction spread across reference villages indicates "
+                f"the policy struggles to penetrate {wv.get('full_name') or wv.get('name')} compartment geometry."
+            ),
+        })
+
+    cal_gap_abs = abs(float(live_probe.get("critic_calibration", {}).get("calibration_gap_v0_minus_return") or 0.0))
+    ev_50 = float(optimization_health.get("explained_variance_recent50", 0.5))
+    if rec50 and (cal_gap_abs >= 8.0 or ev_50 < 0.25):
+        signals.append({
+            "id": "critic_calibration_lag",
+            "severity": "warning",
+            "metric": f"|V(s₀)−R̄| = {cal_gap_abs:.2f} pts • Explained Variance = {ev_50*100:.1f}%",
+            "detail": (
+                "Critic baseline prediction V(s₀) lags empirical episode return or captures low return variance, "
+                "increasing GAE advantage variance during PPO updates."
+            ),
+        })
+
+    if star_conversion_funnel and star_conversion_funnel.get("p_2star_given_1star_pct", 100.0) >= 50.0 and star_conversion_funnel.get("p_3star_given_2star_pct", 100.0) < 25.0:
+        signals.append({
+            "id": "late_game_3star_cleanup_bottleneck",
+            "severity": "info",
+            "metric": f"P(2★|1★)={star_conversion_funnel.get('p_2star_given_1star_pct')}% → P(3★|2★)={star_conversion_funnel.get('p_3star_given_2star_pct')}% • Near-miss (85–99%)={star_conversion_funnel.get('near_miss_85_to_99_pct_rate')}%",
+            "detail": (
+                "Policy reliably breaches the Town Hall 18 core for 2★ but stalls on 85–99% back-end defense cleanup before reaching 100% 3★."
+            ),
+        })
+
     if len(army_stats) >= 2:
         army_pcts = [float(a.get("recent_avg_pct") or a.get("avg_pct", 0.0)) for a in army_stats]
         gap = round(max(army_pcts) - min(army_pcts), 1)
@@ -560,8 +751,8 @@ def gather_training_telemetry(
             "best_stars": int(training_state.get("best_stars", 0)),
             "hyperparams": ckpt_hyperparams or {
                 "lr": 3e-4,
-                "batch_episodes": 4,
-                "minibatch_size": 64,
+                "batch_episodes": 12,
+                "minibatch_size": 128,
                 "ppo_epochs": 4,
                 "ticks_per_step": 8,
                 "clip_coef": 0.2,
@@ -575,6 +766,11 @@ def gather_training_telemetry(
         "trends": trends,
         "windows": windows,
         "phases": phases,
+        "reward_decomposition": reward_decomposition,
+        "optimization_health": optimization_health,
+        "star_conversion_funnel": star_conversion_funnel,
+        "village_bottlenecks": village_bottlenecks,
+        "head_entropy_trajectory": head_entropy_trajectory,
         "matchups": {
             "army_stats": army_stats,
             "village_stats": village_stats,

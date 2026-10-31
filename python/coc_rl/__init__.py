@@ -5,15 +5,31 @@ from .history_compression import (
     get_compressed_history_meta,
 )
 from .networks import (
+    DEFAULT_ARCH_CONFIG,
     CoCActorCritic,
     CoCSpatialEncoder,
 )
 from .ppo import (
+    DEFAULT_HYPERPARAMS,
+    DEFAULT_REWARD_CONFIG,
     compute_custom_reward,
     compute_custom_reward_components,
     compute_gae,
+    format_reward_formula,
     ppo_minibatch_update,
     ppo_update_step,
+)
+from .recursive_loop import (
+    apply_config_patch,
+    capture_pre_change_snapshot,
+    diagnose_and_propose_solutions,
+    load_active_experiment_config,
+    load_recursive_loop_state,
+    run_recursive_improvement_cycle,
+    save_active_experiment_config,
+    save_recursive_loop_state,
+    sync_recursive_loop_to_vault,
+    verify_solution_outcome,
 )
 from .training_feedback import (
     AI_PROVIDERS,

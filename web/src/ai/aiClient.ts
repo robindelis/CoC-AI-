@@ -4,6 +4,7 @@ import {
   AIFeedbackProviderId,
   AIInspectResponse,
   AIModelHistoryResponse,
+  AIRecursiveLoopState,
   AIRolloutResponse,
   AIServerStatus,
   AITrainingFeedbackResponse,
@@ -254,6 +255,99 @@ export async function requestAITrainingFeedback(
     });
     if (!res.ok) return null;
     return (await res.json()) as AITrainingFeedbackResponse;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchRecursiveLoopStatus(): Promise<AIRecursiveLoopState | null> {
+  try {
+    const res = await fetch(`${AI_API_BASE}/loop/status?t=${Date.now()}`, {
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as AIRecursiveLoopState;
+  } catch {
+    return null;
+  }
+}
+
+export async function configureRecursiveLoop(params: {
+  enabled?: boolean;
+  interval_seconds?: number;
+  auto_apply_and_test?: boolean;
+  test_episodes_per_cycle?: number;
+  provider?: AIFeedbackProviderId;
+}): Promise<AIRecursiveLoopState | null> {
+  try {
+    const res = await fetch(`${AI_API_BASE}/loop/configure`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as AIRecursiveLoopState;
+  } catch {
+    return null;
+  }
+}
+
+export async function runRecursiveLoopCycle(params?: {
+  selected_solution_id?: string;
+  auto_test?: boolean;
+  use_llm?: boolean;
+  trigger?: string;
+}): Promise<AIRecursiveLoopState | null> {
+  try {
+    const res = await fetch(`${AI_API_BASE}/loop/run-cycle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        selected_solution_id: params?.selected_solution_id,
+        auto_test: params?.auto_test ?? true,
+        use_llm: params?.use_llm ?? true,
+        trigger: params?.trigger ?? 'manual_trigger',
+      }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as AIRecursiveLoopState;
+  } catch {
+    return null;
+  }
+}
+
+export async function applyRecursiveLoopSolution(params: {
+  cycle_id?: number;
+  solution_id: string;
+  auto_test?: boolean;
+  test_episodes?: number;
+}): Promise<AIRecursiveLoopState | null> {
+  try {
+    const res = await fetch(`${AI_API_BASE}/loop/apply-solution`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cycle_id: params.cycle_id,
+        solution_id: params.solution_id,
+        auto_test: params.auto_test ?? true,
+        test_episodes: params.test_episodes,
+      }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as AIRecursiveLoopState;
+  } catch {
+    return null;
+  }
+}
+
+export async function verifyRecursiveLoopSolution(): Promise<AIRecursiveLoopState | null> {
+  try {
+    const res = await fetch(`${AI_API_BASE}/loop/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as AIRecursiveLoopState;
   } catch {
     return null;
   }

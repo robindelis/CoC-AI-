@@ -26,6 +26,7 @@ from coc_rl import (
     decompress_training_history,
     ensure_architecture_diagrams,
     get_compressed_history_meta,
+    load_active_experiment_config,
     ppo_minibatch_update,
     ppo_update_step,
 )
@@ -339,13 +340,24 @@ def load_attacker_model(
         if stem_w is not None and hasattr(stem_w, "shape"):
             in_channels = int(stem_w.shape[1])
 
-    live_attacker = CoCActorCritic(in_channels=in_channels, army_context_dim=64).to(device)
+    active_exp_cfg = load_active_experiment_config()
+    arch_cfg = dict(active_exp_cfg.get("arch_config", {}))
+    if isinstance(attacker_ckpt_meta.get("arch_config"), dict):
+        arch_cfg.update(attacker_ckpt_meta["arch_config"])
+        arch_cfg.update(active_exp_cfg.get("arch_config", {}))
+
+    live_attacker = CoCActorCritic(
+        in_channels=in_channels,
+        army_context_dim=64,
+        arch_config=arch_cfg,
+    ).to(device)
 
     if "model_state_dict" in attacker_ckpt_meta and isinstance(attacker_ckpt_meta["model_state_dict"], dict):
         try:
             live_attacker.load_state_dict(attacker_ckpt_meta["model_state_dict"])
         except Exception:
             pass
+    live_attacker.apply_arch_config(arch_cfg)
 
     return live_attacker, attacker_ckpt_meta
 
@@ -875,6 +887,7 @@ def train_pytorch_ppo(
         compressed_hist = compress_training_history(
             base_history + history, session_boundaries=session_boundaries
         )
+        active_exp_now = load_active_experiment_config()
         payload = {
             "model_state_dict": live_attacker.state_dict(),
             "optimizer_state_dict": opt_live.state_dict(),
@@ -884,6 +897,8 @@ def train_pytorch_ppo(
             "best_reward": best_reward,
             "model_type": "live_attacker",
             "hyperparams": hyperparams_meta,
+            "arch_config": live_attacker.get_arch_config(),
+            "reward_config": active_exp_now.get("reward_config", {}),
             "army": trained_army,
             "army_name": trained_army_name,
             "army_slug": army_slug,
@@ -949,6 +964,32 @@ def train_pytorch_ppo(
 
     while ep_cursor < episodes and not stop_training:
         t0 = time.perf_counter()
+        active_exp_cfg = load_active_experiment_config()
+        live_attacker.apply_arch_config(active_exp_cfg.get("arch_config"))
+        rew_cfg = active_exp_cfg.get("reward_config", {})
+        hp_live = active_exp_cfg.get("hyperparams", {})
+
+        live_lr = float(hp_live.get("lr", lr))
+        live_critic_mult = float(hp_live.get("critic_lr_mult", 2.5))
+        live_vf_coef = float(hp_live.get("vf_coef", 0.5))
+        live_ent_coef = float(hp_live.get("ent_coef", ent_coef))
+        live_clip_coef = float(hp_live.get("clip_coef", clip_coef))
+        live_target_kl = float(hp_live.get("target_kl", 0.03))
+        live_max_grad_norm = float(hp_live.get("max_grad_norm", 0.5))
+        live_matchup_mode = str(hp_live.get("matchup_mode") or matchup_mode)
+        if len(opt_live.param_groups) >= 2:
+            opt_live.param_groups[0]["lr"] = live_lr
+            opt_live.param_groups[1]["lr"] = live_lr * live_critic_mult
+
+        destr_scale = float(rew_cfg.get("destr_weight", 0.35)) / 0.35
+        star_scale = float(rew_cfg.get("star_weight", 12.0)) / 12.0
+        th_extra = float(rew_cfg.get("th_bonus", 14.0)) - 14.0 * star_scale
+        dmg_scale = float(rew_cfg.get("damage_weight", 15.0)) / 15.0
+        early_noop_pen = float(rew_cfg.get("early_noop_penalty", 0.02))
+        milestone_75 = float(rew_cfg.get("high_pct_milestone_75", 0.0))
+        milestone_90 = float(rew_cfg.get("high_pct_milestone_90", 0.0))
+        triple_bonus = float(rew_cfg.get("triple_wipe_bonus", 0.0))
+
         wave_size = min(
             num_parallel_envs,
             b_eps - buf_eps_count,
@@ -961,9 +1002,9 @@ def train_pytorch_ppo(
         wave_village_indices: List[int] = []
         for w in range(wave_size):
             ep_num = ep_cursor + w + 1
-            if matchup_mode == "round_robin":
+            if live_matchup_mode == "round_robin":
                 v_idx = (ep_num - 1) % len(layouts)
-            elif matchup_mode == "fixed_current":
+            elif live_matchup_mode == "fixed_current":
                 v_idx = fixed_village_idx
             else:
                 if (ep_num - 1) % max(1, len(layouts)) == 0:
@@ -1074,15 +1115,26 @@ def train_pytorch_ppo(
                 elif chosen_slot_type in (3, 5):
                     ability_steps[w] += 1
 
-                custom_r = float(crews[pos])
-                r_destr = float(rds[pos])
-                r_stars = float(rss[pos])
-                r_dmg = float(rdms[pos])
+                r_destr = float(rds[pos]) * destr_scale
+                r_stars = float(rss[pos]) * star_scale
+                r_dmg = float(rdms[pos]) * dmg_scale
                 done = bool(dones[pos])
 
+                if done:
+                    if int(pcts[pos]) >= 75 and milestone_75 > 0.0:
+                        r_stars += milestone_75
+                    if int(pcts[pos]) >= 90 and milestone_90 > 0.0:
+                        r_stars += milestone_90
+                    if int(stars_out[pos]) >= 3 and triple_bonus > 0.0:
+                        r_stars += triple_bonus
+                    if int(stars_out[pos]) >= 2 and abs(th_extra) > 1e-4:
+                        r_stars += th_extra
+
+                custom_r = r_destr + r_stars + r_dmg
+
                 if chosen_slot_type == 0 and deploy_steps[w] == 0 and step_i < 4:
-                    custom_r -= 0.02
-                    r_dmg -= 0.02
+                    custom_r -= early_noop_pen
+                    r_dmg -= early_noop_pen
 
                 ep_custom_reward[w] += custom_r
                 ep_r_destr[w] += r_destr
@@ -1202,8 +1254,11 @@ def train_pytorch_ppo(
                     army_context_b=army_ctx_b,
                     ppo_epochs=ppo_epochs,
                     minibatch_size=minibatch_size,
-                    clip_coef=clip_coef,
-                    ent_coef=ent_coef,
+                    clip_coef=live_clip_coef,
+                    vf_coef=live_vf_coef,
+                    ent_coef=live_ent_coef,
+                    max_grad_norm=live_max_grad_norm,
+                    target_kl=live_target_kl,
                 )
 
                 # Backfill initial episodes before the first optimizer step so curves have no 0-spike
