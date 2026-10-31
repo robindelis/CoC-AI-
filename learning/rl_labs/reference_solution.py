@@ -17,58 +17,119 @@ from torch.distributions import Categorical
 NEG_INF = -1e8
 
 
+class UNetConvBlock(nn.Module):
+    """Double 3x3 Convolution Block with GroupNorm(8) and SiLU activation."""
+
+    def __init__(self, in_ch: int, out_ch: int, groups: int = 8):
+        super().__init__()
+        g = min(groups, out_ch)
+        self.block = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1, bias=False),
+            nn.GroupNorm(g, out_ch),
+            nn.SiLU(inplace=True),
+            nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1, bias=False),
+            nn.GroupNorm(g, out_ch),
+            nn.SiLU(inplace=True),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.block(x)
+
+
+class UNetUpBlock(nn.Module):
+    """3x3 Transposed Conv Upsampling + Skip Connection Concatenation + UNetConvBlock."""
+
+    def __init__(
+        self,
+        in_ch: int,
+        skip_ch: int,
+        out_ch: int,
+        padding: int = 1,
+        output_padding: int = 1,
+        groups: int = 8,
+    ):
+        super().__init__()
+        up_ch = in_ch // 2
+        g_up = min(groups, up_ch)
+        self.up = nn.Sequential(
+            nn.ConvTranspose2d(
+                in_ch,
+                up_ch,
+                kernel_size=3,
+                stride=2,
+                padding=padding,
+                output_padding=output_padding,
+                bias=False,
+            ),
+            nn.GroupNorm(g_up, up_ch),
+            nn.SiLU(inplace=True),
+        )
+        self.conv = UNetConvBlock(up_ch + skip_ch, out_ch, groups=groups)
+
+    def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
+        u = self.up(x)
+        if u.shape[-2:] != skip.shape[-2:]:
+            u = F.interpolate(u, size=skip.shape[-2:], mode="bilinear", align_corners=False)
+        return self.conv(torch.cat([u, skip], dim=1))
+
+
 class CoCSpatialEncoder(nn.Module):
     """
-    Lab 1 Reference: Dual-pathway Spatial CNN Backbone for the 10x50x50 Village Grid.
+    Lab 1 Reference: U-Net Contracting-Expansive Spatial Backbone for the 50x50 Village Grid.
+    Stage 1 downscales 50x50 -> 25x25 -> 12x12 -> 6x6;
+    Stage 2 upscales 6x6 -> 12x12 before feeding into the Global Tower (256-D),
+    and upscales completely back to 50x50 with skip connections for grid position selection.
     Produces:
-      1. `spatial_features`: (B, 64, 50, 50) full-resolution feature map for tile-level targeting
+      1. `spatial_features`: (B, spatial_dim, 50, 50) full-resolution U-Net feature map for tile targeting
       2. `global_embedding`: (B, 256) compact tactical summary vector for action-type & critic heads
     """
 
-    def __init__(self, in_channels: int = 10, spatial_dim: int = 64, embed_dim: int = 256):
+    def __init__(self, in_channels: int = 10, spatial_dim: int = 64, embed_dim: int = 256, base_ch: int = 32):
         super().__init__()
         self.spatial_dim = spatial_dim
         self.embed_dim = embed_dim
 
-        # Full-resolution spatial stem (preserves 50x50 grid geometry via padding)
-        self.spatial_stem = nn.Sequential(
-            nn.Conv2d(in_channels, 32, kernel_size=3, padding=1, bias=False),
-            nn.GroupNorm(4, 32),
-            nn.SiLU(),
-            nn.Conv2d(32, spatial_dim, kernel_size=3, padding=1, bias=False),
-            nn.GroupNorm(8, spatial_dim),
-            nn.SiLU(),
-        )
+        c1, c2, c3, c4 = base_ch, base_ch * 2, base_ch * 4, base_ch * 8
 
-        # Residual context block with dilated 3x3 conv (receptive field sees across wall compartments)
-        self.context_res = nn.Sequential(
-            nn.Conv2d(spatial_dim, spatial_dim, kernel_size=3, padding=2, dilation=2, bias=False),
-            nn.GroupNorm(8, spatial_dim),
-            nn.SiLU(),
-            nn.Conv2d(spatial_dim, spatial_dim, kernel_size=3, padding=1, bias=False),
-            nn.GroupNorm(8, spatial_dim),
-        )
+        # Stage 1: U-Net Contracting (Downscaling) Path (50x50 -> 25x25 -> 12x12 -> 6x6)
+        self.enc1 = UNetConvBlock(in_channels, c1)
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.enc2 = UNetConvBlock(c1, c2)
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.enc3 = UNetConvBlock(c2, c3)
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.bottleneck = UNetConvBlock(c3, c4)
 
-        # Global downsampling pyramid for tactical state summary -> (B, embed_dim)
+        # Stage 2A: Partial Upscale (6x6 -> 12x12 with Skip 3)
+        self.up3 = UNetUpBlock(c4, c3, c3, padding=1, output_padding=1)
+
+        # Global Tower from partially upscaled Stage 2 features (12x12 -> 256-D)
         self.global_tower = nn.Sequential(
-            nn.Conv2d(spatial_dim, 96, kernel_size=3, stride=2, padding=1),  # -> 25x25
-            nn.SiLU(),
-            nn.Conv2d(96, 128, kernel_size=3, stride=2, padding=1),  # -> 13x13
-            nn.SiLU(),
-            nn.AdaptiveAvgPool2d((4, 4)),  # -> 4x4
+            nn.Conv2d(c3, c3, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.GroupNorm(8, c3),
+            nn.SiLU(inplace=True),
+            nn.AdaptiveAvgPool2d((1, 1)),
             nn.Flatten(),
-            nn.Linear(128 * 4 * 4, embed_dim),
+            nn.Linear(c3, embed_dim),
             nn.LayerNorm(embed_dim),
-            nn.SiLU(),
+            nn.SiLU(inplace=True),
         )
+
+        # Stage 2B: Full Upscale back to 50x50 (12x12 -> 25x25 -> 50x50 with Skips 2 & 1)
+        self.up2 = UNetUpBlock(c3, c2, c2, padding=0, output_padding=0)
+        self.up1 = UNetUpBlock(c2, c1, spatial_dim, padding=1, output_padding=1)
 
     def forward(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        # 1. Local 50x50 stem (padding=1 keeps exact tile alignment; GroupNorm avoids BatchNorm drift)
-        h = self.spatial_stem(obs)
-        # 2. Dilated 3x3 residual block expands receptive field across TH18 wall compartments
-        spatial_features = F.silu(h + self.context_res(h))
-        # 3. Strided convs + AdaptiveAvgPool2d((4, 4)) compress map into a 256-D global state vector
-        global_embedding = self.global_tower(spatial_features)
+        e1 = self.enc1(obs)                 # (B, 32, 50, 50)
+        e2 = self.enc2(self.pool1(e1))      # (B, 64, 25, 25)
+        e3 = self.enc3(self.pool2(e2))      # (B, 128, 12, 12)
+        b = self.bottleneck(self.pool3(e3)) # (B, 256, 6, 6)
+
+        d3 = self.up3(b, e3)                # (B, 128, 12, 12)
+        global_embedding = self.global_tower(d3)  # (B, 256)
+
+        d2 = self.up2(d3, e2)               # (B, 64, 25, 25)
+        spatial_features = self.up1(d2, e1) # (B, spatial_dim, 50, 50)
         return spatial_features, global_embedding
 
 

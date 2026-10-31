@@ -37,25 +37,25 @@ const HEAD_META: HeadMetaSpec[] = [
     index: 1,
     title: 'Head 1 Sub-Network • Action Type Policy (slot_type_head)',
     shortTitle: 'H1: Action Type (7)',
-    moduleName: 'encoder + army_context_proj + slot_type_head',
+    moduleName: 'U-Net Stage 1 + Up3 (12×12) + global_tower + army_ctx + slot_type_head',
     color: '#ca8a04',
     border: '#facc15',
     outputDim: '7 Action Types',
     params: 1799,
-    backboneParams: 813088,
-    formula: 'π(type | s) = Categorical(1.4 · tanh(Linear_256→7(g_spatial ⊕ g_army) / 3) + M_type)',
+    backboneParams: 2121024,
+    formula: 'π(type | s) = Categorical(1.4 · tanh(Linear_256→7(GlobalTower(Up3_12×12) ⊕ g_army) / 3) + M_type)',
   },
   {
     id: 'head_slot_idx',
     index: 2,
     title: 'Head 2 Sub-Network • Autoregressive Loadout Slot Index (slot_idx_head)',
     shortTitle: 'H2: Slot Index (10)',
-    moduleName: 'encoder + army_context_proj + slot_type_head + slot_idx_head',
+    moduleName: 'U-Net Stage 1 + Up3 (12×12) + global_tower + army_ctx + H1 + slot_idx_head',
     color: '#0284c7',
     border: '#38bdf8',
     outputDim: '10 Loadout Slots',
     params: 35082,
-    backboneParams: 814887,
+    backboneParams: 2122823,
     formula: 'π(idx | s, type) = Categorical(1.6 · tanh(MLP_263→128→10([g_emb ‖ 1hot(type)]) / 3) + M_idx[type])',
   },
   {
@@ -63,39 +63,39 @@ const HEAD_META: HeadMetaSpec[] = [
     index: 3,
     title: 'Head 3 Sub-Network • Autoregressive Troop Wave Fraction (deploy_fraction_head)',
     shortTitle: 'H3: Deploy Frac (5)',
-    moduleName: 'encoder + army_context_proj + H1 + H2 + deploy_fraction_head',
+    moduleName: 'U-Net Stage 1 + Up3 (12×12) + global_tower + army_ctx + H1 + H2 + deploy_fraction_head',
     color: '#9333ea',
     border: '#c084fc',
     outputDim: '5 Wave Bins α∈[0,1]',
     params: 35717,
-    backboneParams: 849969,
+    backboneParams: 2157905,
     formula: 'π(α | s, type, idx) = Categorical(1.4 · tanh(MLP_273→128→5([g_emb ‖ 1hot(type) ‖ 1hot(idx)]) / 3))',
   },
   {
     id: 'head_tile_conv',
     index: 4,
-    title: 'Head 4 Sub-Network • Dual-Pathway 50×50 Spatial Tile Pointer (tile_conv_head)',
-    shortTitle: 'H4: Tile Pointer (2500)',
-    moduleName: 'spatial_stem + global_tower + army_ctx + tile_cond_proj + tile_conv_head',
+    title: 'Head 4 Sub-Network • Full U-Net 50×50 Spatial Tile Segmentation (up2 + up1 + tile_conv_head)',
+    shortTitle: 'H4: U-Net 50×50 Tile (2500)',
+    moduleName: 'U-Net Stage 1 + Up3(12×12) + Up2(25×25+Skip2) + Up1(50×50+Skip1) + FiLM + tile_conv_head',
     color: '#d97706',
     border: '#facc15',
     outputDim: '1×50×50 (2,500 Tiles)',
-    params: 35393,
-    backboneParams: 814887,
-    formula: 'π(x,y | s, type) = Categorical(2.2 · Conv1×1(SiLU(Conv3×3(FiLM(F_spatial, c_263→spatial)))) + Prior_50×50 + M_tile)',
+    params: 249729,
+    backboneParams: 2157905,
+    formula: 'π(x,y | s, type, idx) = Categorical(2.2 · Conv1×1(SiLU(Conv3×3(FiLM(Up1_50×50, c_273→32)))) + Prior_50×50 + M_tile)',
   },
   {
     id: 'head_critic',
     index: 5,
     title: 'Head 5 Sub-Network • State-Value Critic V(s) (critic_head)',
     shortTitle: 'H5: Value Critic (1)',
-    moduleName: 'encoder + army_context_proj + critic_head',
+    moduleName: 'U-Net Stage 1 + Up3 (12×12) + global_tower + army_ctx + critic_head',
     color: '#16a34a',
     border: '#4ade80',
     outputDim: 'Scalar V(s) ∈ ℝ',
     params: 33025,
-    backboneParams: 813088,
-    formula: 'V(s) = Linear_128→1(SiLU(Linear_256→128(g_spatial(obs) ⊕ g_army(army_context))))',
+    backboneParams: 2121024,
+    formula: 'V(s) = Linear_128→1(SiLU(Linear_256→128(GlobalTower(Up3_12×12) ⊕ g_army(army_context))))',
   },
 ];
 
@@ -103,90 +103,90 @@ const DEFAULT_LAYERS: AIArchitectureLayerSpec[] = [
   {
     id: 's1',
     stage: 'spatial',
-    type: 'Dilated Conv2d + GroupNorm + SiLU',
-    short: 'Conv d=2',
-    desc: '32 filters, 3×3, d=2, p=2, GroupNorm(4), SiLU (10-ch Village Grid)',
-    inputShape: [10, 50, 50],
+    type: 'U-Net Down 1: enc1 (2× Conv3×3-GN8-SiLU)',
+    short: 'Enc1 50×50',
+    desc: '2×(Conv 3×3 → GroupNorm(8) → SiLU), 59→32 ch at 50×50 + Skip 1',
+    inputShape: [59, 50, 50],
     outputShape: [32, 50, 50],
     receptiveField: 5,
-    params: 2944,
-    macs: 7200000,
+    params: 26336,
+    macs: 65520000,
     color: '#2563eb',
     border: '#60a5fa',
-    coneLabel: '3×3 d=2',
+    coneLabel: '2×3×3 GN8',
   },
   {
     id: 's2',
     stage: 'spatial',
-    type: 'Dilated Conv2d + GroupNorm + SiLU',
-    short: 'Conv d=2',
-    desc: '32 filters, 3×3, d=2, p=2, GroupNorm(4), SiLU',
+    type: 'U-Net Down 2: MaxPool 2×2 + enc2',
+    short: 'Enc2 25×25',
+    desc: 'MaxPool2d(2×2) + 2×(Conv 3×3 → GroupNorm(8) → SiLU), 32→64 ch at 25×25 + Skip 2',
     inputShape: [32, 50, 50],
-    outputShape: [32, 50, 50],
-    receptiveField: 9,
-    params: 9280,
-    macs: 23040000,
+    outputShape: [64, 25, 25],
+    receptiveField: 14,
+    params: 55552,
+    macs: 34560000,
     color: '#2563eb',
     border: '#60a5fa',
-    coneLabel: '3×3 d=2',
+    coneLabel: 'Pool2 + 2×3×3',
   },
   {
     id: 's3',
     stage: 'spatial',
-    type: 'Conv2d + GroupNorm + SiLU',
-    short: 'Conv 3×3',
-    desc: '64 filters, 3×3, d=1, p=1, GroupNorm(8), SiLU',
-    inputShape: [32, 50, 50],
-    outputShape: [64, 50, 50],
-    receptiveField: 11,
-    params: 18560,
-    macs: 46080000,
+    type: 'U-Net Down 3: MaxPool 2×2 + enc3',
+    short: 'Enc3 12×12',
+    desc: 'MaxPool2d(2×2) + 2×(Conv 3×3 → GroupNorm(8) → SiLU), 64→128 ch at 12×12 + Skip 3',
+    inputShape: [64, 25, 25],
+    outputShape: [128, 12, 12],
+    receptiveField: 32,
+    params: 221696,
+    macs: 31850496,
     color: '#1d4ed8',
     border: '#60a5fa',
-    coneLabel: '3×3 d=1',
+    coneLabel: 'Pool2 + 2×3×3',
   },
   {
     id: 's4',
     stage: 'spatial',
-    type: 'Residual Context Block',
-    short: 'ResBlock',
-    desc: '2×Conv 64 ch, 3×3, p=1, GroupNorm(8), Residual Skip (+), SiLU',
-    inputShape: [64, 50, 50],
-    outputShape: [64, 50, 50],
-    receptiveField: 15,
-    params: 73984,
-    macs: 184320000,
+    type: 'U-Net Bottleneck: MaxPool 2×2 + bottleneck',
+    short: 'Bot 6×6',
+    desc: 'MaxPool2d(2×2) + 2×(Conv 3×3 → GroupNorm(8) → SiLU), 128→256 ch at 6×6',
+    inputShape: [128, 12, 12],
+    outputShape: [256, 6, 6],
+    receptiveField: 50,
+    params: 885760,
+    macs: 31850496,
     color: '#7c3aed',
     border: '#a78bfa',
-    coneLabel: '2×3×3 + Skip',
-    hasSkipArc: true,
+    coneLabel: 'Pool2 + 2×3×3',
   },
   {
     id: 'g1',
     stage: 'global',
-    type: 'Strided Conv2d + SiLU',
-    short: 'Conv s=2',
-    desc: '96 filters, 3×3, stride=2, pad=1, SiLU',
-    inputShape: [64, 50, 50],
-    outputShape: [96, 25, 25],
-    receptiveField: 19,
-    params: 55392,
-    macs: 34560000,
-    color: '#2563eb',
-    border: '#60a5fa',
-    coneLabel: '3×3 s=2',
+    type: 'Stage 2 Partial Upscale: up3 (6×6 → 12×12 + Skip 3)',
+    short: 'Up3 12×12',
+    desc: 'ConvTranspose 3×3 (256→128, s=2) + Skip 3 (128×12×12) → 2×Conv 3×3 (128×12×12)',
+    inputShape: [256, 6, 6],
+    outputShape: [128, 12, 12],
+    receptiveField: 50,
+    params: 738048,
+    macs: 106168320,
+    color: '#ea580c',
+    border: '#fb923c',
+    coneLabel: 'UpConv 3×3 + Skip3',
+    hasSkipArc: true,
   },
   {
     id: 'g2',
     stage: 'global',
-    type: 'Strided Conv2d + SiLU',
-    short: 'Conv s=2',
-    desc: '128 filters, 3×3, stride=2, pad=1, SiLU',
-    inputShape: [96, 25, 25],
-    outputShape: [128, 13, 13],
-    receptiveField: 27,
-    params: 110720,
-    macs: 18691584,
+    type: 'Global Tower Strided Conv2d + GN8 + SiLU',
+    short: 'GT Conv 6×6',
+    desc: '128 filters, 3×3, stride=2, pad=1, GroupNorm(8), SiLU (from Stage 2 Up3 12×12)',
+    inputShape: [128, 12, 12],
+    outputShape: [128, 6, 6],
+    receptiveField: 50,
+    params: 147712,
+    macs: 5308416,
     color: '#2563eb',
     border: '#60a5fa',
     coneLabel: '3×3 s=2',
@@ -196,24 +196,24 @@ const DEFAULT_LAYERS: AIArchitectureLayerSpec[] = [
     stage: 'global',
     type: 'AdaptiveAvgPool2d',
     short: 'AdapPool',
-    desc: 'Adaptive Grid 4×4',
-    inputShape: [128, 13, 13],
-    outputShape: [128, 4, 4],
+    desc: 'Global Average Pool 1×1',
+    inputShape: [128, 6, 6],
+    outputShape: [128, 1, 1],
     receptiveField: 50,
     params: 0,
     macs: 0,
     color: '#d97706',
     border: '#fbbf24',
-    coneLabel: 'Pool 4×4',
+    coneLabel: 'Pool 1×1',
   },
   {
     id: 'g4',
     stage: 'global',
     type: 'Flatten',
     short: 'Flatten',
-    desc: 'Flatten 128×4×4 → 2048',
-    inputShape: [128, 4, 4],
-    outputShape: [2048],
+    desc: 'Flatten 128×1×1 → 128',
+    inputShape: [128, 1, 1],
+    outputShape: [128],
     receptiveField: 50,
     params: 0,
     macs: 0,
@@ -226,12 +226,12 @@ const DEFAULT_LAYERS: AIArchitectureLayerSpec[] = [
     stage: 'global',
     type: 'Linear + LayerNorm + SiLU',
     short: 'GlobalTower',
-    desc: 'Linear(2048 → 256) + LayerNorm(256) + SiLU',
-    inputShape: [2048],
+    desc: 'Linear(128 → 256) + LayerNorm(256) + SiLU',
+    inputShape: [128],
     outputShape: [256],
     receptiveField: 50,
-    params: 525056,
-    macs: 524288,
+    params: 33536,
+    macs: 32768,
     color: '#059669',
     border: '#34d399',
     coneLabel: 'Dense',
@@ -296,14 +296,14 @@ const DEFAULT_LAYERS: AIArchitectureLayerSpec[] = [
   {
     id: 'head_tile_conv',
     stage: 'heads',
-    type: 'tile_cond_proj + tile_conv_head (Head 4)',
-    short: 'TileHead',
-    desc: 'FiLM(spatial_feat 64×50×50, Linear(263→64)) + Conv 3×3(64→32) + Conv 1×1(32→1) + spatial_prior',
-    inputShape: [64, 50, 50],
+    type: 'U-Net Full 50×50 Upscale (up2 + up1) + Tile Head (Head 4)',
+    short: 'UNet50×50',
+    desc: 'up2(12×12→25×25 + Skip2) → up1(25×25→50×50 + Skip1) → FiLM(273→32) → Conv 3×3 + 1×1 (1×50×50)',
+    inputShape: [128, 12, 12],
     outputShape: [1, 50, 50],
     receptiveField: 50,
-    params: 35393,
-    macs: 46160000,
+    params: 249729,
+    macs: 253520000,
     color: '#d97706',
     border: '#facc15',
   },
@@ -718,28 +718,32 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
   );
 
   // =========================================================================
-  // 1. FULL UNIFIED NETWORK DIAGRAM (obs + army_context + 5 Heads)
+  // 1. FULL UNIFIED NETWORK DIAGRAM (U-Net Stage 1 Downscale -> Stage 2 Upscale + Global Tower + 50x50 Tile Decoder)
   // =========================================================================
   const renderUnifiedNetworkSvg = () => {
     const stepX = 96;
     const startX = 62;
-    const stemY = 152;
+    const stemY = 126;
     const topBranchY = 92;
     const armyTrackY = 236;
     const botBranchY = 330;
+
+    // U-Net vertical staircase for Stage 1 downscaling (50x50 -> 25x25 -> 12x12 -> 6x6)
+    const stage1Y = [126, 152, 178, 204];
 
     const splitX = startX + (spatialLayers.length + 1) * stepX;
     const globalEndX = splitX + (globalTowerLayers.length - 1) * stepX;
     const fusionX = globalEndX + 86;
     const headsX = fusionX + 118;
-    const svgWidth = Math.max(1220, headsX + 185);
-    const svgHeight = 420;
+    const svgWidth = Math.max(1260, headsX + 185);
+    const svgHeight = 430;
 
     const stemLastX = splitX - stepX;
     const armyProjX = splitX + 2 * stepX;
-    const tileFiLMX = splitX + 1.5 * stepX;
-    const tileMidX = splitX + 3.0 * stepX;
-    const tileOutX = tileMidX + 1.15 * stepX;
+    const up2X = splitX + 0.9 * stepX;
+    const up1X = splitX + 2.05 * stepX;
+    const tileFiLMX = splitX + 3.15 * stepX;
+    const tileOutX = tileFiLMX + 1.15 * stepX;
 
     return (
       <div className="arch-cnn3d-stage">
@@ -760,13 +764,13 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
           <rect width={svgWidth} height={svgHeight} fill="url(#bgGridGrad)" rx={8} />
 
           <text x={20} y={20} fill="#60a5fa" fontSize={10} fontWeight={800}>
-            STAGE 1 • DUAL INPUTS &amp; SPATIAL CNN STEM (Full-Res 50×50 Pathway: S1 d=2 → S2 d=2 → S3 d=1 → S4 ResBlock)
+            STAGE 1 • U-NET DOWNSCALING ENCODER (50×50 → 25×25 → 12×12 → 6×6 Bottleneck)
           </text>
           <text x={splitX - 18} y={20} fill="#34d399" fontSize={10} fontWeight={800}>
-            STAGE 2 • GLOBAL TOWER + AVAILABLE ARMY FUSION (⊕ 256D) &amp; STAGE 3 • 5 AUTOREGRESSIVE HEADS
+            STAGE 2 • UPSCALE TO 12×12 → GLOBAL TOWER (5 HEADS) &amp; FULL U-NET 50×50 UPSCALE (GRID POSITION)
           </text>
 
-          {/* INPUT 1: Spatial Observation Grid obs (10×50×50) */}
+          {/* INPUT 1: Spatial Observation Grid obs (59×50×50) */}
           {drawCuboid({
             key: 'input_obs',
             cx: startX,
@@ -785,7 +789,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
           {drawDenseBar({
             key: 'input_army_ctx',
             cx: startX,
-            cy: armyTrackY + 42,
+            cy: armyTrackY + 58,
             dim: armyContextDim,
             color: '#0891b2',
             borderColor: '#38bdf8',
@@ -797,19 +801,21 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
             onHover: setHoveredBlockId,
           })}
 
-          {/* Spatial Stem Blocks S1, S2, S3, S4 */}
+          {/* Stage 1 U-Net Contracting Path Blocks: Enc1 (50x50), Enc2 (25x25), Enc3 (12x12), Bottleneck (6x6) */}
           {spatialLayers.map((sLayer, idx) => {
             const prevX = startX + idx * stepX;
+            const prevY = idx === 0 ? stemY : stage1Y[Math.max(0, idx - 1)];
             const curX = startX + (idx + 1) * stepX;
+            const curY = stage1Y[Math.min(idx, stage1Y.length - 1)];
             const [c, h, w] = sLayer.outputShape;
 
             return (
               <React.Fragment key={sLayer.id}>
-                {drawFilterCone(prevX, stemY, curX, stemY, sLayer.coneLabel)}
+                {drawFilterCone(prevX, prevY, curX, curY, sLayer.coneLabel)}
                 {drawCuboid({
                   key: sLayer.id,
                   cx: curX,
-                  cy: stemY,
+                  cy: curY,
                   c,
                   h,
                   w,
@@ -828,10 +834,19 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
             );
           })}
 
-          {/* Upper Branch: Global Tower G1..G5 */}
+          {/* Dashed U-Net Skip Connection 3: Enc3 (128×12×12) -> Up3 (128×12×12) */}
+          <path
+            d={`M ${startX + 3 * stepX} ${stage1Y[2] - 24} Q ${(startX + 3 * stepX + splitX) / 2} ${topBranchY - 38} ${splitX} ${topBranchY - 22}`}
+            fill="none"
+            stroke="#fb923c"
+            strokeWidth={1.6}
+            strokeDasharray="5 3"
+          />
+
+          {/* Upper Branch: Stage 2 Up3 (12×12) + Global Tower G2..G5 */}
           {globalTowerLayers.map((gLayer, idx) => {
             const prevX = idx === 0 ? stemLastX : splitX + (idx - 1) * stepX;
-            const prevY = idx === 0 ? stemY : topBranchY;
+            const prevY = idx === 0 ? stage1Y[3] : topBranchY;
             const curX = splitX + idx * stepX;
             const is1D = gLayer.outputShape.length === 1;
 
@@ -843,8 +858,8 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
                   curX,
                   topBranchY,
                   gLayer.coneLabel,
-                  'rgba(16, 185, 129, 0.2)',
-                  '#34d399'
+                  idx === 0 ? 'rgba(249, 115, 22, 0.24)' : 'rgba(16, 185, 129, 0.2)',
+                  idx === 0 ? '#fb923c' : '#34d399'
                 )}
                 {is1D
                   ? drawDenseBar({
@@ -887,7 +902,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
 
           {/* Middle Branch: Available Army Projection (64D -> 256D) & Residual Fusion (⊕) */}
           <path
-            d={`M ${startX + 14} ${armyTrackY + 42} L ${armyProjX - 18} ${armyTrackY}`}
+            d={`M ${startX + 14} ${armyTrackY + 58} L ${armyProjX - 18} ${armyTrackY}`}
             fill="none"
             stroke="#38bdf8"
             strokeWidth={2}
@@ -919,7 +934,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
             onHover: setHoveredBlockId,
           })}
 
-          {/* Fusion Node: global_emb = global_tower(obs) + army_context_proj(army_context) */}
+          {/* Fusion Node: global_emb = global_tower(up3) + army_context_proj(army_context) */}
           <path
             d={`M ${globalEndX + 14} ${topBranchY} L ${fusionX - 16} ${topBranchY + 34}`}
             fill="none"
@@ -934,45 +949,36 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
           />
           {drawFusionCircle(fusionX, topBranchY + 34, '⊕', 'global_emb', '256D Fused State')}
 
-          {/* Lower Branch: Spatial Tile Pointer (Head 4) with FiLM Conditioning + Spatial Prior */}
+          {/* Lower Branch: Full U-Net Upscaling (12×12 → 25×25 → 50×50) + Skip Connections + FiLM Tile Head */}
           {drawFilterCone(
-            stemLastX,
-            stemY,
-            tileFiLMX,
-            botBranchY,
-            `spatial_feat (${spatialDim}×50×50)`,
-            'rgba(96, 165, 250, 0.2)',
-            '#60a5fa'
+            splitX,
+            topBranchY,
+            up2X,
+            botBranchY + 12,
+            'UpConv 3×3 + Skip2',
+            'rgba(249, 115, 22, 0.24)',
+            '#fb923c'
           )}
+          {/* Dashed Skip 2 from Enc2 (64×25×25) -> Up2 */}
           <path
-            d={`M ${fusionX} ${topBranchY + 50} C ${fusionX - 30} ${botBranchY - 70}, ${tileFiLMX} ${topBranchY + 120}, ${tileFiLMX} ${botBranchY - 42}`}
+            d={`M ${startX + 2 * stepX} ${stage1Y[1] + 24} Q ${(startX + 2 * stepX + up2X) / 2} ${botBranchY + 52} ${up2X - 16} ${botBranchY + 18}`}
             fill="none"
-            stroke="#facc15"
-            strokeWidth={1.6}
-            strokeDasharray="4 3"
+            stroke="#fb923c"
+            strokeWidth={1.5}
+            strokeDasharray="5 3"
           />
-          <text
-            x={tileFiLMX + 46}
-            y={botBranchY - 52}
-            textAnchor="middle"
-            fill="#fde047"
-            fontSize={8.2}
-            fontWeight={700}
-          >
-            tile_cond_proj(263→{spatialDim}) FiLM
-          </text>
           {drawCuboid({
-            key: 'tile_film_fusion',
-            cx: tileFiLMX,
-            cy: botBranchY,
-            c: spatialDim,
-            h: 50,
-            w: 50,
-            color: '#b45309',
-            borderColor: '#facc15',
-            topLabel: 'FiLM Spatial Fusion',
-            shapeLabel: `${spatialDim}×50×50`,
-            subLabel: 'F·(1+0.5tanh(c))+c',
+            key: 'unet_up2',
+            cx: up2X,
+            cy: botBranchY + 12,
+            c: 64,
+            h: 25,
+            w: 25,
+            color: '#ea580c',
+            borderColor: '#fb923c',
+            topLabel: 'Up2: 25×25',
+            shapeLabel: '64×25×25',
+            subLabel: 'cat[Up(d3), Skip2]',
             isSelected: selectedBlockId === 'head_tile_conv',
             onClick: () => {
               setSelectedBlockId('head_tile_conv');
@@ -981,26 +987,69 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
           })}
 
           {drawFilterCone(
+            up2X,
+            botBranchY + 12,
+            up1X,
+            botBranchY,
+            'UpConv 3×3 + Skip1',
+            'rgba(249, 115, 22, 0.24)',
+            '#fb923c'
+          )}
+          {/* Dashed Skip 1 from Enc1 (32×50×50) -> Up1 */}
+          <path
+            d={`M ${startX + stepX} ${stage1Y[0] + 36} Q ${(startX + stepX + up1X) / 2} ${botBranchY + 72} ${up1X - 16} ${botBranchY + 26}`}
+            fill="none"
+            stroke="#fb923c"
+            strokeWidth={1.5}
+            strokeDasharray="5 3"
+          />
+          {drawCuboid({
+            key: 'unet_up1',
+            cx: up1X,
+            cy: botBranchY,
+            c: spatialDim,
+            h: 50,
+            w: 50,
+            color: '#2563eb',
+            borderColor: '#60a5fa',
+            topLabel: 'Up1: Full 50×50',
+            shapeLabel: `${spatialDim}×50×50`,
+            subLabel: 'cat[Up(d2), Skip1]',
+            isSelected: selectedBlockId === 'head_tile_conv',
+            onClick: () => {
+              setSelectedBlockId('head_tile_conv');
+              setHeadFilter('head_tile_conv');
+            },
+          })}
+
+          <path
+            d={`M ${fusionX} ${topBranchY + 50} C ${fusionX - 10} ${botBranchY - 70}, ${tileFiLMX} ${topBranchY + 120}, ${tileFiLMX} ${botBranchY - 42}`}
+            fill="none"
+            stroke="#facc15"
+            strokeWidth={1.6}
+            strokeDasharray="4 3"
+          />
+          {drawFilterCone(
+            up1X,
+            botBranchY,
             tileFiLMX,
             botBranchY,
-            tileMidX,
-            botBranchY,
-            'Conv 3×3',
+            'FiLM + 3×3',
             'rgba(250, 204, 21, 0.22)',
             '#facc15'
           )}
           {drawCuboid({
             key: 'head_tile_conv',
-            cx: tileMidX,
+            cx: tileFiLMX,
             cy: botBranchY,
             c: 32,
             h: 50,
             w: 50,
             color: '#d97706',
             borderColor: '#facc15',
-            topLabel: 'tile_conv_head',
+            topLabel: 'FiLM + tile_conv',
             shapeLabel: '32×50×50',
-            subLabel: '35.4K params',
+            subLabel: '249.7K U-Net Head',
             isSelected: selectedBlockId === 'head_tile_conv',
             isHovered: hoveredBlockId === 'head_tile_conv',
             onClick: () => {
@@ -1011,13 +1060,13 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
           })}
 
           {drawFilterCone(
-            tileMidX,
+            tileFiLMX,
             botBranchY,
             tileOutX,
             botBranchY,
-            '1×1 + Prior',
-            'rgba(249, 115, 22, 0.25)',
-            '#f97316'
+            '1×1 + Softmax',
+            'rgba(34, 197, 94, 0.28)',
+            '#4ade80'
           )}
           {drawCuboid({
             key: 'out_tile_map',
@@ -1026,7 +1075,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
             c: 1,
             h: 50,
             w: 50,
-            color: '#ea580c',
+            color: '#16a34a',
             borderColor: '#fde047',
             topLabel: 'H4: Tile Logits',
             shapeLabel: '1×50×50',

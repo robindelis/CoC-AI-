@@ -1,104 +1,134 @@
 {
   "model_class": "CoCActorCritic",
-  "architecture_hash": "5205f4ae7e61bdade667808dbdf90d600e8f0ef8b212165dd11b272bca44de47",
+  "architecture_hash": "ebed85373fd8bcccd75b774ef36186813047f97ce04b9a70e8d919696b79056d",
   "input_shape": [
     1,
     59,
     50,
     50
   ],
-  "total_params": 1481080,
-  "trainable_params": 1481080,
+  "total_params": 2480440,
+  "trainable_params": 2480440,
   "submodules": [
     {
-      "name": "encoder.spatial_stem",
+      "name": "encoder.enc1",
+      "type": "UNetConvBlock",
+      "params": 26336
+    },
+    {
+      "name": "encoder.enc1.block",
       "type": "Sequential",
-      "params": 145088
+      "params": 26336
     },
     {
-      "name": "encoder.context_res",
+      "name": "encoder.pool1",
+      "type": "MaxPool2d",
+      "params": 0
+    },
+    {
+      "name": "encoder.enc2",
+      "type": "UNetConvBlock",
+      "params": 55552
+    },
+    {
+      "name": "encoder.enc2.block",
       "type": "Sequential",
-      "params": 886272
+      "params": 55552
     },
     {
-      "name": "encoder.context_res.0.conv1",
-      "type": "Conv2d",
-      "params": 147456
-    },
-    {
-      "name": "encoder.context_res.0.norm1",
-      "type": "GroupNorm",
-      "params": 256
-    },
-    {
-      "name": "encoder.context_res.0.conv2",
-      "type": "Conv2d",
-      "params": 147456
-    },
-    {
-      "name": "encoder.context_res.0.norm2",
-      "type": "GroupNorm",
-      "params": 256
-    },
-    {
-      "name": "encoder.context_res.0.act",
-      "type": "SiLU",
+      "name": "encoder.pool2",
+      "type": "MaxPool2d",
       "params": 0
     },
     {
-      "name": "encoder.context_res.1.conv1",
-      "type": "Conv2d",
-      "params": 147456
+      "name": "encoder.enc3",
+      "type": "UNetConvBlock",
+      "params": 221696
     },
     {
-      "name": "encoder.context_res.1.norm1",
-      "type": "GroupNorm",
-      "params": 256
+      "name": "encoder.enc3.block",
+      "type": "Sequential",
+      "params": 221696
     },
     {
-      "name": "encoder.context_res.1.conv2",
-      "type": "Conv2d",
-      "params": 147456
-    },
-    {
-      "name": "encoder.context_res.1.norm2",
-      "type": "GroupNorm",
-      "params": 256
-    },
-    {
-      "name": "encoder.context_res.1.act",
-      "type": "SiLU",
+      "name": "encoder.pool3",
+      "type": "MaxPool2d",
       "params": 0
     },
     {
-      "name": "encoder.context_res.2.conv1",
-      "type": "Conv2d",
-      "params": 147456
+      "name": "encoder.bottleneck",
+      "type": "UNetConvBlock",
+      "params": 885760
     },
     {
-      "name": "encoder.context_res.2.norm1",
-      "type": "GroupNorm",
-      "params": 256
+      "name": "encoder.bottleneck.block",
+      "type": "Sequential",
+      "params": 885760
     },
     {
-      "name": "encoder.context_res.2.conv2",
-      "type": "Conv2d",
-      "params": 147456
+      "name": "encoder.up3",
+      "type": "UNetUpBlock",
+      "params": 738048
     },
     {
-      "name": "encoder.context_res.2.norm2",
-      "type": "GroupNorm",
-      "params": 256
+      "name": "encoder.up3.up",
+      "type": "Sequential",
+      "params": 295168
     },
     {
-      "name": "encoder.context_res.2.act",
-      "type": "SiLU",
-      "params": 0
+      "name": "encoder.up3.conv",
+      "type": "UNetConvBlock",
+      "params": 442880
+    },
+    {
+      "name": "encoder.up3.conv.block",
+      "type": "Sequential",
+      "params": 442880
     },
     {
       "name": "encoder.global_tower",
       "type": "Sequential",
-      "params": 254944
+      "params": 181248
+    },
+    {
+      "name": "encoder.up2",
+      "type": "UNetUpBlock",
+      "params": 184704
+    },
+    {
+      "name": "encoder.up2.up",
+      "type": "Sequential",
+      "params": 73856
+    },
+    {
+      "name": "encoder.up2.conv",
+      "type": "UNetConvBlock",
+      "params": 110848
+    },
+    {
+      "name": "encoder.up2.conv.block",
+      "type": "Sequential",
+      "params": 110848
+    },
+    {
+      "name": "encoder.up1",
+      "type": "UNetUpBlock",
+      "params": 46272
+    },
+    {
+      "name": "encoder.up1.up",
+      "type": "Sequential",
+      "params": 18496
+    },
+    {
+      "name": "encoder.up1.conv",
+      "type": "UNetConvBlock",
+      "params": 27776
+    },
+    {
+      "name": "encoder.up1.conv.block",
+      "type": "Sequential",
+      "params": 27776
     },
     {
       "name": "army_context_proj",
@@ -123,12 +153,12 @@
     {
       "name": "tile_cond_proj",
       "type": "Linear",
-      "params": 35072
+      "params": 8768
     },
     {
       "name": "tile_conv_head",
       "type": "Sequential",
-      "params": 36929
+      "params": 9281
     },
     {
       "name": "critic_head",
@@ -152,148 +182,148 @@
   },
   "live_spec": {
     "in_channels": 59,
-    "spatial_dim": 128,
+    "spatial_dim": 32,
     "embed_dim": 256,
     "army_context_dim": 64,
     "num_fraction_bins": 5,
-    "total_params": 1481080,
-    "total_macs": 1279415936,
+    "total_params": 2480440,
+    "total_macs": 528932096,
     "layers": [
       {
         "id": "s1",
         "stage": "spatial",
-        "type": "Dilated Conv2d + GroupNorm + SiLU",
-        "short": "Conv d=2",
-        "desc": "64 filters, 3\u00d73, d=2, p=2, GroupNorm(4), SiLU (59-ch Village Grid)",
+        "type": "U-Net Down 1: enc1 (2\u00d7 Conv3\u00d73-GN8-SiLU)",
+        "short": "Enc1 50\u00d750",
+        "desc": "2\u00d7(Conv 3\u00d73 \u2192 GroupNorm(8) \u2192 SiLU), 59\u219232 ch at 50\u00d750 + Skip 1",
         "inputShape": [
           59,
           50,
           50
         ],
         "outputShape": [
-          64,
+          32,
           50,
           50
         ],
         "receptiveField": 5,
-        "params": 34112,
-        "macs": 84960000,
+        "params": 26336,
+        "macs": 65520000,
         "color": "#2563eb",
         "border": "#60a5fa",
-        "coneLabel": "3\u00d73 d=2"
+        "coneLabel": "2\u00d73\u00d73 GN8"
       },
       {
         "id": "s2",
         "stage": "spatial",
-        "type": "Dilated Conv2d + GroupNorm + SiLU",
-        "short": "Conv d=2",
-        "desc": "64 filters, 3\u00d73, d=2, p=2, GroupNorm(4), SiLU",
+        "type": "U-Net Down 2: MaxPool 2\u00d72 + enc2",
+        "short": "Enc2 25\u00d725",
+        "desc": "MaxPool2d(2\u00d72) + 2\u00d7(Conv 3\u00d73 \u2192 GroupNorm(8) \u2192 SiLU), 32\u219264 ch at 25\u00d725 + Skip 2",
         "inputShape": [
-          64,
+          32,
           50,
           50
         ],
         "outputShape": [
           64,
-          50,
-          50
+          25,
+          25
         ],
-        "receptiveField": 9,
-        "params": 36992,
-        "macs": 92160000,
+        "receptiveField": 14,
+        "params": 55552,
+        "macs": 34560000,
         "color": "#2563eb",
         "border": "#60a5fa",
-        "coneLabel": "3\u00d73 d=2"
+        "coneLabel": "Pool2 + 2\u00d73\u00d73"
       },
       {
         "id": "s3",
         "stage": "spatial",
-        "type": "Conv2d + GroupNorm + SiLU",
-        "short": "Conv 3\u00d73",
-        "desc": "128 filters, 3\u00d73, d=1, p=1, GroupNorm(8), SiLU",
+        "type": "U-Net Down 3: MaxPool 2\u00d72 + enc3",
+        "short": "Enc3 12\u00d712",
+        "desc": "MaxPool2d(2\u00d72) + 2\u00d7(Conv 3\u00d73 \u2192 GroupNorm(8) \u2192 SiLU), 64\u2192128 ch at 12\u00d712 + Skip 3",
         "inputShape": [
           64,
-          50,
-          50
+          25,
+          25
         ],
         "outputShape": [
           128,
-          50,
-          50
+          12,
+          12
         ],
-        "receptiveField": 11,
-        "params": 73984,
-        "macs": 184320000,
+        "receptiveField": 32,
+        "params": 221696,
+        "macs": 31850496,
         "color": "#1d4ed8",
         "border": "#60a5fa",
-        "coneLabel": "3\u00d73 d=1"
+        "coneLabel": "Pool2 + 2\u00d73\u00d73"
       },
       {
         "id": "s4",
         "stage": "spatial",
-        "type": "Residual Context Block",
-        "short": "ResBlock",
-        "desc": "2\u00d7Conv 128 ch, 3\u00d73, p=1, GroupNorm(8), Residual Skip (+), SiLU",
+        "type": "U-Net Bottleneck: MaxPool 2\u00d72 + bottleneck",
+        "short": "Bot 6\u00d76",
+        "desc": "MaxPool2d(2\u00d72) + 2\u00d7(Conv 3\u00d73 \u2192 GroupNorm(8) \u2192 SiLU), 128\u2192256 ch at 6\u00d76",
         "inputShape": [
           128,
-          50,
-          50
+          12,
+          12
         ],
         "outputShape": [
-          128,
-          50,
-          50
+          256,
+          6,
+          6
         ],
-        "receptiveField": 15,
-        "params": 886272,
-        "macs": 737280000,
+        "receptiveField": 50,
+        "params": 885760,
+        "macs": 31850496,
         "color": "#7c3aed",
         "border": "#a78bfa",
-        "coneLabel": "2\u00d73\u00d73 + Skip",
-        "hasSkipArc": true
+        "coneLabel": "Pool2 + 2\u00d73\u00d73"
       },
       {
         "id": "g1",
         "stage": "global",
-        "type": "Strided Conv2d + SiLU",
-        "short": "Conv s=2",
-        "desc": "96 filters, 3\u00d73, stride=2, pad=1, SiLU",
+        "type": "Stage 2 Partial Upscale: up3 (6\u00d76 \u2192 12\u00d712 + Skip 3)",
+        "short": "Up3 12\u00d712",
+        "desc": "ConvTranspose 3\u00d73 (256\u2192128, s=2) + Skip 3 (128\u00d712\u00d712) \u2192 2\u00d7Conv 3\u00d73 (128\u00d712\u00d712)",
         "inputShape": [
-          128,
-          50,
-          50
+          256,
+          6,
+          6
         ],
         "outputShape": [
-          96,
-          25,
-          25
+          128,
+          12,
+          12
         ],
-        "receptiveField": 19,
-        "params": 110688,
-        "macs": 69120000,
-        "color": "#2563eb",
-        "border": "#60a5fa",
-        "coneLabel": "3\u00d73 s=2"
+        "receptiveField": 50,
+        "params": 738048,
+        "macs": 106168320,
+        "color": "#ea580c",
+        "border": "#fb923c",
+        "coneLabel": "UpConv 3\u00d73 + Skip3",
+        "hasSkipArc": true
       },
       {
         "id": "g2",
         "stage": "global",
-        "type": "Strided Conv2d + SiLU",
-        "short": "Conv s=2",
-        "desc": "128 filters, 3\u00d73, stride=2, pad=1, SiLU",
+        "type": "Global Tower Strided Conv2d + GN8 + SiLU",
+        "short": "GT Conv 6\u00d76",
+        "desc": "128 filters, 3\u00d73, stride=2, pad=1, GroupNorm(8), SiLU (from Stage 2 Up3 12\u00d712)",
         "inputShape": [
-          96,
-          25,
-          25
+          128,
+          12,
+          12
         ],
         "outputShape": [
           128,
-          13,
-          13
+          6,
+          6
         ],
-        "receptiveField": 27,
-        "params": 110720,
-        "macs": 18690048,
+        "receptiveField": 50,
+        "params": 147712,
+        "macs": 5308416,
         "color": "#2563eb",
         "border": "#60a5fa",
         "coneLabel": "3\u00d73 s=2"
@@ -303,37 +333,37 @@
         "stage": "global",
         "type": "AdaptiveAvgPool2d",
         "short": "AdapPool",
-        "desc": "Adaptive Grid 4\u00d74",
+        "desc": "Global Average Pool 1\u00d71",
         "inputShape": [
           128,
-          13,
-          13
+          6,
+          6
         ],
         "outputShape": [
           128,
-          4,
-          4
+          1,
+          1
         ],
         "receptiveField": 50,
         "params": 0,
         "macs": 0,
         "color": "#d97706",
         "border": "#fbbf24",
-        "coneLabel": "Pool 4\u00d74"
+        "coneLabel": "Pool 1\u00d71"
       },
       {
         "id": "g4",
         "stage": "global",
         "type": "Flatten",
         "short": "Flatten",
-        "desc": "Flatten 128\u00d74\u00d74 \u2192 2048",
+        "desc": "Flatten 128\u00d71\u00d71 \u2192 128",
         "inputShape": [
           128,
-          4,
-          4
+          1,
+          1
         ],
         "outputShape": [
-          2048
+          128
         ],
         "receptiveField": 50,
         "params": 0,
@@ -347,16 +377,16 @@
         "stage": "global",
         "type": "Linear + LayerNorm + SiLU",
         "short": "GlobalTower",
-        "desc": "Linear(2048 \u2192 256) + LayerNorm(256) + SiLU",
+        "desc": "Linear(128 \u2192 256) + LayerNorm(256) + SiLU",
         "inputShape": [
-          2048
+          128
         ],
         "outputShape": [
           256
         ],
         "receptiveField": 50,
         "params": 33536,
-        "macs": 524288,
+        "macs": 32768,
         "color": "#059669",
         "border": "#34d399",
         "coneLabel": "Dense"
@@ -437,13 +467,13 @@
       {
         "id": "head_tile_conv",
         "stage": "heads",
-        "type": "tile_cond_proj + tile_conv_head (Head 4)",
-        "short": "TileHead",
-        "desc": "FiLM(spatial_feat 128\u00d750\u00d750, Linear(263\u2192128)) + Conv 3\u00d73(128\u219232) + Conv 1\u00d71(32\u21921) + spatial_prior",
+        "type": "U-Net Full 50\u00d750 Upscale (up2 + up1) + Tile Head (Head 4)",
+        "short": "UNet50\u00d750",
+        "desc": "up2(12\u00d712\u219225\u00d725 + Skip2) \u2192 up1(25\u00d725\u219250\u00d750 + Skip1) \u2192 FiLM(273\u219232) \u2192 Conv 3\u00d73 + 1\u00d71 (1\u00d750\u00d750)",
         "inputShape": [
           128,
-          50,
-          50
+          12,
+          12
         ],
         "outputShape": [
           1,
@@ -451,8 +481,8 @@
           50
         ],
         "receptiveField": 50,
-        "params": 72001,
-        "macs": 92240000,
+        "params": 249025,
+        "macs": 253520000,
         "color": "#d97706",
         "border": "#facc15"
       },
@@ -475,6 +505,6 @@
         "border": "#4ade80"
       }
     ],
-    "source_code": "\"\"\"\nPyTorch Neural Network Architectures for Clash of Clans TH18 Deep RL:\n  1. CoCSpatialEncoder: Dual-pathway Spatial CNN Backbone for the (10, 50, 50) Village Grid\n  2. CoCActorCritic: Factorized Multi-Discrete Actor-Critic ([7, 10, 50, 50, 5]) with\n     Autoregressive Conditioning, Spatial Tile Pointer, and Invalid-Action Logit Masking\n\"\"\"\n\nfrom typing import Dict, Optional, Tuple\n\nimport torch\nimport torch.nn as nn\nimport torch.nn.functional as F\nfrom torch.distributions import Categorical\n\nNEG_INF = -1e8\n\n\nclass DilatedResBlock(nn.Module):\n    \"\"\"\n    Dilated Residual Context Block preserving exact 50x50 spatial grid resolution.\n    Dilation expands the receptive field across wall compartments without downsampling.\n    \"\"\"\n\n    def __init__(self, dim: int, dilation: int = 1):\n        super().__init__()\n        self.conv1 = nn.Conv2d(\n            dim, dim, kernel_size=3, padding=dilation, dilation=dilation, bias=False\n        )\n        self.norm1 = nn.GroupNorm(8, dim)\n        self.conv2 = nn.Conv2d(\n            dim, dim, kernel_size=3, padding=dilation, dilation=dilation, bias=False\n        )\n        self.norm2 = nn.GroupNorm(8, dim)\n        self.act = nn.SiLU(inplace=True)\n\n    def forward(self, x: torch.Tensor) -> torch.Tensor:\n        c1 = self.conv1(x)\n        h = self.act(self.norm1(c1).to(c1.dtype))\n        c2 = self.conv2(h)\n        return self.act(self.norm2(c2).to(c2.dtype) + x.to(c2.dtype))\n\n\nclass CoCSpatialEncoder(nn.Module):\n    \"\"\"\n    Dual-pathway Spatial CNN Backbone for the 59x50x50 Village Observation Grid.\n\n    Input tensor `obs` has shape (B, 59, 50, 50):\n      - Ch 0..4:   Base & Environment (Building HP, Defense DPS, TH18 Mask, Wall Integrity, Red Zone)\n      - Ch 5..16:  Friendly Army Troops, Siege & CC (Thrower, Healer, Furnace, Druid, Ice Golem, SWB, HH, Loon, Archer, Log Launcher, Super Yeti, Super Valkyrie)\n      - Ch 17..20: Friendly Heroes (Barbarian King, Archer Queen, Grand Warden, Royal Champion)\n      - Ch 21..24: Friendly Spells (Totem HP, Rage Fade, Poison Fade, Skeleton Fade)\n      - Ch 25..33: Enemy Defending Units (Enemy CC & Guardian, Defending BK, AQ, GW, RC, MP, DD, Ground & Air Skeletons)\n      - Ch 34..55: Dedicated Defense Types & Clan Castle (21 defense types + Clan Castle)\n      - Ch 56..58: Non-Offensive Structures (Storages/HeroHall, Collectors, Utility/Other Buildings)\n\n    Outputs two complementary representations:\n      1. `spatial_features`: (B, 128, 50, 50) full-resolution feature map preserving exact\n         1-to-1 tile alignment with 39x39 receptive field for the spatial deployment pointer head.\n      2. `global_embedding`: (B, 256) compact tactical state vector summarizing the entire\n         battlefield for the action-type, slot-index, and value-critic heads.\n    \"\"\"\n\n    def __init__(\n        self,\n        in_channels: int = 59,\n        subspatial_dim: int = 64,\n        spatial_dim: int = 128,\n        embed_dim: int = 256,\n    ):\n        super().__init__()\n        self.in_channels = in_channels\n        self.spatial_dim = spatial_dim\n        self.embed_dim = embed_dim\n\n        # Stage 1: Full-resolution convolutional stem (50x50 -> 50x50)\n        # Uses padding=1 to preserve exact tile coordinates and GroupNorm for stable RL updates.\n        self.spatial_stem = nn.Sequential(\n            nn.Conv2d(\n                in_channels,\n                subspatial_dim,\n                kernel_size=3,\n                padding=2,\n                dilation=2,\n                bias=False,\n            ),\n            nn.GroupNorm(\n                4,\n                subspatial_dim,\n            ),\n            nn.SiLU(),\n            nn.Conv2d(\n                subspatial_dim,\n                subspatial_dim,\n                kernel_size=3,\n                padding=2,\n                dilation=2,\n                bias=False,\n            ),\n            nn.GroupNorm(4, subspatial_dim),\n            nn.SiLU(),\n            nn.Conv2d(\n                subspatial_dim, spatial_dim, kernel_size=3, padding=1, bias=False\n            ),\n            nn.GroupNorm(8, spatial_dim),\n            nn.SiLU(),\n        )\n\n        # Stage 2: Multi-scale dilated residual backbone (50x50 -> 50x50, receptive field 39x39)\n        # Cascaded dilations (d=1, 2, 4) let features see across multiple wall compartments,\n        # town hall cores, and opposite-flank defenses without downsampling the 50x50 grid.\n        self.context_res = nn.Sequential(\n            DilatedResBlock(spatial_dim, dilation=1),\n            DilatedResBlock(spatial_dim, dilation=2),\n            DilatedResBlock(spatial_dim, dilation=4),\n        )\n\n        # Stage 3: Strided downsampling pyramid (50x50 -> 25x25 -> 13x13 -> 1x1 -> 256-D)\n        # Global average pooling provides coordinate-invariant tactical aggregation\n        # while saving ~500k dense parameters for the spatial convolutional backbone.\n        self.global_tower = nn.Sequential(\n            nn.Conv2d(spatial_dim, 96, kernel_size=3, stride=2, padding=1),\n            nn.SiLU(),\n            nn.Conv2d(96, 128, kernel_size=3, stride=2, padding=1),\n            nn.SiLU(),\n            nn.AdaptiveAvgPool2d((1, 1)),\n            nn.Flatten(),\n            nn.Linear(128, embed_dim),\n            nn.LayerNorm(embed_dim),\n            nn.SiLU(),\n        )\n\n    def forward(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:\n        if obs.shape[1] != self.in_channels:\n            if obs.shape[1] == 50 and self.in_channels == 59:\n                adapted = torch.zeros(\n                    (obs.shape[0], 59, obs.shape[2], obs.shape[3]),\n                    dtype=obs.dtype,\n                    device=obs.device,\n                )\n                adapted[:, 0:26] = obs[:, 0:26]\n                adapted[:, 26] = obs[:, 26]\n                adapted[:, 32:34] = obs[:, 27:29]\n                adapted[:, 34:55] = obs[:, 29:50]\n                obs = adapted\n            elif obs.shape[1] == 59 and self.in_channels == 50:\n                adapted = torch.zeros(\n                    (obs.shape[0], 50, obs.shape[2], obs.shape[3]),\n                    dtype=obs.dtype,\n                    device=obs.device,\n                )\n                adapted[:, 0:26] = obs[:, 0:26]\n                adapted[:, 26] = obs[:, 26:32].max(dim=1).values\n                adapted[:, 27:29] = obs[:, 32:34]\n                adapted[:, 29:50] = obs[:, 34:55]\n                obs = adapted\n            elif obs.shape[1] == 50 and self.in_channels == 31:\n                adapted = torch.zeros(\n                    (obs.shape[0], 31, obs.shape[2], obs.shape[3]),\n                    dtype=obs.dtype,\n                    device=obs.device,\n                )\n                adapted[:, 0:5] = obs[:, 0:5]\n                ground_idx = [5, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 20]\n                adapted[:, 5] = torch.clamp(obs[:, ground_idx].sum(dim=1), max=1.0)\n                air_idx = [6, 12, 19]\n                adapted[:, 6] = torch.clamp(obs[:, air_idx].sum(dim=1), max=1.0)\n                adapted[:, 7] = torch.clamp(obs[:, 21:25].max(dim=1).values, max=1.0)\n                adapted[:, 8] = torch.clamp(obs[:, 5:21].max(dim=1).values, max=1.0)\n                adapted[:, 9] = torch.clamp(obs[:, 25:29].max(dim=1).values, max=1.0)\n                adapted[:, 10:31] = obs[:, 29:50]\n                obs = adapted\n        h = self.spatial_stem(obs)\n        spatial_features = self.context_res(h)\n        global_embedding = self.global_tower(spatial_features)\n        return spatial_features.float(), global_embedding.float()\n\n\nDEPLOY_FRACTION_BINS: Tuple[float, ...] = (0.0, 0.25, 0.50, 0.75, 1.00)\n\n\ndef fraction_bin_to_value(bin_idx: int) -> float:\n    idx = max(0, min(len(DEPLOY_FRACTION_BINS) - 1, int(bin_idx)))\n    return float(DEPLOY_FRACTION_BINS[idx])\n\n\ndef compute_deploy_count(avail_count: int, deploy_fraction: float) -> int:\n    if avail_count <= 0:\n        return 0\n    frac = max(0.0, min(1.0, float(deploy_fraction)))\n    return max(1, min(int(avail_count), int(round(avail_count * frac))))\n\n\nclass CoCActorCritic(nn.Module):\n    \"\"\"\n    Live Tactical Attacker Network: Factorized Multi-Discrete Actor-Critic.\n\n    Fuses the (B, 10, 50, 50) spatial battlefield tensor with the (B, 64) live available\n    army inventory vector (encoding what troops, spells, heroes, equipment, pets, and siege\n    machine are available and in what remaining quantity) to parameterize a factorized policy\n    over MultiDiscrete([7, 10, 50, 50, 5]):\n\n      1. `slot_type`       (7 choices):  0=NoOp, 1=Troop, 2=Hero, 3=HeroAbility, 4=Siege, 5=PopSiege, 6=Spell\n      2. `slot_idx`        (10 choices): Loadout slot index, conditioned on the chosen `slot_type`\n      3. `deploy_fraction` (5 bins in [0, 1]): Fraction of remaining available troops of `slot_idx` to deploy\n                                         at once (0.0 -> min 1 troop, 0.25 -> 25%, 0.50 -> 50%, 0.75 -> 75%, 1.00 -> all)\n      4. `tile_xy`         (2500 tiles): Flattened (tile_y * 50 + tile_x) deployment coordinate,\n                                         conditioned on both the 50x50 spatial map and chosen `slot_type`\n      5. `value`           (scalar):     Critic state-value estimate V(s)\n    \"\"\"\n\n    def __init__(\n        self,\n        in_channels: int = 59,\n        army_context_dim: int = 64,\n        num_fraction_bins: int = 5,\n    ):\n        super().__init__()\n        self.in_channels = in_channels\n        self.army_context_dim = army_context_dim\n        self.num_fraction_bins = num_fraction_bins\n\n        # Dual-pathway CNN backbone\n        self.encoder = CoCSpatialEncoder(\n            in_channels=in_channels,\n            subspatial_dim=64,\n            spatial_dim=128,\n            embed_dim=256,\n        )\n        spatial_dim = self.encoder.spatial_dim  # 128\n        embed_dim = self.encoder.embed_dim  # 256\n\n        # Live available army inventory & remaining quantities projection (64-D -> 256-D)\n        self.army_context_proj = nn.Sequential(\n            nn.Linear(army_context_dim, embed_dim),\n            nn.LayerNorm(embed_dim),\n            nn.SiLU(),\n        )\n\n        # Head 1: Action Type logits (256-D -> 7 action types)\n        self.slot_type_head = nn.Linear(embed_dim, 7)\n\n        # Head 2: Army Slot Index logits, conditioned on global_emb + one_hot(slot_type)\n        self.slot_idx_head = nn.Sequential(\n            nn.Linear(embed_dim + 7, 128),\n            nn.SiLU(),\n            nn.Linear(128, 10),\n        )\n\n        # Head 3: Troop Deployment Fraction logits (bins in [0.0, 0.25, 0.50, 0.75, 1.00]),\n        # conditioned on global_emb + one_hot(slot_type) + one_hot(slot_idx)\n        self.deploy_fraction_head = nn.Sequential(\n            nn.Linear(embed_dim + 7 + 10, 128),\n            nn.SiLU(),\n            nn.Linear(128, num_fraction_bins),\n        )\n\n        # Head 4: Spatial Tile Pointer (projects conditioned embedding onto the spatial map)\n        self.tile_cond_proj = nn.Linear(embed_dim + 7 + 10, spatial_dim)\n        self.tile_conv_head = nn.Sequential(\n            nn.Conv2d(spatial_dim, 32, kernel_size=3, padding=1),\n            nn.SiLU(),\n            nn.Conv2d(32, 1, kernel_size=1),\n        )\n\n        # Head 5: State-Value Critic V(s)\n        self.critic_head = nn.Sequential(\n            nn.Linear(embed_dim, 128),\n            nn.SiLU(),\n            nn.Linear(128, 1),\n        )\n        self.register_buffer(\n            \"_frac_bins_tensor\",\n            torch.tensor(DEPLOY_FRACTION_BINS, dtype=torch.float32),\n            persistent=False,\n        )\n\n    def forward(\n        self, obs: torch.Tensor, army_context: Optional[torch.Tensor] = None\n    ) -> Dict[str, torch.Tensor]:\n        \"\"\"\n        Deterministic forward pass returning raw head outputs for graph tracing (`torchview`).\n        \"\"\"\n        B = obs.shape[0]\n        spatial_feat, global_emb = self.encoder(obs)\n\n        if army_context is None:\n            army_context = obs.reshape(B, -1)[:, : self.army_context_dim] * 0.0\n        global_emb = global_emb + self.army_context_proj(army_context)\n\n        # 1. Action Type\n        type_logits = self.slot_type_head(global_emb)\n        chosen_type = type_logits.argmax(dim=-1)\n        type_onehot = F.one_hot(chosen_type.clamp(0, 6), num_classes=7).float()\n        cond_emb = torch.cat([global_emb, type_onehot], dim=-1)\n\n        # 2. Conditioned Slot Index\n        idx_logits = self.slot_idx_head(cond_emb)\n        chosen_idx = idx_logits.argmax(dim=-1)\n        idx_onehot = F.one_hot(chosen_idx.clamp(0, 9), num_classes=10).float()\n\n        # 3. Conditioned Troop Deployment Fraction (in [0, 1])\n        frac_cond_emb = torch.cat([cond_emb, idx_onehot], dim=-1)\n        fraction_logits = self.deploy_fraction_head(frac_cond_emb)\n\n        # 4. Conditioned 50x50 Spatial Tile Pointer\n        cond_spatial = self.tile_cond_proj(frac_cond_emb).unsqueeze(-1).unsqueeze(-1)\n        fused_spatial = F.silu(spatial_feat + cond_spatial)\n        tile_logits = self.tile_conv_head(fused_spatial).reshape(B, 2500)\n\n        # 5. Critic Value V(s)\n        value = self.critic_head(global_emb).squeeze(-1)\n\n        return {\n            \"type_logits\": type_logits,\n            \"idx_logits\": idx_logits,\n            \"fraction_logits\": fraction_logits,\n            \"tile_logits\": tile_logits,\n            \"value\": value,\n        }\n\n    def get_action_and_value(\n        self,\n        obs: torch.Tensor,\n        masks: Optional[Dict[str, torch.Tensor]] = None,\n        action: Optional[torch.Tensor] = None,\n        deterministic: bool = False,\n        army_context: Optional[torch.Tensor] = None,\n    ) -> Tuple[\n        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]\n    ]:\n        \"\"\"\n        Samples or evaluates a factorized action `[slot_type, slot_idx, tile_x, tile_y, frac_bin]`\n        with invalid-action logit masking, returning `(action, log_prob, entropy, value, diagnostics)`.\n        \"\"\"\n        B = obs.shape[0]\n        device = obs.device\n\n        # Encode spatial grid (using BF16 Tensor Cores on CUDA) and fuse with live available army inventory context\n        if obs.is_cuda:\n            with torch.amp.autocast(\"cuda\", dtype=torch.bfloat16):\n                spatial_feat, global_emb = self.encoder(obs)\n        else:\n            spatial_feat, global_emb = self.encoder(obs)\n        if army_context is not None:\n            global_emb = global_emb + self.army_context_proj(\n                army_context.to(device=device, dtype=global_emb.dtype)\n            )\n\n        # 1. Action Type Distribution (0=NoOp is always valid as a fallback)\n        # Smooth logit bounding prevents premature discrete-head entropy collapse\n        type_logits = 1.4 * torch.tanh(self.slot_type_head(global_emb) / 3.0)\n        if masks is not None and \"slot_type\" in masks:\n            type_mask = masks[\"slot_type\"].to(device=device, dtype=torch.bool).clone()\n            has_undeployed_units = type_mask[:, 1] | type_mask[:, 2] | type_mask[:, 4]\n            has_any_active = type_mask[:, 1:].any(dim=-1)\n            if action is None:\n                type_mask[:, 0] = (~has_undeployed_units) | (~has_any_active)\n            else:\n                type_mask[:, 0] = True\n            type_logits = type_logits.clone()\n            type_logits[:, 0] = torch.where(\n                ~has_undeployed_units,\n                type_logits[:, 0] + 0.55,\n                type_logits[:, 0],\n            )\n            type_logits = type_logits.masked_fill(~type_mask, NEG_INF)\n\n        type_dist = Categorical(logits=type_logits)\n        if action is None:\n            chosen_type = (\n                type_logits.argmax(dim=-1) if deterministic else type_dist.sample()\n            )\n        else:\n            chosen_type = action[:, 0].long()\n\n        # Condition downstream heads on the chosen action type\n        type_onehot = F.one_hot(chosen_type.clamp(0, 6), num_classes=7).float()\n        cond_emb = torch.cat([global_emb, type_onehot], dim=-1)\n\n        # 2. Army Slot Index Distribution (masked per chosen_type)\n        idx_logits = 1.6 * torch.tanh(self.slot_idx_head(cond_emb) / 3.0)\n        if masks is not None and \"slot_idx\" in masks:\n            batch_indices = torch.arange(B, device=device)\n            idx_mask = masks[\"slot_idx\"].to(device=device, dtype=torch.bool)[\n                batch_indices, chosen_type.clamp(0, 6)\n            ]\n            all_false = ~idx_mask.any(dim=-1, keepdim=True)\n            idx_mask = idx_mask | (\n                all_false\n                & F.one_hot(torch.zeros(B, dtype=torch.long, device=device), 10).bool()\n            )\n            idx_logits = idx_logits.masked_fill(~idx_mask, NEG_INF)\n\n        idx_dist = Categorical(logits=idx_logits)\n        if action is None:\n            chosen_idx = (\n                idx_logits.argmax(dim=-1) if deterministic else idx_dist.sample()\n            )\n        else:\n            chosen_idx = action[:, 1].long()\n\n        # 3. Troop Deployment Fraction Distribution (bins in [0.0, 0.25, 0.50, 0.75, 1.00])\n        idx_onehot = F.one_hot(chosen_idx.clamp(0, 9), num_classes=10).float()\n        frac_cond_emb = torch.cat([cond_emb, idx_onehot], dim=-1)\n        frac_logits = 1.4 * torch.tanh(self.deploy_fraction_head(frac_cond_emb) / 3.0)\n        frac_dist = Categorical(logits=frac_logits)\n        if action is None:\n            chosen_frac_bin = (\n                frac_logits.argmax(dim=-1) if deterministic else frac_dist.sample()\n            )\n        else:\n            chosen_frac_bin = action[:, 4].long().clamp(0, self.num_fraction_bins - 1)\n\n        # 4. Spatial Tile Distribution (50x50 = 2500 tiles)\n        # FiLM-style multiplicative + additive spatial conditioning & multi-scale core/defense proximity focus\n        cond_spatial = self.tile_cond_proj(frac_cond_emb).unsqueeze(-1).unsqueeze(-1)\n        fused_spatial = F.silu(\n            spatial_feat * (1.0 + 0.5 * torch.tanh(cond_spatial)) + cond_spatial\n        )\n        raw_tile_logits = self.tile_conv_head(fused_spatial).reshape(B, 2500)\n        is_spell = (chosen_type == 6).float().unsqueeze(-1)\n        threat_field = 0.6 * obs[:, 0:1] + 1.8 * obs[:, 1:2] + 6.0 * obs[:, 2:3]\n        breach_stage1 = F.avg_pool2d(threat_field, kernel_size=15, stride=1, padding=7)\n        breach_prox = F.avg_pool2d(\n            breach_stage1, kernel_size=15, stride=1, padding=7\n        ).reshape(B, 2500)\n        non_th_defenses = obs[:, 1:2] * (1.0 - obs[:, 2:3])\n        allied_units = obs[:, 5:21].sum(dim=1, keepdim=True).clamp(max=1.0)\n        combat_focus = F.avg_pool2d(\n            1.2 * non_th_defenses + 3.0 * allied_units,\n            kernel_size=7,\n            stride=1,\n            padding=3,\n        ).reshape(B, 2500)\n        spatial_prior = (1.0 - is_spell) * (8.0 * breach_prox) + is_spell * (\n            7.5 * combat_focus\n        )\n        tile_logits = raw_tile_logits * 2.2 + spatial_prior\n\n        if masks is not None and \"tile\" in masks:\n            valid_green = masks[\"tile\"].to(device=device, dtype=torch.bool)\n            needs_green = (chosen_type == 1) | (chosen_type == 2) | (chosen_type == 4)\n            buildings_alive = obs[:, 0:1] + obs[:, 1:2]\n            not_th_halo = (\n                F.max_pool2d(obs[:, 2:3], kernel_size=7, stride=1, padding=3) < 0.5\n            )\n            near_allies = (\n                F.max_pool2d(allied_units, kernel_size=9, stride=1, padding=4) > 0.01\n            )\n            near_buildings = (\n                F.max_pool2d(buildings_alive, kernel_size=7, stride=1, padding=3) > 0.01\n            )\n            active_combat_zone = (near_allies & near_buildings & not_th_halo).reshape(\n                B, 2500\n            )\n            has_combat_tiles = active_combat_zone.any(dim=-1, keepdim=True)\n            fallback_zone = (near_allies & near_buildings).reshape(B, 2500)\n            has_fallback = fallback_zone.any(dim=-1, keepdim=True)\n            spell_mask = torch.where(\n                has_combat_tiles,\n                active_combat_zone,\n                torch.where(\n                    has_fallback,\n                    fallback_zone,\n                    torch.ones_like(valid_green, dtype=torch.bool),\n                ),\n            )\n\n            effective_tile_mask = torch.where(\n                needs_green.unsqueeze(-1),\n                valid_green,\n                spell_mask,\n            )\n            tile_logits = tile_logits.masked_fill(~effective_tile_mask, NEG_INF)\n\n        tile_dist = Categorical(logits=tile_logits)\n        if action is None:\n            chosen_tile = (\n                tile_logits.argmax(dim=-1) if deterministic else tile_dist.sample()\n            )\n            tile_x = chosen_tile % 50\n            tile_y = torch.div(chosen_tile, 50, rounding_mode=\"floor\")\n            out_action = torch.stack(\n                [chosen_type, chosen_idx, tile_x, tile_y, chosen_frac_bin], dim=-1\n            )\n        else:\n            tile_x = action[:, 2].long().clamp(0, 49)\n            tile_y = action[:, 3].long().clamp(0, 49)\n            chosen_tile = tile_y * 50 + tile_x\n            out_action = action.long()\n\n        # 5. Joint Log-Probability, Entropy, and Critic Value\n        # Sub-actions only contribute to log_prob and entropy when active for `chosen_type`.\n        uses_idx = (\n            (chosen_type == 1)\n            | (chosen_type == 2)\n            | (chosen_type == 3)\n            | (chosen_type == 6)\n        ).float()\n        uses_frac = (chosen_type == 1).float()\n        uses_tile = (\n            (chosen_type == 1)\n            | (chosen_type == 2)\n            | (chosen_type == 4)\n            | (chosen_type == 6)\n        ).float()\n\n        log_prob = (\n            type_dist.log_prob(chosen_type)\n            + uses_idx * idx_dist.log_prob(chosen_idx)\n            + uses_frac * frac_dist.log_prob(chosen_frac_bin)\n            + uses_tile * tile_dist.log_prob(chosen_tile)\n        )\n        e_type = type_dist.entropy()\n        e_idx = uses_idx * idx_dist.entropy()\n        e_frac = uses_frac * frac_dist.entropy()\n        e_tile = uses_tile * tile_dist.entropy()\n\n        entropy = e_type + e_idx + e_frac + e_tile\n        # Normalized per-head entropy with decoupled coefficients so the 2500-tile spatial head\n        # does not drown out discrete head exploration (slot_type, slot_idx, deploy_fraction)\n        h_type_norm = e_type / 1.94591\n        h_idx_norm = e_idx / 2.30259\n        h_frac_norm = e_frac / 1.60944\n        h_tile_norm = e_tile / 6.74288\n        reg_entropy = (\n            2.2 * h_type_norm\n            + 2.2 * h_idx_norm\n            + 2.2 * h_frac_norm\n            + 0.12 * h_tile_norm\n        )\n        value = self.critic_head(global_emb).squeeze(-1)\n\n        if action is not None:\n            diagnostics = {\n                \"reg_entropy\": reg_entropy,\n                \"h_type\": e_type.detach(),\n                \"h_idx\": e_idx.detach(),\n                \"h_frac\": e_frac.detach(),\n                \"h_tile\": e_tile.detach(),\n            }\n        else:\n            diagnostics = {\n                \"slot_type_probs\": type_dist.probs.detach(),\n                \"slot_idx_probs\": idx_dist.probs.detach(),\n                \"tile_heatmap\": tile_dist.probs.detach().reshape(B, 50, 50),\n                \"reg_entropy\": reg_entropy,\n                \"h_type\": e_type.detach(),\n                \"h_idx\": e_idx.detach(),\n                \"h_frac\": e_frac.detach(),\n                \"h_tile\": e_tile.detach(),\n                \"deploy_fraction_probs\": frac_dist.probs.detach(),\n                \"deploy_fraction\": self._frac_bins_tensor[chosen_frac_bin].detach(),\n            }\n        return out_action, log_prob, entropy, value, diagnostics\n"
+    "source_code": "\"\"\"\nPyTorch Neural Network Architectures for Clash of Clans TH18 Deep RL:\n  1. CoCSpatialEncoder: U-Net Contracting-Expansive Spatial Backbone for the (59, 50, 50) Village Grid\n     - Stage 1 (Contracting / Downscaling): 50x50 (32ch) -> 25x25 (64ch) -> 12x12 (128ch) -> 6x6 Bottleneck (256ch)\n     - Stage 2 (Expansive / Upscaling):\n       * Upscales 6x6 -> 12x12 (128ch with skip connection) before feeding into the Global Tower (256-D) for the 5 heads\n       * Continues upscaling 12x12 -> 25x25 (64ch) -> 50x50 (32ch) with skip connections for 50x50 grid position selection\n  2. CoCActorCritic: Factorized Multi-Discrete Actor-Critic ([7, 10, 50, 50, 5]) with\n     Autoregressive Conditioning, U-Net Spatial Tile Segmentation Head, and Invalid-Action Logit Masking\n\"\"\"\n\nfrom typing import Dict, Optional, Tuple\n\nimport torch\nimport torch.nn as nn\nimport torch.nn.functional as F\nfrom torch.distributions import Categorical\n\nNEG_INF = -1e8\n\n\nclass UNetConvBlock(nn.Module):\n    \"\"\"\n    Double 3x3 Convolution Block with GroupNorm(8) and SiLU activation:\n      2 x (3x3 Conv2d -> GroupNorm(8) -> SiLU)\n    Matches the standard U-Net double-conv stage at each spatial resolution scale.\n    \"\"\"\n\n    def __init__(self, in_ch: int, out_ch: int, groups: int = 8):\n        super().__init__()\n        g = min(groups, out_ch)\n        self.block = nn.Sequential(\n            nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1, bias=False),\n            nn.GroupNorm(g, out_ch),\n            nn.SiLU(inplace=True),\n            nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1, bias=False),\n            nn.GroupNorm(g, out_ch),\n            nn.SiLU(inplace=True),\n        )\n\n    def forward(self, x: torch.Tensor) -> torch.Tensor:\n        c1 = self.block[0](x)\n        h1 = self.block[2](self.block[1](c1).to(c1.dtype))\n        c2 = self.block[3](h1)\n        return self.block[5](self.block[4](c2).to(c2.dtype))\n\n\nclass UNetUpBlock(nn.Module):\n    \"\"\"\n    U-Net Expansive Upsampling Stage:\n      1. 3x3 ConvTranspose2d (stride=2) -> GroupNorm(8) -> SiLU (halves channels, doubles resolution)\n      2. Concatenates along channel axis with the corresponding Stage 1 Encoder skip tensor\n      3. UNetConvBlock (2 x [3x3 Conv2d -> GroupNorm(8) -> SiLU]) to fuse multi-scale features\n    \"\"\"\n\n    def __init__(\n        self,\n        in_ch: int,\n        skip_ch: int,\n        out_ch: int,\n        padding: int = 1,\n        output_padding: int = 1,\n        groups: int = 8,\n    ):\n        super().__init__()\n        up_ch = in_ch // 2\n        g_up = min(groups, up_ch)\n        self.up = nn.Sequential(\n            nn.ConvTranspose2d(\n                in_ch,\n                up_ch,\n                kernel_size=3,\n                stride=2,\n                padding=padding,\n                output_padding=output_padding,\n                bias=False,\n            ),\n            nn.GroupNorm(g_up, up_ch),\n            nn.SiLU(inplace=True),\n        )\n        self.conv = UNetConvBlock(up_ch + skip_ch, out_ch, groups=groups)\n\n    def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:\n        t = self.up[0](x)\n        u = self.up[2](self.up[1](t).to(t.dtype))\n        if u.shape[-2:] != skip.shape[-2:]:\n            u = F.interpolate(\n                u, size=skip.shape[-2:], mode=\"bilinear\", align_corners=False\n            )\n        fused = torch.cat([u, skip.to(u.dtype)], dim=1)\n        return self.conv(fused)\n\n\nclass CoCSpatialEncoder(nn.Module):\n    \"\"\"\n    U-Net Contracting-Expansive Spatial Backbone for the 59x50x50 Village Observation Grid.\n\n    Architecture Overview:\n      - Stage 1 (Contracting / Downscaling Encoder):\n        * `enc1`: (59, 50, 50)  -> (32, 50, 50)   [2x Conv3x3-GN8-SiLU, Skip 1]\n        * `pool1` + `enc2`:     -> (64, 25, 25)   [2x2 MaxPool + 2x Conv3x3-GN8-SiLU, Skip 2]\n        * `pool2` + `enc3`:     -> (128, 12, 12)  [2x2 MaxPool + 2x Conv3x3-GN8-SiLU, Skip 3]\n        * `pool3` + `bottleneck`: -> (256, 6, 6)  [2x2 MaxPool + 2x Conv3x3-GN8-SiLU]\n\n      - Stage 2 (Expansive / Upscaling Decoder & Dual-Branch Split):\n        * Partial Upscale (`up3`): (256, 6, 6) + Skip 3 (128, 12, 12) -> `d3` (128, 12, 12)\n        * Branch A \u2014 `global_tower`: Pools partially upscaled `d3` (128, 12, 12) into\n          `global_embedding` (B, 256) to feed the 5 tactical decision heads.\n        * Branch B \u2014 Full U-Net Upscale for Grid Position Selection:\n          - `up2`: `d3` (128, 12, 12) + Skip 2 (64, 25, 25) -> `d2` (64, 25, 25)\n          - `up1`: `d2` (64, 25, 25) + Skip 1 (32, 50, 50)  -> `spatial_features` (32, 50, 50)\n    \"\"\"\n\n    def __init__(\n        self,\n        in_channels: int = 59,\n        base_ch: int = 32,\n        spatial_dim: int = 32,\n        embed_dim: int = 256,\n    ):\n        super().__init__()\n        self.in_channels = in_channels\n        self.base_ch = base_ch\n        self.spatial_dim = spatial_dim\n        self.embed_dim = embed_dim\n\n        c1 = base_ch          # 32\n        c2 = base_ch * 2      # 64\n        c3 = base_ch * 4      # 128\n        c4 = base_ch * 8      # 256\n\n        # Stage 1: U-Net Contracting (Downscaling) Path (50x50 -> 25x25 -> 12x12 -> 6x6)\n        self.enc1 = UNetConvBlock(in_channels, c1)\n        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)\n\n        self.enc2 = UNetConvBlock(c1, c2)\n        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)\n\n        self.enc3 = UNetConvBlock(c2, c3)\n        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)\n\n        self.bottleneck = UNetConvBlock(c3, c4)\n\n        # Stage 2A: Initial U-Net Upscale (6x6 -> 12x12 with Skip 3)\n        # Feeds both the Global Tower (for the 5 heads) and the remaining U-Net decoder path\n        self.up3 = UNetUpBlock(\n            in_ch=c4, skip_ch=c3, out_ch=c3, padding=1, output_padding=1\n        )\n\n        # Global Tower: Branches off from Stage 2's partially upscaled d3 (128x12x12 -> 256-D)\n        self.global_tower = nn.Sequential(\n            nn.Conv2d(c3, c3, kernel_size=3, stride=2, padding=1, bias=False),\n            nn.GroupNorm(8, c3),\n            nn.SiLU(inplace=True),\n            nn.AdaptiveAvgPool2d((1, 1)),\n            nn.Flatten(),\n            nn.Linear(c3, embed_dim),\n            nn.LayerNorm(embed_dim),\n            nn.SiLU(inplace=True),\n        )\n\n        # Stage 2B: Full U-Net Upscaling back to 50x50 for Grid Position Selection (12x12 -> 25x25 -> 50x50)\n        # Note: 12x12 with kernel=3, stride=2, pad=0, out_pad=0 produces (12-1)*2 + 3 = 25x25 exact\n        self.up2 = UNetUpBlock(\n            in_ch=c3, skip_ch=c2, out_ch=c2, padding=0, output_padding=0\n        )\n        # 25x25 with kernel=3, stride=2, pad=1, out_pad=1 produces (25-1)*2 - 2 + 3 + 1 = 50x50 exact\n        self.up1 = UNetUpBlock(\n            in_ch=c2, skip_ch=c1, out_ch=spatial_dim, padding=1, output_padding=1\n        )\n\n    @property\n    def spatial_stem(self) -> nn.Module:\n        return self.enc1\n\n    @property\n    def context_res(self) -> nn.Module:\n        return self.bottleneck\n\n    def forward(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:\n        if obs.shape[1] != self.in_channels:\n            if obs.shape[1] == 50 and self.in_channels == 59:\n                adapted = torch.zeros(\n                    (obs.shape[0], 59, obs.shape[2], obs.shape[3]),\n                    dtype=obs.dtype,\n                    device=obs.device,\n                )\n                adapted[:, 0:26] = obs[:, 0:26]\n                adapted[:, 26] = obs[:, 26]\n                adapted[:, 32:34] = obs[:, 27:29]\n                adapted[:, 34:55] = obs[:, 29:50]\n                obs = adapted\n            elif obs.shape[1] == 59 and self.in_channels == 50:\n                adapted = torch.zeros(\n                    (obs.shape[0], 50, obs.shape[2], obs.shape[3]),\n                    dtype=obs.dtype,\n                    device=obs.device,\n                )\n                adapted[:, 0:26] = obs[:, 0:26]\n                adapted[:, 26] = obs[:, 26:32].max(dim=1).values\n                adapted[:, 27:29] = obs[:, 32:34]\n                adapted[:, 29:50] = obs[:, 34:55]\n                obs = adapted\n            elif obs.shape[1] == 50 and self.in_channels == 31:\n                adapted = torch.zeros(\n                    (obs.shape[0], 31, obs.shape[2], obs.shape[3]),\n                    dtype=obs.dtype,\n                    device=obs.device,\n                )\n                adapted[:, 0:5] = obs[:, 0:5]\n                ground_idx = [5, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 20]\n                adapted[:, 5] = torch.clamp(obs[:, ground_idx].sum(dim=1), max=1.0)\n                air_idx = [6, 12, 19]\n                adapted[:, 6] = torch.clamp(obs[:, air_idx].sum(dim=1), max=1.0)\n                adapted[:, 7] = torch.clamp(obs[:, 21:25].max(dim=1).values, max=1.0)\n                adapted[:, 8] = torch.clamp(obs[:, 5:21].max(dim=1).values, max=1.0)\n                adapted[:, 9] = torch.clamp(obs[:, 25:29].max(dim=1).values, max=1.0)\n                adapted[:, 10:31] = obs[:, 29:50]\n                obs = adapted\n\n        # Stage 1: Downscale 50x50 -> 25x25 -> 12x12 -> 6x6\n        e1 = self.enc1(obs)               # (B, 32, 50, 50)\n        e2 = self.enc2(self.pool1(e1))    # (B, 64, 25, 25)\n        e3 = self.enc3(self.pool2(e2))    # (B, 128, 12, 12)\n        b = self.bottleneck(self.pool3(e3))  # (B, 256, 6, 6)\n\n        # Stage 2: Upscale a little bit (6x6 -> 12x12) with Skip 3\n        d3 = self.up3(b, e3)              # (B, 128, 12, 12)\n\n        # Branch A: Feed partially upscaled Stage 2 features into the Global Tower for the 5 heads\n        global_embedding = self.global_tower(d3)  # (B, 256)\n\n        # Branch B: Upscale completely back to 50x50 (12x12 -> 25x25 -> 50x50) for grid position selection\n        d2 = self.up2(d3, e2)             # (B, 64, 25, 25)\n        spatial_features = self.up1(d2, e1)  # (B, 32, 50, 50)\n\n        return spatial_features.float(), global_embedding.float()\n\n\nDEPLOY_FRACTION_BINS: Tuple[float, ...] = (0.0, 0.25, 0.50, 0.75, 1.00)\n\n\ndef fraction_bin_to_value(bin_idx: int) -> float:\n    idx = max(0, min(len(DEPLOY_FRACTION_BINS) - 1, int(bin_idx)))\n    return float(DEPLOY_FRACTION_BINS[idx])\n\n\ndef compute_deploy_count(avail_count: int, deploy_fraction: float) -> int:\n    if avail_count <= 0:\n        return 0\n    frac = max(0.0, min(1.0, float(deploy_fraction)))\n    return max(1, min(int(avail_count), int(round(avail_count * frac))))\n\n\nclass CoCActorCritic(nn.Module):\n    \"\"\"\n    Live Tactical Attacker Network: Factorized Multi-Discrete Actor-Critic.\n\n    Fuses the (B, 10, 50, 50) spatial battlefield tensor with the (B, 64) live available\n    army inventory vector (encoding what troops, spells, heroes, equipment, pets, and siege\n    machine are available and in what remaining quantity) to parameterize a factorized policy\n    over MultiDiscrete([7, 10, 50, 50, 5]):\n\n      1. `slot_type`       (7 choices):  0=NoOp, 1=Troop, 2=Hero, 3=HeroAbility, 4=Siege, 5=PopSiege, 6=Spell\n      2. `slot_idx`        (10 choices): Loadout slot index, conditioned on the chosen `slot_type`\n      3. `deploy_fraction` (5 bins in [0, 1]): Fraction of remaining available troops of `slot_idx` to deploy\n                                         at once (0.0 -> min 1 troop, 0.25 -> 25%, 0.50 -> 50%, 0.75 -> 75%, 1.00 -> all)\n      4. `tile_xy`         (2500 tiles): Flattened (tile_y * 50 + tile_x) deployment coordinate,\n                                         conditioned on both the 50x50 spatial map and chosen `slot_type`\n      5. `value`           (scalar):     Critic state-value estimate V(s)\n    \"\"\"\n\n    def __init__(\n        self,\n        in_channels: int = 59,\n        army_context_dim: int = 64,\n        num_fraction_bins: int = 5,\n    ):\n        super().__init__()\n        self.in_channels = in_channels\n        self.army_context_dim = army_context_dim\n        self.num_fraction_bins = num_fraction_bins\n\n        # U-Net Contracting-Expansive Spatial Backbone\n        self.encoder = CoCSpatialEncoder(\n            in_channels=in_channels,\n            base_ch=32,\n            spatial_dim=32,\n            embed_dim=256,\n        )\n        spatial_dim = self.encoder.spatial_dim  # 32\n        embed_dim = self.encoder.embed_dim  # 256\n\n        # Live available army inventory & remaining quantities projection (64-D -> 256-D)\n        self.army_context_proj = nn.Sequential(\n            nn.Linear(army_context_dim, embed_dim),\n            nn.LayerNorm(embed_dim),\n            nn.SiLU(),\n        )\n\n        # Head 1: Action Type logits (256-D -> 7 action types)\n        self.slot_type_head = nn.Linear(embed_dim, 7)\n\n        # Head 2: Army Slot Index logits, conditioned on global_emb + one_hot(slot_type)\n        self.slot_idx_head = nn.Sequential(\n            nn.Linear(embed_dim + 7, 128),\n            nn.SiLU(),\n            nn.Linear(128, 10),\n        )\n\n        # Head 3: Troop Deployment Fraction logits (bins in [0.0, 0.25, 0.50, 0.75, 1.00]),\n        # conditioned on global_emb + one_hot(slot_type) + one_hot(slot_idx)\n        self.deploy_fraction_head = nn.Sequential(\n            nn.Linear(embed_dim + 7 + 10, 128),\n            nn.SiLU(),\n            nn.Linear(128, num_fraction_bins),\n        )\n\n        # Head 4: Spatial Tile Pointer (projects conditioned embedding onto the spatial map)\n        self.tile_cond_proj = nn.Linear(embed_dim + 7 + 10, spatial_dim)\n        self.tile_conv_head = nn.Sequential(\n            nn.Conv2d(spatial_dim, 32, kernel_size=3, padding=1),\n            nn.SiLU(),\n            nn.Conv2d(32, 1, kernel_size=1),\n        )\n\n        # Head 5: State-Value Critic V(s)\n        self.critic_head = nn.Sequential(\n            nn.Linear(embed_dim, 128),\n            nn.SiLU(),\n            nn.Linear(128, 1),\n        )\n        self.register_buffer(\n            \"_frac_bins_tensor\",\n            torch.tensor(DEPLOY_FRACTION_BINS, dtype=torch.float32),\n            persistent=False,\n        )\n\n    def forward(\n        self, obs: torch.Tensor, army_context: Optional[torch.Tensor] = None\n    ) -> Dict[str, torch.Tensor]:\n        \"\"\"\n        Deterministic forward pass returning raw head outputs for graph tracing (`torchview`).\n        \"\"\"\n        B = obs.shape[0]\n        spatial_feat, global_emb = self.encoder(obs)\n\n        if army_context is None:\n            army_context = obs.reshape(B, -1)[:, : self.army_context_dim] * 0.0\n        global_emb = global_emb + self.army_context_proj(army_context)\n\n        # 1. Action Type\n        type_logits = self.slot_type_head(global_emb)\n        chosen_type = type_logits.argmax(dim=-1)\n        type_onehot = F.one_hot(chosen_type.clamp(0, 6), num_classes=7).float()\n        cond_emb = torch.cat([global_emb, type_onehot], dim=-1)\n\n        # 2. Conditioned Slot Index\n        idx_logits = self.slot_idx_head(cond_emb)\n        chosen_idx = idx_logits.argmax(dim=-1)\n        idx_onehot = F.one_hot(chosen_idx.clamp(0, 9), num_classes=10).float()\n\n        # 3. Conditioned Troop Deployment Fraction (in [0, 1])\n        frac_cond_emb = torch.cat([cond_emb, idx_onehot], dim=-1)\n        fraction_logits = self.deploy_fraction_head(frac_cond_emb)\n\n        # 4. Conditioned 50x50 Spatial Tile Pointer\n        cond_spatial = self.tile_cond_proj(frac_cond_emb).unsqueeze(-1).unsqueeze(-1)\n        fused_spatial = F.silu(spatial_feat + cond_spatial)\n        tile_logits = self.tile_conv_head(fused_spatial).reshape(B, 2500)\n\n        # 5. Critic Value V(s)\n        value = self.critic_head(global_emb).squeeze(-1)\n\n        return {\n            \"type_logits\": type_logits,\n            \"idx_logits\": idx_logits,\n            \"fraction_logits\": fraction_logits,\n            \"tile_logits\": tile_logits,\n            \"value\": value,\n        }\n\n    def get_action_and_value(\n        self,\n        obs: torch.Tensor,\n        masks: Optional[Dict[str, torch.Tensor]] = None,\n        action: Optional[torch.Tensor] = None,\n        deterministic: bool = False,\n        army_context: Optional[torch.Tensor] = None,\n    ) -> Tuple[\n        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]\n    ]:\n        \"\"\"\n        Samples or evaluates a factorized action `[slot_type, slot_idx, tile_x, tile_y, frac_bin]`\n        with invalid-action logit masking, returning `(action, log_prob, entropy, value, diagnostics)`.\n        \"\"\"\n        B = obs.shape[0]\n        device = obs.device\n\n        # Encode spatial grid (using BF16 Tensor Cores on CUDA) and fuse with live available army inventory context\n        if obs.is_cuda:\n            with torch.amp.autocast(\"cuda\", dtype=torch.bfloat16):\n                spatial_feat, global_emb = self.encoder(obs)\n        else:\n            spatial_feat, global_emb = self.encoder(obs)\n        if army_context is not None:\n            global_emb = global_emb + self.army_context_proj(\n                army_context.to(device=device, dtype=global_emb.dtype)\n            )\n\n        # 1. Action Type Distribution (0=NoOp is always valid as a fallback)\n        # Smooth logit bounding prevents premature discrete-head entropy collapse\n        type_logits = 1.4 * torch.tanh(self.slot_type_head(global_emb) / 3.0)\n        if masks is not None and \"slot_type\" in masks:\n            type_mask = masks[\"slot_type\"].to(device=device, dtype=torch.bool).clone()\n            has_undeployed_units = type_mask[:, 1] | type_mask[:, 2] | type_mask[:, 4]\n            has_any_active = type_mask[:, 1:].any(dim=-1)\n            if action is None:\n                type_mask[:, 0] = (~has_undeployed_units) | (~has_any_active)\n            else:\n                type_mask[:, 0] = True\n            type_logits = type_logits.clone()\n            type_logits[:, 0] = torch.where(\n                ~has_undeployed_units,\n                type_logits[:, 0] + 0.55,\n                type_logits[:, 0],\n            )\n            type_logits = type_logits.masked_fill(~type_mask, NEG_INF)\n\n        type_dist = Categorical(logits=type_logits)\n        if action is None:\n            chosen_type = (\n                type_logits.argmax(dim=-1) if deterministic else type_dist.sample()\n            )\n        else:\n            chosen_type = action[:, 0].long()\n\n        # Condition downstream heads on the chosen action type\n        type_onehot = F.one_hot(chosen_type.clamp(0, 6), num_classes=7).float()\n        cond_emb = torch.cat([global_emb, type_onehot], dim=-1)\n\n        # 2. Army Slot Index Distribution (masked per chosen_type)\n        idx_logits = 1.6 * torch.tanh(self.slot_idx_head(cond_emb) / 3.0)\n        if masks is not None and \"slot_idx\" in masks:\n            batch_indices = torch.arange(B, device=device)\n            idx_mask = masks[\"slot_idx\"].to(device=device, dtype=torch.bool)[\n                batch_indices, chosen_type.clamp(0, 6)\n            ]\n            all_false = ~idx_mask.any(dim=-1, keepdim=True)\n            idx_mask = idx_mask | (\n                all_false\n                & F.one_hot(torch.zeros(B, dtype=torch.long, device=device), 10).bool()\n            )\n            idx_logits = idx_logits.masked_fill(~idx_mask, NEG_INF)\n\n        idx_dist = Categorical(logits=idx_logits)\n        if action is None:\n            chosen_idx = (\n                idx_logits.argmax(dim=-1) if deterministic else idx_dist.sample()\n            )\n        else:\n            chosen_idx = action[:, 1].long()\n\n        # 3. Troop Deployment Fraction Distribution (bins in [0.0, 0.25, 0.50, 0.75, 1.00])\n        idx_onehot = F.one_hot(chosen_idx.clamp(0, 9), num_classes=10).float()\n        frac_cond_emb = torch.cat([cond_emb, idx_onehot], dim=-1)\n        frac_logits = 1.4 * torch.tanh(self.deploy_fraction_head(frac_cond_emb) / 3.0)\n        frac_dist = Categorical(logits=frac_logits)\n        if action is None:\n            chosen_frac_bin = (\n                frac_logits.argmax(dim=-1) if deterministic else frac_dist.sample()\n            )\n        else:\n            chosen_frac_bin = action[:, 4].long().clamp(0, self.num_fraction_bins - 1)\n\n        # 4. Spatial Tile Distribution (50x50 = 2500 tiles)\n        # FiLM-style multiplicative + additive spatial conditioning & multi-scale core/defense proximity focus\n        cond_spatial = self.tile_cond_proj(frac_cond_emb).unsqueeze(-1).unsqueeze(-1)\n        fused_spatial = F.silu(\n            spatial_feat * (1.0 + 0.5 * torch.tanh(cond_spatial)) + cond_spatial\n        )\n        raw_tile_logits = self.tile_conv_head(fused_spatial).reshape(B, 2500)\n        is_spell = (chosen_type == 6).float().unsqueeze(-1)\n        threat_field = 0.6 * obs[:, 0:1] + 1.8 * obs[:, 1:2] + 6.0 * obs[:, 2:3]\n        breach_stage1 = F.avg_pool2d(threat_field, kernel_size=15, stride=1, padding=7)\n        breach_prox = F.avg_pool2d(\n            breach_stage1, kernel_size=15, stride=1, padding=7\n        ).reshape(B, 2500)\n        non_th_defenses = obs[:, 1:2] * (1.0 - obs[:, 2:3])\n        allied_units = obs[:, 5:21].sum(dim=1, keepdim=True).clamp(max=1.0)\n        combat_focus = F.avg_pool2d(\n            1.2 * non_th_defenses + 3.0 * allied_units,\n            kernel_size=7,\n            stride=1,\n            padding=3,\n        ).reshape(B, 2500)\n        spatial_prior = (1.0 - is_spell) * (8.0 * breach_prox) + is_spell * (\n            7.5 * combat_focus\n        )\n        tile_logits = raw_tile_logits * 2.2 + spatial_prior\n\n        if masks is not None and \"tile\" in masks:\n            valid_green = masks[\"tile\"].to(device=device, dtype=torch.bool)\n            needs_green = (chosen_type == 1) | (chosen_type == 2) | (chosen_type == 4)\n            buildings_alive = obs[:, 0:1] + obs[:, 1:2]\n            not_th_halo = (\n                F.max_pool2d(obs[:, 2:3], kernel_size=7, stride=1, padding=3) < 0.5\n            )\n            near_allies = (\n                F.max_pool2d(allied_units, kernel_size=9, stride=1, padding=4) > 0.01\n            )\n            near_buildings = (\n                F.max_pool2d(buildings_alive, kernel_size=7, stride=1, padding=3) > 0.01\n            )\n            active_combat_zone = (near_allies & near_buildings & not_th_halo).reshape(\n                B, 2500\n            )\n            has_combat_tiles = active_combat_zone.any(dim=-1, keepdim=True)\n            fallback_zone = (near_allies & near_buildings).reshape(B, 2500)\n            has_fallback = fallback_zone.any(dim=-1, keepdim=True)\n            spell_mask = torch.where(\n                has_combat_tiles,\n                active_combat_zone,\n                torch.where(\n                    has_fallback,\n                    fallback_zone,\n                    torch.ones_like(valid_green, dtype=torch.bool),\n                ),\n            )\n\n            effective_tile_mask = torch.where(\n                needs_green.unsqueeze(-1),\n                valid_green,\n                spell_mask,\n            )\n            tile_logits = tile_logits.masked_fill(~effective_tile_mask, NEG_INF)\n\n        tile_dist = Categorical(logits=tile_logits)\n        if action is None:\n            chosen_tile = (\n                tile_logits.argmax(dim=-1) if deterministic else tile_dist.sample()\n            )\n            tile_x = chosen_tile % 50\n            tile_y = torch.div(chosen_tile, 50, rounding_mode=\"floor\")\n            out_action = torch.stack(\n                [chosen_type, chosen_idx, tile_x, tile_y, chosen_frac_bin], dim=-1\n            )\n        else:\n            tile_x = action[:, 2].long().clamp(0, 49)\n            tile_y = action[:, 3].long().clamp(0, 49)\n            chosen_tile = tile_y * 50 + tile_x\n            out_action = action.long()\n\n        # 5. Joint Log-Probability, Entropy, and Critic Value\n        # Sub-actions only contribute to log_prob and entropy when active for `chosen_type`.\n        uses_idx = (\n            (chosen_type == 1)\n            | (chosen_type == 2)\n            | (chosen_type == 3)\n            | (chosen_type == 6)\n        ).float()\n        uses_frac = (chosen_type == 1).float()\n        uses_tile = (\n            (chosen_type == 1)\n            | (chosen_type == 2)\n            | (chosen_type == 4)\n            | (chosen_type == 6)\n        ).float()\n\n        log_prob = (\n            type_dist.log_prob(chosen_type)\n            + uses_idx * idx_dist.log_prob(chosen_idx)\n            + uses_frac * frac_dist.log_prob(chosen_frac_bin)\n            + uses_tile * tile_dist.log_prob(chosen_tile)\n        )\n        e_type = type_dist.entropy()\n        e_idx = uses_idx * idx_dist.entropy()\n        e_frac = uses_frac * frac_dist.entropy()\n        e_tile = uses_tile * tile_dist.entropy()\n\n        entropy = e_type + e_idx + e_frac + e_tile\n        # Normalized per-head entropy with decoupled coefficients so the 2500-tile spatial head\n        # does not drown out discrete head exploration (slot_type, slot_idx, deploy_fraction)\n        h_type_norm = e_type / 1.94591\n        h_idx_norm = e_idx / 2.30259\n        h_frac_norm = e_frac / 1.60944\n        h_tile_norm = e_tile / 6.74288\n        reg_entropy = (\n            2.2 * h_type_norm\n            + 2.2 * h_idx_norm\n            + 2.2 * h_frac_norm\n            + 0.12 * h_tile_norm\n        )\n        value = self.critic_head(global_emb).squeeze(-1)\n\n        if action is not None:\n            diagnostics = {\n                \"reg_entropy\": reg_entropy,\n                \"h_type\": e_type.detach(),\n                \"h_idx\": e_idx.detach(),\n                \"h_frac\": e_frac.detach(),\n                \"h_tile\": e_tile.detach(),\n            }\n        else:\n            diagnostics = {\n                \"slot_type_probs\": type_dist.probs.detach(),\n                \"slot_idx_probs\": idx_dist.probs.detach(),\n                \"tile_heatmap\": tile_dist.probs.detach().reshape(B, 50, 50),\n                \"reg_entropy\": reg_entropy,\n                \"h_type\": e_type.detach(),\n                \"h_idx\": e_idx.detach(),\n                \"h_frac\": e_frac.detach(),\n                \"h_tile\": e_tile.detach(),\n                \"deploy_fraction_probs\": frac_dist.probs.detach(),\n                \"deploy_fraction\": self._frac_bins_tensor[chosen_frac_bin].detach(),\n            }\n        return out_action, log_prob, entropy, value, diagnostics\n"
   }
 }

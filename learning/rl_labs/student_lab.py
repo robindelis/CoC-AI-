@@ -91,45 +91,95 @@ NEG_INF = -1e8
 #       `4x4` quadrant summary (`128 * 4 * 4 = 2048` features) before projecting to
 #       the 256-D global tactical vector with `LayerNorm` for stable Actor/Critic inputs.
 # =============================================================================
+class UNetConvBlock(nn.Module):
+    """Double 3x3 Convolution Block with GroupNorm(8) and SiLU activation."""
+
+    def __init__(self, in_ch: int, out_ch: int, groups: int = 8):
+        super().__init__()
+        g = min(groups, out_ch)
+        self.block = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1, bias=False),
+            nn.GroupNorm(g, out_ch),
+            nn.SiLU(inplace=True),
+            nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1, bias=False),
+            nn.GroupNorm(g, out_ch),
+            nn.SiLU(inplace=True),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.block(x)
+
+
+class UNetUpBlock(nn.Module):
+    """3x3 Transposed Conv Upsampling + Skip Connection Concatenation + UNetConvBlock."""
+
+    def __init__(
+        self,
+        in_ch: int,
+        skip_ch: int,
+        out_ch: int,
+        padding: int = 1,
+        output_padding: int = 1,
+        groups: int = 8,
+    ):
+        super().__init__()
+        up_ch = in_ch // 2
+        g_up = min(groups, up_ch)
+        self.up = nn.Sequential(
+            nn.ConvTranspose2d(
+                in_ch,
+                up_ch,
+                kernel_size=3,
+                stride=2,
+                padding=padding,
+                output_padding=output_padding,
+                bias=False,
+            ),
+            nn.GroupNorm(g_up, up_ch),
+            nn.SiLU(inplace=True),
+        )
+        self.conv = UNetConvBlock(up_ch + skip_ch, out_ch, groups=groups)
+
+    def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
+        u = self.up(x)
+        if u.shape[-2:] != skip.shape[-2:]:
+            u = F.interpolate(u, size=skip.shape[-2:], mode="bilinear", align_corners=False)
+        return self.conv(torch.cat([u, skip], dim=1))
+
+
 class CoCSpatialEncoder(nn.Module):
-    def __init__(self, in_channels: int = 10, spatial_dim: int = 64, embed_dim: int = 256):
+    def __init__(self, in_channels: int = 10, spatial_dim: int = 64, embed_dim: int = 256, base_ch: int = 32):
         super().__init__()
         self.spatial_dim = spatial_dim
         self.embed_dim = embed_dim
 
-        # --- STEP 1.1: Full-Resolution Spatial Stem (keeps 50x50 via padding=1) ---
-        # Tip: GroupNorm + SiLU works great in RL where batch statistics shift over time.
-        self.spatial_stem = nn.Sequential(
-            nn.Conv2d(in_channels, 32, kernel_size=3, padding=1, bias=False),
-            nn.GroupNorm(4, 32),
-            nn.SiLU(),
-            nn.Conv2d(32, spatial_dim, kernel_size=3, padding=1, bias=False),
-            nn.GroupNorm(8, spatial_dim),
-            nn.SiLU(),
-        )
+        c1, c2, c3, c4 = base_ch, base_ch * 2, base_ch * 4, base_ch * 8
 
-        # --- STEP 1.2: Dilated Residual Block (sees across TH18 wall compartments) ---
-        # With kernel_size=3 and dilation=2, padding=2 keeps the 50x50 size exact!
-        self.context_res = nn.Sequential(
-            nn.Conv2d(spatial_dim, spatial_dim, kernel_size=3, padding=2, dilation=2, bias=False),
-            nn.GroupNorm(8, spatial_dim),
-            nn.SiLU(),
-            nn.Conv2d(spatial_dim, spatial_dim, kernel_size=3, padding=1, bias=False),
-            nn.GroupNorm(8, spatial_dim),
-        )
+        # --- STEP 1.1: Stage 1 U-Net Contracting (Downscaling) Path (50x50 -> 25x25 -> 12x12 -> 6x6) ---
+        self.enc1 = UNetConvBlock(in_channels, c1)
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.enc2 = UNetConvBlock(c1, c2)
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.enc3 = UNetConvBlock(c2, c3)
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.bottleneck = UNetConvBlock(c3, c4)
 
-        # --- STEP 1.3: Global Downsampling Tower `(B, 64, 50, 50) -> (B, 256)` ---
+        # --- STEP 1.2: Stage 2A Partial Upscale (6x6 -> 12x12 with Skip 3) & Global Tower ---
+        self.up3 = UNetUpBlock(c4, c3, c3, padding=1, output_padding=1)
         self.global_tower = nn.Sequential(
-            nn.Conv2d(spatial_dim, 96, kernel_size=3, stride=2, padding=1),   # 50x50 -> 25x25
-            nn.SiLU(),
-            nn.Conv2d(96, 128, kernel_size=3, stride=2, padding=1),           # 25x25 -> 13x13
-            nn.SiLU(),
-            nn.AdaptiveAvgPool2d((4, 4)),                                     # 13x13 -> 4x4
-            nn.Flatten(),                                                     # -> 128 * 16 = 2048
-            nn.Linear(128 * 4 * 4, embed_dim),
+            nn.Conv2d(c3, c3, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.GroupNorm(8, c3),
+            nn.SiLU(inplace=True),
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Flatten(),
+            nn.Linear(c3, embed_dim),
             nn.LayerNorm(embed_dim),
-            nn.SiLU(),
+            nn.SiLU(inplace=True),
         )
+
+        # --- STEP 1.3: Stage 2B Full U-Net Upscaling to 50x50 for Grid Position Selection ---
+        self.up2 = UNetUpBlock(c3, c2, c2, padding=0, output_padding=0)
+        self.up1 = UNetUpBlock(c2, c1, spatial_dim, padding=1, output_padding=1)
 
     def forward(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -139,13 +189,18 @@ class CoCSpatialEncoder(nn.Module):
             spatial_features: (B, 64, 50, 50) float32
             global_embedding: (B, 256) float32
         """
-        # >>> YOUR LAB 1 FORWARD PASS <<<
-        # 1. Extract local 50x50 features via spatial_stem
-        h = self.spatial_stem(obs)
-        # 2. Add dilated compartment context via residual skip connection
-        spatial_features = F.silu(h + self.context_res(h))
-        # 3. Compress 50x50 map into a 256-D village-wide tactical embedding
-        global_embedding = self.global_tower(spatial_features)
+        # >>> YOUR LAB 1 U-NET FORWARD PASS <<<
+        # 1. Stage 1: Downscale 50x50 -> 25x25 -> 12x12 -> 6x6 while saving skip connections
+        e1 = self.enc1(obs)
+        e2 = self.enc2(self.pool1(e1))
+        e3 = self.enc3(self.pool2(e2))
+        b = self.bottleneck(self.pool3(e3))
+        # 2. Stage 2A: Upscale a little bit (6x6 -> 12x12) and branch into the Global Tower
+        d3 = self.up3(b, e3)
+        global_embedding = self.global_tower(d3)
+        # 3. Stage 2B: Upscale completely back to 50x50 with skip connections for tile selection
+        d2 = self.up2(d3, e2)
+        spatial_features = self.up1(d2, e1)
         return spatial_features, global_embedding
 
 

@@ -232,30 +232,33 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
       // Extract default hyperparameters from CoCSpatialEncoder & CoCActorCritic in networks.py
       const inChMatch = sourceCode.match(/class\s+CoCActorCritic[\s\S]*?in_channels:\s*int\s*=\s*(\d+)/)
         ?? sourceCode.match(/in_channels:\s*int\s*=\s*(\d+)/);
+      const baseChMatch = sourceCode.match(/base_ch:\s*int\s*=\s*(\d+)/);
       const spatialDimMatch = sourceCode.match(/spatial_dim:\s*int\s*=\s*(\d+)/);
       const embedDimMatch = sourceCode.match(/embed_dim:\s*int\s*=\s*(\d+)/);
       const armyCtxMatch = sourceCode.match(/army_context_dim:\s*int\s*=\s*(\d+)/);
       const fracBinsMatch = sourceCode.match(/num_fraction_bins:\s*int\s*=\s*(\d+)/);
-      const s1ChMatch = sourceCode.match(/Conv2d\(\s*in_channels\s*,\s*(\d+)/);
-      const g1ChMatch = sourceCode.match(/Conv2d\(\s*spatial_dim\s*,\s*(\d+)\s*,\s*kernel_size=3\s*,\s*stride=2/);
-      const g2ChMatch = sourceCode.match(/Conv2d\(\s*\d+\s*,\s*(\d+)\s*,\s*kernel_size=3\s*,\s*stride=2/);
 
       const inCh = inChMatch ? Number(inChMatch[1]) : 59;
-      const spatialDim = spatialDimMatch ? Number(spatialDimMatch[1]) : 128;
+      const baseCh = baseChMatch ? Number(baseChMatch[1]) : 32;
+      const spatialDim = spatialDimMatch ? Number(spatialDimMatch[1]) : 32;
       const embedDim = embedDimMatch ? Number(embedDimMatch[1]) : 256;
       const armyCtxDim = armyCtxMatch ? Number(armyCtxMatch[1]) : 64;
       const numFracBins = fracBinsMatch ? Number(fracBinsMatch[1]) : 5;
-      const s1Ch = s1ChMatch ? Number(s1ChMatch[1]) : 64;
-      const g1Ch = g1ChMatch ? Number(g1ChMatch[1]) : 96;
-      const g2Ch = g2ChMatch ? Number(g2ChMatch[1]) : 128;
 
-      const s1Params = inCh * s1Ch * 9 + s1Ch * 2;
-      const s2Params = s1Ch * s1Ch * 9 + s1Ch * 2;
-      const s3Params = s1Ch * spatialDim * 9 + spatialDim * 2;
-      const resParams = 3 * (2 * (spatialDim * spatialDim * 9) + 2 * (spatialDim * 2));
-      const g1Params = spatialDim * g1Ch * 9 + g1Ch;
-      const g2Params = g1Ch * g2Ch * 9 + g2Ch;
-      const g5Params = g2Ch * embedDim + embedDim + embedDim * 2;
+      const c1 = baseCh;       // 32
+      const c2 = baseCh * 2;   // 64
+      const c3 = baseCh * 4;   // 128
+      const c4 = baseCh * 8;   // 256
+
+      const enc1Params = inCh * c1 * 9 + c1 * c1 * 9 + 4 * c1;
+      const enc2Params = c1 * c2 * 9 + c2 * c2 * 9 + 4 * c2;
+      const enc3Params = c2 * c3 * 9 + c3 * c3 * 9 + 4 * c3;
+      const bneckParams = c3 * c4 * 9 + c4 * c4 * 9 + 4 * c4;
+      const up3Params = c4 * c3 * 9 + 2 * c3 + (c3 * 2) * c3 * 9 + c3 * c3 * 9 + 4 * c3;
+      const up2Params = c3 * c2 * 9 + 2 * c2 + (c2 * 2) * c2 * 9 + c2 * c2 * 9 + 4 * c2;
+      const up1Params = c2 * c1 * 9 + 2 * c1 + (c1 * 2) * spatialDim * 9 + spatialDim * spatialDim * 9 + 4 * spatialDim;
+      const g1Params = c3 * c3 * 9 + 2 * c3;
+      const g5Params = c3 * embedDim + embedDim + embedDim * 2;
       const armyCtxParams = armyCtxDim * embedDim + embedDim + embedDim * 2;
       const slotTypeParams = embedDim * 7 + 7;
       const slotIdxParams = (embedDim + 7) * 128 + 128 + 128 * 10 + 10;
@@ -268,90 +271,90 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
         {
           id: 's1',
           stage: 'spatial' as const,
-          type: 'Dilated Conv2d + GroupNorm + SiLU',
-          short: 'Conv d=2',
-          desc: `${s1Ch} filters, 3×3, d=2, p=2, GroupNorm(4), SiLU (${inCh}-ch Village Grid)`,
+          type: 'U-Net Down 1: enc1 (2× Conv3×3-GN8-SiLU)',
+          short: 'Enc1 50×50',
+          desc: `2×(Conv 3×3 → GroupNorm(8) → SiLU), ${inCh}→${c1} ch at 50×50 + Skip 1`,
           inputShape: [inCh, 50, 50],
-          outputShape: [s1Ch, 50, 50],
+          outputShape: [c1, 50, 50],
           receptiveField: 5,
-          params: s1Params,
-          macs: inCh * s1Ch * 9 * 50 * 50,
+          params: enc1Params,
+          macs: (inCh * c1 * 9 + c1 * c1 * 9) * 50 * 50,
           color: '#2563eb',
           border: '#60a5fa',
-          coneLabel: '3×3 d=2',
+          coneLabel: '2×3×3 GN8',
         },
         {
           id: 's2',
           stage: 'spatial' as const,
-          type: 'Dilated Conv2d + GroupNorm + SiLU',
-          short: 'Conv d=2',
-          desc: `${s1Ch} filters, 3×3, d=2, p=2, GroupNorm(4), SiLU`,
-          inputShape: [s1Ch, 50, 50],
-          outputShape: [s1Ch, 50, 50],
-          receptiveField: 9,
-          params: s2Params,
-          macs: s1Ch * s1Ch * 9 * 50 * 50,
+          type: 'U-Net Down 2: MaxPool 2×2 + enc2',
+          short: 'Enc2 25×25',
+          desc: `MaxPool2d(2×2) + 2×(Conv 3×3 → GroupNorm(8) → SiLU), ${c1}→${c2} ch at 25×25 + Skip 2`,
+          inputShape: [c1, 50, 50],
+          outputShape: [c2, 25, 25],
+          receptiveField: 14,
+          params: enc2Params,
+          macs: (c1 * c2 * 9 + c2 * c2 * 9) * 25 * 25,
           color: '#2563eb',
           border: '#60a5fa',
-          coneLabel: '3×3 d=2',
+          coneLabel: 'Pool2 + 2×3×3',
         },
         {
           id: 's3',
           stage: 'spatial' as const,
-          type: 'Conv2d + GroupNorm + SiLU',
-          short: 'Conv 3×3',
-          desc: `${spatialDim} filters, 3×3, d=1, p=1, GroupNorm(8), SiLU`,
-          inputShape: [s1Ch, 50, 50],
-          outputShape: [spatialDim, 50, 50],
-          receptiveField: 11,
-          params: s3Params,
-          macs: s1Ch * spatialDim * 9 * 50 * 50,
+          type: 'U-Net Down 3: MaxPool 2×2 + enc3',
+          short: 'Enc3 12×12',
+          desc: `MaxPool2d(2×2) + 2×(Conv 3×3 → GroupNorm(8) → SiLU), ${c2}→${c3} ch at 12×12 + Skip 3`,
+          inputShape: [c2, 25, 25],
+          outputShape: [c3, 12, 12],
+          receptiveField: 32,
+          params: enc3Params,
+          macs: (c2 * c3 * 9 + c3 * c3 * 9) * 12 * 12,
           color: '#1d4ed8',
           border: '#60a5fa',
-          coneLabel: '3×3 d=1',
+          coneLabel: 'Pool2 + 2×3×3',
         },
         {
           id: 's4',
           stage: 'spatial' as const,
-          type: 'Cascaded Dilated ResBlocks (3×)',
-          short: '3× ResBlocks',
-          desc: `3× ResBlocks (d=1, 2, 4) in ${spatialDim} ch, GroupNorm(8), Residual Skips, SiLU`,
-          inputShape: [spatialDim, 50, 50],
-          outputShape: [spatialDim, 50, 50],
-          receptiveField: 39,
-          params: resParams,
-          macs: 3 * (2 * (spatialDim * spatialDim * 9 * 50 * 50)),
+          type: 'U-Net Bottleneck: MaxPool 2×2 + bottleneck',
+          short: 'Bot 6×6',
+          desc: `MaxPool2d(2×2) + 2×(Conv 3×3 → GroupNorm(8) → SiLU), ${c3}→${c4} ch at 6×6`,
+          inputShape: [c3, 12, 12],
+          outputShape: [c4, 6, 6],
+          receptiveField: 50,
+          params: bneckParams,
+          macs: (c3 * c4 * 9 + c4 * c4 * 9) * 6 * 6,
           color: '#7c3aed',
           border: '#a78bfa',
-          coneLabel: '3×(2×3×3)+Skips',
-          hasSkipArc: true,
+          coneLabel: 'Pool2 + 2×3×3',
         },
         {
           id: 'g1',
           stage: 'global' as const,
-          type: 'Strided Conv2d + SiLU',
-          short: 'Conv s=2',
-          desc: `${g1Ch} filters, 3×3, stride=2, pad=1, SiLU`,
-          inputShape: [spatialDim, 50, 50],
-          outputShape: [g1Ch, 25, 25],
-          receptiveField: 43,
-          params: g1Params,
-          macs: spatialDim * g1Ch * 9 * 25 * 25,
-          color: '#2563eb',
-          border: '#60a5fa',
-          coneLabel: '3×3 s=2',
+          type: 'Stage 2 Partial Upscale: up3 (6×6 → 12×12 + Skip 3)',
+          short: 'Up3 12×12',
+          desc: `ConvTranspose 3×3 (${c4}→${c3}, s=2) + Skip 3 (${c3}×12×12) → 2×Conv 3×3 (${c3}×12×12)`,
+          inputShape: [c4, 6, 6],
+          outputShape: [c3, 12, 12],
+          receptiveField: 50,
+          params: up3Params,
+          macs: (c4 * c3 * 9 + (c3 * 2) * c3 * 9 + c3 * c3 * 9) * 12 * 12,
+          color: '#ea580c',
+          border: '#fb923c',
+          coneLabel: 'UpConv 3×3 + Skip3',
+          hasSkipArc: true,
         },
         {
           id: 'g2',
           stage: 'global' as const,
-          type: 'Strided Conv2d + SiLU',
-          short: 'Conv s=2',
-          desc: `${g2Ch} filters, 3×3, stride=2, pad=1, SiLU`,
-          inputShape: [g1Ch, 25, 25],
-          outputShape: [g2Ch, 13, 13],
+          type: 'Global Tower Strided Conv2d + GN8 + SiLU',
+          short: 'GT Conv 6×6',
+          desc: `${c3} filters, 3×3, stride=2, pad=1, GroupNorm(8), SiLU (from Stage 2 Up3 12×12)`,
+          inputShape: [c3, 12, 12],
+          outputShape: [c3, 6, 6],
           receptiveField: 50,
-          params: g2Params,
-          macs: g1Ch * g2Ch * 9 * 13 * 13,
+          params: g1Params,
+          macs: c3 * c3 * 9 * 6 * 6,
           color: '#2563eb',
           border: '#60a5fa',
           coneLabel: '3×3 s=2',
@@ -362,8 +365,8 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           type: 'AdaptiveAvgPool2d',
           short: 'AdapPool',
           desc: 'Global Average Pool 1×1',
-          inputShape: [g2Ch, 13, 13],
-          outputShape: [g2Ch, 1, 1],
+          inputShape: [c3, 6, 6],
+          outputShape: [c3, 1, 1],
           receptiveField: 50,
           params: 0,
           macs: 0,
@@ -376,9 +379,9 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           stage: 'global' as const,
           type: 'Flatten',
           short: 'Flatten',
-          desc: `Flatten ${g2Ch}×1×1 → ${g2Ch}`,
-          inputShape: [g2Ch, 1, 1],
-          outputShape: [g2Ch],
+          desc: `Flatten ${c3}×1×1 → ${c3}`,
+          inputShape: [c3, 1, 1],
+          outputShape: [c3],
           receptiveField: 50,
           params: 0,
           macs: 0,
@@ -391,12 +394,12 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
           stage: 'global' as const,
           type: 'Linear + LayerNorm + SiLU',
           short: 'GlobalTower',
-          desc: `Linear(${g2Ch} → ${embedDim}) + LayerNorm(${embedDim}) + SiLU`,
-          inputShape: [g2Ch],
+          desc: `Linear(${c3} → ${embedDim}) + LayerNorm(${embedDim}) + SiLU`,
+          inputShape: [c3],
           outputShape: [embedDim],
           receptiveField: 50,
           params: g5Params,
-          macs: g2Ch * embedDim,
+          macs: c3 * embedDim,
           color: '#059669',
           border: '#34d399',
           coneLabel: 'Dense',
@@ -461,14 +464,17 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
         {
           id: 'head_tile_conv',
           stage: 'heads' as const,
-          type: 'tile_conv_head',
-          short: 'TileHead',
-          desc: `Cond(${embedDim + 7} → ${spatialDim}) + Conv 3×3(${spatialDim} → 32) + Conv 1×1(32 → 1)`,
-          inputShape: [spatialDim, 50, 50],
+          type: 'U-Net Full 50×50 Upscale (up2 + up1) + Tile Head (Head 4)',
+          short: 'UNet50×50',
+          desc: `up2(12×12→25×25 + Skip2) → up1(25×25→50×50 + Skip1) → FiLM(${embedDim + 17}→${spatialDim}) → Conv 3×3 + 1×1 (1×50×50)`,
+          inputShape: [c3, 12, 12],
           outputShape: [1, 50, 50],
           receptiveField: 50,
-          params: tileCondParams + tileConvParams,
-          macs: (spatialDim * 32 * 9 + 32 * 1) * 50 * 50,
+          params: up2Params + up1Params + tileCondParams + tileConvParams,
+          macs:
+            (c3 * c2 * 9 + (c2 * 2) * c2 * 9 + c2 * c2 * 9) * 25 * 25 +
+            (c2 * c1 * 9 + (c1 * 2) * spatialDim * 9 + spatialDim * spatialDim * 9) * 50 * 50 +
+            (spatialDim * 32 * 9 + 32 * 1) * 50 * 50,
           color: '#d97706',
           border: '#facc15',
         },

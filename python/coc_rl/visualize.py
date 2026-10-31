@@ -60,128 +60,128 @@ def get_submodule_breakdown(model: nn.Module) -> List[Dict[str, Any]]:
 def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
     """
     Runs a live forward trace with shape & parameter hooks on `model` (`CoCActorCritic`)
-    so the 3D CNN Feature Map diagram, Layer-by-Layer table, KPI pills, and PyTorch code
+    so the 3D U-Net Feature Map diagram, Layer-by-Layer table, KPI pills, and PyTorch code
     in the Web UI always reflect any edits made to `python/coc_rl/networks.py` on every refresh.
     """
-    in_ch = int(getattr(model, "in_channels", 50))
+    in_ch = int(getattr(model, "in_channels", 59))
     army_ctx_dim = int(getattr(model, "army_context_dim", 64))
     num_frac_bins = int(getattr(model, "num_fraction_bins", 5))
-    spatial_dim = int(getattr(model.encoder, "spatial_dim", 128))
+    base_ch = int(getattr(model.encoder, "base_ch", 32))
+    spatial_dim = int(getattr(model.encoder, "spatial_dim", 32))
     embed_dim = int(getattr(model.encoder, "embed_dim", 256))
 
-    def _mod_params(m: nn.Module) -> int:
+    c1 = base_ch          # 32
+    c2 = base_ch * 2      # 64
+    c3 = base_ch * 4      # 128
+    c4 = base_ch * 8      # 256
+
+    def _mod_params(m: Optional[nn.Module]) -> int:
+        if m is None:
+            return 0
         return int(sum(p.numel() for p in m.parameters()))
 
-    stem = model.encoder.spatial_stem
-    s1_mods = [stem[0], stem[1], stem[2]] if len(stem) >= 3 else [stem]
-    s2_mods = [stem[3], stem[4], stem[5]] if len(stem) >= 6 else []
-    s3_mods = [stem[6], stem[7], stem[8]] if len(stem) >= 9 else []
-    s1_params = sum(_mod_params(m) for m in s1_mods)
-    s2_params = sum(_mod_params(m) for m in s2_mods)
-    s3_params = sum(_mod_params(m) for m in s3_mods)
-    s1_out_ch = int(getattr(stem[0], "out_channels", 32))
-    s2_out_ch = int(getattr(stem[3], "out_channels", 32)) if len(stem) >= 4 else s1_out_ch
-
-    res_params = _mod_params(model.encoder.context_res)
+    enc1_params = _mod_params(getattr(model.encoder, "enc1", None))
+    enc2_params = _mod_params(getattr(model.encoder, "enc2", None))
+    enc3_params = _mod_params(getattr(model.encoder, "enc3", None))
+    bneck_params = _mod_params(getattr(model.encoder, "bottleneck", None))
+    up3_params = _mod_params(getattr(model.encoder, "up3", None))
+    up2_params = _mod_params(getattr(model.encoder, "up2", None))
+    up1_params = _mod_params(getattr(model.encoder, "up1", None))
 
     gt = model.encoder.global_tower
-    g1_conv = gt[0] if len(gt) > 0 else nn.Conv2d(spatial_dim, 96, 3, stride=2, padding=1)
-    g2_conv = gt[2] if len(gt) > 2 else nn.Conv2d(96, 128, 3, stride=2, padding=1)
-    g5_mods = [gt[6], gt[7], gt[8]] if len(gt) >= 9 else []
-    g1_ch = int(getattr(g1_conv, "out_channels", 96))
-    g2_ch = int(getattr(g2_conv, "out_channels", 128))
-    g1_params = _mod_params(g1_conv)
-    g2_params = _mod_params(g2_conv)
+    g1_mods = [gt[0], gt[1], gt[2]] if len(gt) >= 3 else [gt[0]]
+    g5_mods = [gt[5], gt[6], gt[7]] if len(gt) >= 8 else []
+    g1_params = sum(_mod_params(m) for m in g1_mods)
     g5_params = sum(_mod_params(m) for m in g5_mods)
 
     layers: List[Dict[str, Any]] = [
         {
             "id": "s1",
             "stage": "spatial",
-            "type": "Dilated Conv2d + GroupNorm + SiLU",
-            "short": "Conv d=2",
-            "desc": f"{s1_out_ch} filters, 3×3, d=2, p=2, GroupNorm(4), SiLU ({in_ch}-ch Village Grid)",
+            "type": "U-Net Down 1: enc1 (2× Conv3×3-GN8-SiLU)",
+            "short": "Enc1 50×50",
+            "desc": f"2×(Conv 3×3 → GroupNorm(8) → SiLU), {in_ch}→{c1} ch at 50×50 + Skip 1",
             "inputShape": [in_ch, 50, 50],
-            "outputShape": [s1_out_ch, 50, 50],
+            "outputShape": [c1, 50, 50],
             "receptiveField": 5,
-            "params": s1_params,
-            "macs": in_ch * s1_out_ch * 9 * 50 * 50,
+            "params": enc1_params,
+            "macs": (in_ch * c1 * 9 + c1 * c1 * 9) * 50 * 50,
             "color": "#2563eb",
             "border": "#60a5fa",
-            "coneLabel": "3×3 d=2",
+            "coneLabel": "2×3×3 GN8",
         },
         {
             "id": "s2",
             "stage": "spatial",
-            "type": "Dilated Conv2d + GroupNorm + SiLU",
-            "short": "Conv d=2",
-            "desc": f"{s2_out_ch} filters, 3×3, d=2, p=2, GroupNorm(4), SiLU",
-            "inputShape": [s1_out_ch, 50, 50],
-            "outputShape": [s2_out_ch, 50, 50],
-            "receptiveField": 9,
-            "params": s2_params,
-            "macs": s1_out_ch * s2_out_ch * 9 * 50 * 50,
+            "type": "U-Net Down 2: MaxPool 2×2 + enc2",
+            "short": "Enc2 25×25",
+            "desc": f"MaxPool2d(2×2) + 2×(Conv 3×3 → GroupNorm(8) → SiLU), {c1}→{c2} ch at 25×25 + Skip 2",
+            "inputShape": [c1, 50, 50],
+            "outputShape": [c2, 25, 25],
+            "receptiveField": 14,
+            "params": enc2_params,
+            "macs": (c1 * c2 * 9 + c2 * c2 * 9) * 25 * 25,
             "color": "#2563eb",
             "border": "#60a5fa",
-            "coneLabel": "3×3 d=2",
+            "coneLabel": "Pool2 + 2×3×3",
         },
         {
             "id": "s3",
             "stage": "spatial",
-            "type": "Conv2d + GroupNorm + SiLU",
-            "short": "Conv 3×3",
-            "desc": f"{spatial_dim} filters, 3×3, d=1, p=1, GroupNorm(8), SiLU",
-            "inputShape": [s2_out_ch, 50, 50],
-            "outputShape": [spatial_dim, 50, 50],
-            "receptiveField": 11,
-            "params": s3_params,
-            "macs": s2_out_ch * spatial_dim * 9 * 50 * 50,
+            "type": "U-Net Down 3: MaxPool 2×2 + enc3",
+            "short": "Enc3 12×12",
+            "desc": f"MaxPool2d(2×2) + 2×(Conv 3×3 → GroupNorm(8) → SiLU), {c2}→{c3} ch at 12×12 + Skip 3",
+            "inputShape": [c2, 25, 25],
+            "outputShape": [c3, 12, 12],
+            "receptiveField": 32,
+            "params": enc3_params,
+            "macs": (c2 * c3 * 9 + c3 * c3 * 9) * 12 * 12,
             "color": "#1d4ed8",
             "border": "#60a5fa",
-            "coneLabel": "3×3 d=1",
+            "coneLabel": "Pool2 + 2×3×3",
         },
         {
             "id": "s4",
             "stage": "spatial",
-            "type": "Residual Context Block",
-            "short": "ResBlock",
-            "desc": f"2×Conv {spatial_dim} ch, 3×3, p=1, GroupNorm(8), Residual Skip (+), SiLU",
-            "inputShape": [spatial_dim, 50, 50],
-            "outputShape": [spatial_dim, 50, 50],
-            "receptiveField": 15,
-            "params": res_params,
-            "macs": 2 * (spatial_dim * spatial_dim * 9 * 50 * 50),
+            "type": "U-Net Bottleneck: MaxPool 2×2 + bottleneck",
+            "short": "Bot 6×6",
+            "desc": f"MaxPool2d(2×2) + 2×(Conv 3×3 → GroupNorm(8) → SiLU), {c3}→{c4} ch at 6×6",
+            "inputShape": [c3, 12, 12],
+            "outputShape": [c4, 6, 6],
+            "receptiveField": 50,
+            "params": bneck_params,
+            "macs": (c3 * c4 * 9 + c4 * c4 * 9) * 6 * 6,
             "color": "#7c3aed",
             "border": "#a78bfa",
-            "coneLabel": "2×3×3 + Skip",
-            "hasSkipArc": True,
+            "coneLabel": "Pool2 + 2×3×3",
         },
         {
             "id": "g1",
             "stage": "global",
-            "type": "Strided Conv2d + SiLU",
-            "short": "Conv s=2",
-            "desc": f"{g1_ch} filters, 3×3, stride=2, pad=1, SiLU",
-            "inputShape": [spatial_dim, 50, 50],
-            "outputShape": [g1_ch, 25, 25],
-            "receptiveField": 19,
-            "params": g1_params,
-            "macs": spatial_dim * g1_ch * 9 * 25 * 25,
-            "color": "#2563eb",
-            "border": "#60a5fa",
-            "coneLabel": "3×3 s=2",
+            "type": "Stage 2 Partial Upscale: up3 (6×6 → 12×12 + Skip 3)",
+            "short": "Up3 12×12",
+            "desc": f"ConvTranspose 3×3 ({c4}→{c3}, s=2) + Skip 3 ({c3}×12×12) → 2×Conv 3×3 ({c3}×12×12)",
+            "inputShape": [c4, 6, 6],
+            "outputShape": [c3, 12, 12],
+            "receptiveField": 50,
+            "params": up3_params,
+            "macs": (c4 * c3 * 9 + (c3 * 2) * c3 * 9 + c3 * c3 * 9) * 12 * 12,
+            "color": "#ea580c",
+            "border": "#fb923c",
+            "coneLabel": "UpConv 3×3 + Skip3",
+            "hasSkipArc": True,
         },
         {
             "id": "g2",
             "stage": "global",
-            "type": "Strided Conv2d + SiLU",
-            "short": "Conv s=2",
-            "desc": f"{g2_ch} filters, 3×3, stride=2, pad=1, SiLU",
-            "inputShape": [g1_ch, 25, 25],
-            "outputShape": [g2_ch, 13, 13],
-            "receptiveField": 27,
-            "params": g2_params,
-            "macs": g1_ch * g2_ch * 9 * 13 * 13,
+            "type": "Global Tower Strided Conv2d + GN8 + SiLU",
+            "short": "GT Conv 6×6",
+            "desc": f"{c3} filters, 3×3, stride=2, pad=1, GroupNorm(8), SiLU (from Stage 2 Up3 12×12)",
+            "inputShape": [c3, 12, 12],
+            "outputShape": [c3, 6, 6],
+            "receptiveField": 50,
+            "params": g1_params,
+            "macs": c3 * c3 * 9 * 6 * 6,
             "color": "#2563eb",
             "border": "#60a5fa",
             "coneLabel": "3×3 s=2",
@@ -191,24 +191,24 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
             "stage": "global",
             "type": "AdaptiveAvgPool2d",
             "short": "AdapPool",
-            "desc": "Adaptive Grid 4×4",
-            "inputShape": [g2_ch, 13, 13],
-            "outputShape": [g2_ch, 4, 4],
+            "desc": "Global Average Pool 1×1",
+            "inputShape": [c3, 6, 6],
+            "outputShape": [c3, 1, 1],
             "receptiveField": 50,
             "params": 0,
             "macs": 0,
             "color": "#d97706",
             "border": "#fbbf24",
-            "coneLabel": "Pool 4×4",
+            "coneLabel": "Pool 1×1",
         },
         {
             "id": "g4",
             "stage": "global",
             "type": "Flatten",
             "short": "Flatten",
-            "desc": f"Flatten {g2_ch}×4×4 → {g2_ch * 16}",
-            "inputShape": [g2_ch, 4, 4],
-            "outputShape": [g2_ch * 16],
+            "desc": f"Flatten {c3}×1×1 → {c3}",
+            "inputShape": [c3, 1, 1],
+            "outputShape": [c3],
             "receptiveField": 50,
             "params": 0,
             "macs": 0,
@@ -221,12 +221,12 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
             "stage": "global",
             "type": "Linear + LayerNorm + SiLU",
             "short": "GlobalTower",
-            "desc": f"Linear({g2_ch * 16} → {embed_dim}) + LayerNorm({embed_dim}) + SiLU",
-            "inputShape": [g2_ch * 16],
+            "desc": f"Linear({c3} → {embed_dim}) + LayerNorm({embed_dim}) + SiLU",
+            "inputShape": [c3],
             "outputShape": [embed_dim],
             "receptiveField": 50,
             "params": g5_params,
-            "macs": (g2_ch * 16) * embed_dim,
+            "macs": c3 * embed_dim,
             "color": "#059669",
             "border": "#34d399",
             "coneLabel": "Dense",
@@ -291,14 +291,18 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
         {
             "id": "head_tile_conv",
             "stage": "heads",
-            "type": "tile_cond_proj + tile_conv_head (Head 4)",
-            "short": "TileHead",
-            "desc": f"FiLM(spatial_feat {spatial_dim}×50×50, Linear({embed_dim + 7}→{spatial_dim})) + Conv 3×3({spatial_dim}→32) + Conv 1×1(32→1) + spatial_prior",
-            "inputShape": [spatial_dim, 50, 50],
+            "type": "U-Net Full 50×50 Upscale (up2 + up1) + Tile Head (Head 4)",
+            "short": "UNet50×50",
+            "desc": f"up2(12×12→25×25 + Skip2) → up1(25×25→50×50 + Skip1) → FiLM({embed_dim + 17}→{spatial_dim}) → Conv 3×3 + 1×1 (1×50×50)",
+            "inputShape": [c3, 12, 12],
             "outputShape": [1, 50, 50],
             "receptiveField": 50,
-            "params": _mod_params(model.tile_cond_proj) + _mod_params(model.tile_conv_head),
-            "macs": (spatial_dim * 32 * 9 + 32 * 1) * 50 * 50,
+            "params": up2_params + up1_params + _mod_params(model.tile_cond_proj) + _mod_params(model.tile_conv_head),
+            "macs": (
+                (c3 * c2 * 9 + (c2 * 2) * c2 * 9 + c2 * c2 * 9) * 25 * 25
+                + (c2 * c1 * 9 + (c1 * 2) * spatial_dim * 9 + spatial_dim * spatial_dim * 9) * 50 * 50
+                + (spatial_dim * 32 * 9 + 32 * 1) * 50 * 50
+            ),
             "color": "#d97706",
             "border": "#facc15",
         },
@@ -484,10 +488,10 @@ def ensure_architecture_diagrams(
     """
     os.makedirs(ARCH_DIR, exist_ok=True)
     if model is None:
-        in_ch = input_size[1] if input_size is not None else 50
+        in_ch = input_size[1] if input_size is not None else 59
         model = CoCActorCritic(in_channels=in_ch)
     else:
-        in_ch = int(getattr(model, "in_channels", 50))
+        in_ch = int(getattr(model, "in_channels", 59))
 
     if input_size is None:
         input_size = (1, in_ch, 50, 50)

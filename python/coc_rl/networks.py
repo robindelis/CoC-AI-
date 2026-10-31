@@ -1,8 +1,12 @@
 """
 PyTorch Neural Network Architectures for Clash of Clans TH18 Deep RL:
-  1. CoCSpatialEncoder: Dual-pathway Spatial CNN Backbone for the (10, 50, 50) Village Grid
+  1. CoCSpatialEncoder: U-Net Contracting-Expansive Spatial Backbone for the (59, 50, 50) Village Grid
+     - Stage 1 (Contracting / Downscaling): 50x50 (32ch) -> 25x25 (64ch) -> 12x12 (128ch) -> 6x6 Bottleneck (256ch)
+     - Stage 2 (Expansive / Upscaling):
+       * Upscales 6x6 -> 12x12 (128ch with skip connection) before feeding into the Global Tower (256-D) for the 5 heads
+       * Continues upscaling 12x12 -> 25x25 (64ch) -> 50x50 (32ch) with skip connections for 50x50 grid position selection
   2. CoCActorCritic: Factorized Multi-Discrete Actor-Critic ([7, 10, 50, 50, 5]) with
-     Autoregressive Conditioning, Spatial Tile Pointer, and Invalid-Action Logit Masking
+     Autoregressive Conditioning, U-Net Spatial Tile Segmentation Head, and Invalid-Action Logit Masking
 """
 
 from typing import Dict, Optional, Tuple
@@ -15,119 +19,163 @@ from torch.distributions import Categorical
 NEG_INF = -1e8
 
 
-class DilatedResBlock(nn.Module):
+class UNetConvBlock(nn.Module):
     """
-    Dilated Residual Context Block preserving exact 50x50 spatial grid resolution.
-    Dilation expands the receptive field across wall compartments without downsampling.
+    Double 3x3 Convolution Block with GroupNorm(8) and SiLU activation:
+      2 x (3x3 Conv2d -> GroupNorm(8) -> SiLU)
+    Matches the standard U-Net double-conv stage at each spatial resolution scale.
     """
 
-    def __init__(self, dim: int, dilation: int = 1):
+    def __init__(self, in_ch: int, out_ch: int, groups: int = 8):
         super().__init__()
-        self.conv1 = nn.Conv2d(
-            dim, dim, kernel_size=3, padding=dilation, dilation=dilation, bias=False
+        g = min(groups, out_ch)
+        self.block = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1, bias=False),
+            nn.GroupNorm(g, out_ch),
+            nn.SiLU(inplace=True),
+            nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1, bias=False),
+            nn.GroupNorm(g, out_ch),
+            nn.SiLU(inplace=True),
         )
-        self.norm1 = nn.GroupNorm(8, dim)
-        self.conv2 = nn.Conv2d(
-            dim, dim, kernel_size=3, padding=dilation, dilation=dilation, bias=False
-        )
-        self.norm2 = nn.GroupNorm(8, dim)
-        self.act = nn.SiLU(inplace=True)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        c1 = self.conv1(x)
-        h = self.act(self.norm1(c1).to(c1.dtype))
-        c2 = self.conv2(h)
-        return self.act(self.norm2(c2).to(c2.dtype) + x.to(c2.dtype))
+        c1 = self.block[0](x)
+        h1 = self.block[2](self.block[1](c1).to(c1.dtype))
+        c2 = self.block[3](h1)
+        return self.block[5](self.block[4](c2).to(c2.dtype))
+
+
+class UNetUpBlock(nn.Module):
+    """
+    U-Net Expansive Upsampling Stage:
+      1. 3x3 ConvTranspose2d (stride=2) -> GroupNorm(8) -> SiLU (halves channels, doubles resolution)
+      2. Concatenates along channel axis with the corresponding Stage 1 Encoder skip tensor
+      3. UNetConvBlock (2 x [3x3 Conv2d -> GroupNorm(8) -> SiLU]) to fuse multi-scale features
+    """
+
+    def __init__(
+        self,
+        in_ch: int,
+        skip_ch: int,
+        out_ch: int,
+        padding: int = 1,
+        output_padding: int = 1,
+        groups: int = 8,
+    ):
+        super().__init__()
+        up_ch = in_ch // 2
+        g_up = min(groups, up_ch)
+        self.up = nn.Sequential(
+            nn.ConvTranspose2d(
+                in_ch,
+                up_ch,
+                kernel_size=3,
+                stride=2,
+                padding=padding,
+                output_padding=output_padding,
+                bias=False,
+            ),
+            nn.GroupNorm(g_up, up_ch),
+            nn.SiLU(inplace=True),
+        )
+        self.conv = UNetConvBlock(up_ch + skip_ch, out_ch, groups=groups)
+
+    def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
+        t = self.up[0](x)
+        u = self.up[2](self.up[1](t).to(t.dtype))
+        if u.shape[-2:] != skip.shape[-2:]:
+            u = F.interpolate(
+                u, size=skip.shape[-2:], mode="bilinear", align_corners=False
+            )
+        fused = torch.cat([u, skip.to(u.dtype)], dim=1)
+        return self.conv(fused)
 
 
 class CoCSpatialEncoder(nn.Module):
     """
-    Dual-pathway Spatial CNN Backbone for the 59x50x50 Village Observation Grid.
+    U-Net Contracting-Expansive Spatial Backbone for the 59x50x50 Village Observation Grid.
 
-    Input tensor `obs` has shape (B, 59, 50, 50):
-      - Ch 0..4:   Base & Environment (Building HP, Defense DPS, TH18 Mask, Wall Integrity, Red Zone)
-      - Ch 5..16:  Friendly Army Troops, Siege & CC (Thrower, Healer, Furnace, Druid, Ice Golem, SWB, HH, Loon, Archer, Log Launcher, Super Yeti, Super Valkyrie)
-      - Ch 17..20: Friendly Heroes (Barbarian King, Archer Queen, Grand Warden, Royal Champion)
-      - Ch 21..24: Friendly Spells (Totem HP, Rage Fade, Poison Fade, Skeleton Fade)
-      - Ch 25..33: Enemy Defending Units (Enemy CC & Guardian, Defending BK, AQ, GW, RC, MP, DD, Ground & Air Skeletons)
-      - Ch 34..55: Dedicated Defense Types & Clan Castle (21 defense types + Clan Castle)
-      - Ch 56..58: Non-Offensive Structures (Storages/HeroHall, Collectors, Utility/Other Buildings)
+    Architecture Overview:
+      - Stage 1 (Contracting / Downscaling Encoder):
+        * `enc1`: (59, 50, 50)  -> (32, 50, 50)   [2x Conv3x3-GN8-SiLU, Skip 1]
+        * `pool1` + `enc2`:     -> (64, 25, 25)   [2x2 MaxPool + 2x Conv3x3-GN8-SiLU, Skip 2]
+        * `pool2` + `enc3`:     -> (128, 12, 12)  [2x2 MaxPool + 2x Conv3x3-GN8-SiLU, Skip 3]
+        * `pool3` + `bottleneck`: -> (256, 6, 6)  [2x2 MaxPool + 2x Conv3x3-GN8-SiLU]
 
-    Outputs two complementary representations:
-      1. `spatial_features`: (B, 128, 50, 50) full-resolution feature map preserving exact
-         1-to-1 tile alignment with 39x39 receptive field for the spatial deployment pointer head.
-      2. `global_embedding`: (B, 256) compact tactical state vector summarizing the entire
-         battlefield for the action-type, slot-index, and value-critic heads.
+      - Stage 2 (Expansive / Upscaling Decoder & Dual-Branch Split):
+        * Partial Upscale (`up3`): (256, 6, 6) + Skip 3 (128, 12, 12) -> `d3` (128, 12, 12)
+        * Branch A — `global_tower`: Pools partially upscaled `d3` (128, 12, 12) into
+          `global_embedding` (B, 256) to feed the 5 tactical decision heads.
+        * Branch B — Full U-Net Upscale for Grid Position Selection:
+          - `up2`: `d3` (128, 12, 12) + Skip 2 (64, 25, 25) -> `d2` (64, 25, 25)
+          - `up1`: `d2` (64, 25, 25) + Skip 1 (32, 50, 50)  -> `spatial_features` (32, 50, 50)
     """
 
     def __init__(
         self,
         in_channels: int = 59,
-        subspatial_dim: int = 64,
-        spatial_dim: int = 128,
+        base_ch: int = 32,
+        spatial_dim: int = 32,
         embed_dim: int = 256,
     ):
         super().__init__()
         self.in_channels = in_channels
+        self.base_ch = base_ch
         self.spatial_dim = spatial_dim
         self.embed_dim = embed_dim
 
-        # Stage 1: Full-resolution convolutional stem (50x50 -> 50x50)
-        # Uses padding=1 to preserve exact tile coordinates and GroupNorm for stable RL updates.
-        self.spatial_stem = nn.Sequential(
-            nn.Conv2d(
-                in_channels,
-                subspatial_dim,
-                kernel_size=3,
-                padding=2,
-                dilation=2,
-                bias=False,
-            ),
-            nn.GroupNorm(
-                4,
-                subspatial_dim,
-            ),
-            nn.SiLU(),
-            nn.Conv2d(
-                subspatial_dim,
-                subspatial_dim,
-                kernel_size=3,
-                padding=2,
-                dilation=2,
-                bias=False,
-            ),
-            nn.GroupNorm(4, subspatial_dim),
-            nn.SiLU(),
-            nn.Conv2d(
-                subspatial_dim, spatial_dim, kernel_size=3, padding=1, bias=False
-            ),
-            nn.GroupNorm(8, spatial_dim),
-            nn.SiLU(),
+        c1 = base_ch          # 32
+        c2 = base_ch * 2      # 64
+        c3 = base_ch * 4      # 128
+        c4 = base_ch * 8      # 256
+
+        # Stage 1: U-Net Contracting (Downscaling) Path (50x50 -> 25x25 -> 12x12 -> 6x6)
+        self.enc1 = UNetConvBlock(in_channels, c1)
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.enc2 = UNetConvBlock(c1, c2)
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.enc3 = UNetConvBlock(c2, c3)
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.bottleneck = UNetConvBlock(c3, c4)
+
+        # Stage 2A: Initial U-Net Upscale (6x6 -> 12x12 with Skip 3)
+        # Feeds both the Global Tower (for the 5 heads) and the remaining U-Net decoder path
+        self.up3 = UNetUpBlock(
+            in_ch=c4, skip_ch=c3, out_ch=c3, padding=1, output_padding=1
         )
 
-        # Stage 2: Multi-scale dilated residual backbone (50x50 -> 50x50, receptive field 39x39)
-        # Cascaded dilations (d=1, 2, 4) let features see across multiple wall compartments,
-        # town hall cores, and opposite-flank defenses without downsampling the 50x50 grid.
-        self.context_res = nn.Sequential(
-            DilatedResBlock(spatial_dim, dilation=1),
-            DilatedResBlock(spatial_dim, dilation=2),
-            DilatedResBlock(spatial_dim, dilation=4),
-        )
-
-        # Stage 3: Strided downsampling pyramid (50x50 -> 25x25 -> 13x13 -> 1x1 -> 256-D)
-        # Global average pooling provides coordinate-invariant tactical aggregation
-        # while saving ~500k dense parameters for the spatial convolutional backbone.
+        # Global Tower: Branches off from Stage 2's partially upscaled d3 (128x12x12 -> 256-D)
         self.global_tower = nn.Sequential(
-            nn.Conv2d(spatial_dim, 96, kernel_size=3, stride=2, padding=1),
-            nn.SiLU(),
-            nn.Conv2d(96, 128, kernel_size=3, stride=2, padding=1),
-            nn.SiLU(),
+            nn.Conv2d(c3, c3, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.GroupNorm(8, c3),
+            nn.SiLU(inplace=True),
             nn.AdaptiveAvgPool2d((1, 1)),
             nn.Flatten(),
-            nn.Linear(128, embed_dim),
+            nn.Linear(c3, embed_dim),
             nn.LayerNorm(embed_dim),
-            nn.SiLU(),
+            nn.SiLU(inplace=True),
         )
+
+        # Stage 2B: Full U-Net Upscaling back to 50x50 for Grid Position Selection (12x12 -> 25x25 -> 50x50)
+        # Note: 12x12 with kernel=3, stride=2, pad=0, out_pad=0 produces (12-1)*2 + 3 = 25x25 exact
+        self.up2 = UNetUpBlock(
+            in_ch=c3, skip_ch=c2, out_ch=c2, padding=0, output_padding=0
+        )
+        # 25x25 with kernel=3, stride=2, pad=1, out_pad=1 produces (25-1)*2 - 2 + 3 + 1 = 50x50 exact
+        self.up1 = UNetUpBlock(
+            in_ch=c2, skip_ch=c1, out_ch=spatial_dim, padding=1, output_padding=1
+        )
+
+    @property
+    def spatial_stem(self) -> nn.Module:
+        return self.enc1
+
+    @property
+    def context_res(self) -> nn.Module:
+        return self.bottleneck
 
     def forward(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         if obs.shape[1] != self.in_channels:
@@ -169,9 +217,23 @@ class CoCSpatialEncoder(nn.Module):
                 adapted[:, 9] = torch.clamp(obs[:, 25:29].max(dim=1).values, max=1.0)
                 adapted[:, 10:31] = obs[:, 29:50]
                 obs = adapted
-        h = self.spatial_stem(obs)
-        spatial_features = self.context_res(h)
-        global_embedding = self.global_tower(spatial_features)
+
+        # Stage 1: Downscale 50x50 -> 25x25 -> 12x12 -> 6x6
+        e1 = self.enc1(obs)               # (B, 32, 50, 50)
+        e2 = self.enc2(self.pool1(e1))    # (B, 64, 25, 25)
+        e3 = self.enc3(self.pool2(e2))    # (B, 128, 12, 12)
+        b = self.bottleneck(self.pool3(e3))  # (B, 256, 6, 6)
+
+        # Stage 2: Upscale a little bit (6x6 -> 12x12) with Skip 3
+        d3 = self.up3(b, e3)              # (B, 128, 12, 12)
+
+        # Branch A: Feed partially upscaled Stage 2 features into the Global Tower for the 5 heads
+        global_embedding = self.global_tower(d3)  # (B, 256)
+
+        # Branch B: Upscale completely back to 50x50 (12x12 -> 25x25 -> 50x50) for grid position selection
+        d2 = self.up2(d3, e2)             # (B, 64, 25, 25)
+        spatial_features = self.up1(d2, e1)  # (B, 32, 50, 50)
+
         return spatial_features.float(), global_embedding.float()
 
 
@@ -219,14 +281,14 @@ class CoCActorCritic(nn.Module):
         self.army_context_dim = army_context_dim
         self.num_fraction_bins = num_fraction_bins
 
-        # Dual-pathway CNN backbone
+        # U-Net Contracting-Expansive Spatial Backbone
         self.encoder = CoCSpatialEncoder(
             in_channels=in_channels,
-            subspatial_dim=64,
-            spatial_dim=128,
+            base_ch=32,
+            spatial_dim=32,
             embed_dim=256,
         )
-        spatial_dim = self.encoder.spatial_dim  # 128
+        spatial_dim = self.encoder.spatial_dim  # 32
         embed_dim = self.encoder.embed_dim  # 256
 
         # Live available army inventory & remaining quantities projection (64-D -> 256-D)

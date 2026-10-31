@@ -332,7 +332,10 @@ def load_attacker_model(
 
     in_channels = 59
     if "model_state_dict" in attacker_ckpt_meta and isinstance(attacker_ckpt_meta["model_state_dict"], dict):
-        stem_w = attacker_ckpt_meta["model_state_dict"].get("encoder.spatial_stem.0.weight")
+        stem_w = (
+            attacker_ckpt_meta["model_state_dict"].get("encoder.enc1.block.0.weight")
+            or attacker_ckpt_meta["model_state_dict"].get("encoder.spatial_stem.0.weight")
+        )
         if stem_w is not None and hasattr(stem_w, "shape"):
             in_channels = int(stem_w.shape[1])
 

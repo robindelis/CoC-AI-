@@ -135,9 +135,14 @@ def probe_live_model_diagnostics(
     module_norms: Dict[str, float] = {}
     has_nan_or_inf = False
     for name, mod in (
-        ("spatial_stem", live_attacker.encoder.spatial_stem),
-        ("context_res", live_attacker.encoder.context_res),
-        ("global_tower", live_attacker.encoder.global_tower),
+        ("enc1_50x50", getattr(live_attacker.encoder, "enc1", None)),
+        ("enc2_25x25", getattr(live_attacker.encoder, "enc2", None)),
+        ("enc3_12x12", getattr(live_attacker.encoder, "enc3", None)),
+        ("bottleneck_6x6", getattr(live_attacker.encoder, "bottleneck", None)),
+        ("up3_12x12", getattr(live_attacker.encoder, "up3", None)),
+        ("global_tower", getattr(live_attacker.encoder, "global_tower", None)),
+        ("up2_25x25", getattr(live_attacker.encoder, "up2", None)),
+        ("up1_50x50", getattr(live_attacker.encoder, "up1", None)),
         ("army_context_proj", live_attacker.army_context_proj),
         ("slot_type_head", live_attacker.slot_type_head),
         ("slot_idx_head", live_attacker.slot_idx_head),

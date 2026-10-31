@@ -61,15 +61,19 @@ A Clash of Clans Town Hall 18 combat simulator, village layout editor, and reinf
 │   │   ├── __init__.py
 │   │   ├── envs.py                   # Gymnasium environment (CoCAttackerEnv)
 │   │   ├── networks.py               # Standalone CoCSpatialEncoder & CoCActorCritic neural networks
+│   │   ├── visualize.py              # Architecture visualizer, live layer telemetry & torchview graph generator
 │   │   ├── ppo.py                    # Standalone reward shaping, GAE, and PPO update step
 │   │   └── vault_generator.py        # Obsidian vault and canvas auto-generation engine
 │   ├── train_ai.py                   # CLI PyTorch GPU PPO trainer & benchmark
 │   ├── ai_server.py                  # FastAPI bridge server for the Web AI Studio
+│   ├── visualize_model.py            # CLI entrypoint to generate SVG/PNG torchview computation graphs
 │   └── generate_vault.py             # CLI entrypoint to rebuild Obsidian vault and canvas
 ├── .agents/                          # Persisting agent definitions (checked into Git)
 │   └── agents/
-│       └── vault-updater/
-│           └── agent.md              # Specialist Obsidian vault sync agent (agy, gemini-3.8-flash-medium)
+│       ├── vault-updater/
+│       │   └── agent.md              # Specialist Obsidian vault sync agent (agy, gemini-3.8-flash-medium)
+│       └── model-visualizer/
+│           └── agent.md              # Specialist model visualizer & architecture representation agent (agy, gemini-3.8-flash-medium)
 ├── obsidian_vault/                   # Central Long-Term Memory & Source of Truth
 │   ├── 00_Index_MOC.md               # Master Map of Content index
 │   ├── 01_Model_Architecture_and_Training_Tracker.canvas # Visual interactive 2D whiteboard
@@ -263,6 +267,48 @@ agy --agent vault-updater --model gemini-3.8-flash-medium
 
 ---
 
+## Persisting Model Visualizer Agent (`model-visualizer`)
+
+The project registers a specialized agent for neural network visualization, layer telemetry, and architecture representation:
+- **Agent Name**: `model-visualizer`
+- **Model**: `gemini-3.8-flash-medium`
+- **CLI Framework**: Google Antigravity CLI (`agy`)
+- **Agent Definitions**:
+  - Global CLI runtime: `~/.gemini/config/agents/model-visualizer/agent.md`
+  - Version-controlled repo source: [`.agents/agents/model-visualizer/agent.md`](file:///home/robin/Projects/CoC/.agents/agents/model-visualizer/agent.md)
+- **Role**: Maintains `python/coc_rl/visualize.py`, `python/visualize_model.py`, live layer telemetry, `torchview` computation graphs (`docs/architecture/`), and web visualizer contracts in sync with model definitions.
+
+### ⚠️ MANDATORY RULE: Model Visualization Exclusively via `model-visualizer`
+Everything related to the visualize files (`python/coc_rl/visualize.py`, `python/visualize_model.py`) and showing the model representation (live layer specifications, MACs/parameter computations, receptive field telemetry, `torchview` computation graphs, and web visualizer payloads) **MUST BE DONE VIA THIS SPECIALIZED AGENT**.
+
+The agent is aware of where neural network architectures and model implementations are defined across the entire codebase:
+1. **Primary Production RL Models (`python/coc_rl/networks.py`)**:
+   - `CoCActorCritic`: Main factorized actor-critic model (59×50×50 observation + 64-D army context -> 4 autoregressive actor heads: `slot_type`, `slot_idx`, `deploy_fraction`, `tile_xy` + scalar `critic_head`).
+   - `CoCSpatialEncoder`: Dual-pathway 50×50 spatial CNN / U-Net backbone (`enc1`, `enc2`, `enc3`, `bottleneck`, `up3`, `up2`, `up1`, `global_tower`).
+   - `UNetConvBlock` & `UNetUpBlock`: Convolutional downsampling/upsampling blocks with GroupNorm and SiLU.
+   - `DilatedResBlock`: Residual context block preserving exact 50×50 spatial resolution.
+2. **Educational & Lab Model Implementations (`learning/`)**:
+   - `learning/rl_labs/reference_solution.py` & `learning/rl_labs/student_lab.py`: Full PyTorch implementations of `UNetConvBlock`, `UNetUpBlock`, `CoCSpatialEncoder`, and `CoCActorCritic` for Deep RL labs 1–4.
+   - `learning/pytorch_bootcamp/bootcamp_exercises.py` & `bootcamp_solutions.py`: Introductory `TinyMLP` / `SolTinyMLP` and `MiniGridCNN` / `SolMiniGridCNN`.
+3. **Downstream Visualization Consumers**:
+   - `python/ai_server.py`: Serves `/api/ai/model-architecture` powered by `extract_live_layer_specs()`.
+   - `python/coc_rl/vault_generator.py`: Embeds model architecture diagrams into Obsidian canvas.
+   - `web/src/ai/AIStudioView.tsx` & `RLAcademyView.tsx`: Consumes live layer specs to render the interactive 3D layer visualizer, receptive field inspector, and live PyTorch code.
+   - `docs/architecture/`: Publication-grade SVG/PNG diagrams (`coc_actor_critic_overview.svg`, `coc_actor_critic_detailed.svg`) and `manifest.json`.
+
+```bash
+# Run model-visualizer non-interactively using agy with Gemini 3.8 Flash Medium:
+agy --agent model-visualizer --model gemini-3.8-flash-medium -p "Update model visualization to reflect latest networks.py architecture"
+
+# Run model-visualizer interactively:
+agy --agent model-visualizer --model gemini-3.8-flash-medium
+
+# Direct CLI command for regenerating static computation graphs:
+.venv/bin/python python/visualize_model.py --force
+```
+
+---
+
 ## Build & Development Commands
 
 ```bash
@@ -287,6 +333,11 @@ agy --agent vault-updater --model gemini-3.8-flash-medium
 .venv/bin/python python/generate_vault.py
 # Or run the persisting AI agent to reconcile and update architectural memory:
 agy --agent vault-updater --model gemini-3.8-flash-medium -p "Update the vault with the latest codebase changes"
+
+# 7. Update Model Architecture Visualizations & Computation Graphs
+agy --agent model-visualizer --model gemini-3.8-flash-medium -p "Update model visualization to reflect latest networks.py architecture"
+# Or directly run the CLI entrypoint:
+.venv/bin/python python/visualize_model.py --force
 ```
 
 ## Git Workflow
