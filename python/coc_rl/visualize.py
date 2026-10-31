@@ -81,9 +81,11 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
         return int(sum(p.numel() for p in m.parameters()))
 
     enc1_params = _mod_params(getattr(model.encoder, "enc1", None))
-    enc2_params = _mod_params(getattr(model.encoder, "enc2", None))
+    dilated_mod = getattr(model.encoder, "dilated_context", None)
+    enc2_params = _mod_params(getattr(model.encoder, "enc2", None)) + _mod_params(dilated_mod)
     enc3_params = _mod_params(getattr(model.encoder, "enc3", None))
-    bneck_params = _mod_params(getattr(model.encoder, "bottleneck", None))
+    bneck_se_mod = getattr(model.encoder, "bottleneck_se", None)
+    bneck_params = _mod_params(getattr(model.encoder, "bottleneck", None)) + _mod_params(bneck_se_mod)
     up3_params = _mod_params(getattr(model.encoder, "up3", None))
     up2_params = _mod_params(getattr(model.encoder, "up2", None))
     up1_params = _mod_params(getattr(model.encoder, "up1", None))
@@ -93,6 +95,17 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
     g5_mods = [gt[5], gt[6], gt[7]] if len(gt) >= 8 else []
     g1_params = sum(_mod_params(m) for m in g1_mods)
     g5_params = sum(_mod_params(m) for m in g5_mods)
+
+    head_hidden_dim = int(getattr(model, "head_hidden_dim", 128))
+    critic_depth = int(getattr(model, "critic_depth", 2))
+
+    enc2_macs = (c1 * c2 * 9 + c2 * c2 * 9) * 25 * 25
+    if dilated_mod is not None:
+        enc2_macs += (c2 * c2 * 9 + c2 * c2 * 9) * 25 * 25
+
+    bneck_macs = (c3 * c4 * 9 + c4 * c4 * 9) * 6 * 6
+    if bneck_se_mod is not None:
+        bneck_macs += c4 * max(8, c4 // 4) * 2
 
     layers: List[Dict[str, Any]] = [
         {
@@ -113,14 +126,14 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
         {
             "id": "s2",
             "stage": "spatial",
-            "type": "U-Net Down 2: MaxPool 2×2 + enc2",
+            "type": "U-Net Down 2: MaxPool 2×2 + enc2" + (" + DilatedResBlock" if dilated_mod is not None else ""),
             "short": "Enc2 25×25",
-            "desc": f"MaxPool2d(2×2) + 2×(Conv 3×3 → GroupNorm(8) → SiLU), {c1}→{c2} ch at 25×25 + Skip 2",
+            "desc": f"MaxPool2d(2×2) + 2×(Conv 3×3 → GroupNorm(8) → SiLU)" + (" + DilatedRes(d=2,4)" if dilated_mod is not None else "") + f", {c1}→{c2} ch at 25×25 + Skip 2",
             "inputShape": [c1, 50, 50],
             "outputShape": [c2, 25, 25],
             "receptiveField": 14,
             "params": enc2_params,
-            "macs": (c1 * c2 * 9 + c2 * c2 * 9) * 25 * 25,
+            "macs": enc2_macs,
             "color": "#2563eb",
             "border": "#60a5fa",
             "coneLabel": "Pool2 + 2×3×3",
@@ -143,14 +156,14 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
         {
             "id": "s4",
             "stage": "spatial",
-            "type": "U-Net Bottleneck: MaxPool 2×2 + bottleneck",
+            "type": "U-Net Bottleneck: MaxPool 2×2 + bottleneck" + (" + SEChannelAttention" if bneck_se_mod is not None else ""),
             "short": "Bot 6×6",
-            "desc": f"MaxPool2d(2×2) + 2×(Conv 3×3 → GroupNorm(8) → SiLU), {c3}→{c4} ch at 6×6",
+            "desc": f"MaxPool2d(2×2) + 2×(Conv 3×3 → GroupNorm(8) → SiLU)" + (" + SE-Attn" if bneck_se_mod is not None else "") + f", {c3}→{c4} ch at 6×6",
             "inputShape": [c3, 12, 12],
             "outputShape": [c4, 6, 6],
             "receptiveField": 50,
             "params": bneck_params,
-            "macs": (c3 * c4 * 9 + c4 * c4 * 9) * 6 * 6,
+            "macs": bneck_macs,
             "color": "#7c3aed",
             "border": "#a78bfa",
             "coneLabel": "Pool2 + 2×3×3",
@@ -265,12 +278,12 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
             "stage": "heads",
             "type": "slot_idx_head (Head 2)",
             "short": "IdxHead",
-            "desc": f"cat[global_emb({embed_dim}), one_hot(type)(7)] → MLP({embed_dim + 7} → 128 → 10) + 1.6·tanh(z/3) + slot_idx mask",
+            "desc": f"cat[global_emb({embed_dim}), one_hot(type)(7)] → MLP({embed_dim + 7} → {head_hidden_dim} → 10) + 1.6·tanh(z/3) + slot_idx mask",
             "inputShape": [embed_dim + 7],
             "outputShape": [10],
             "receptiveField": 50,
             "params": _mod_params(model.slot_idx_head),
-            "macs": (embed_dim + 7) * 128 + 128 * 10,
+            "macs": (embed_dim + 7) * head_hidden_dim + head_hidden_dim * 10,
             "color": "#0284c7",
             "border": "#38bdf8",
         },
@@ -279,12 +292,12 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
             "stage": "heads",
             "type": "deploy_fraction_head (Head 3)",
             "short": "FracHead",
-            "desc": f"cat[global_emb({embed_dim}), one_hot(type)(7), one_hot(idx)(10)] → MLP({embed_dim + 17} → 128 → {num_frac_bins})",
+            "desc": f"cat[global_emb({embed_dim}), one_hot(type)(7), one_hot(idx)(10)] → MLP({embed_dim + 17} → {head_hidden_dim} → {num_frac_bins})",
             "inputShape": [embed_dim + 17],
             "outputShape": [num_frac_bins],
             "receptiveField": 50,
             "params": _mod_params(model.deploy_fraction_head),
-            "macs": (embed_dim + 17) * 128 + 128 * num_frac_bins,
+            "macs": (embed_dim + 17) * head_hidden_dim + head_hidden_dim * num_frac_bins,
             "color": "#9333ea",
             "border": "#c084fc",
         },
@@ -297,11 +310,20 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
             "inputShape": [c3, 12, 12],
             "outputShape": [1, 50, 50],
             "receptiveField": 50,
-            "params": up2_params + up1_params + _mod_params(model.tile_cond_proj) + _mod_params(model.tile_conv_head),
+            "params": (
+                up2_params
+                + up1_params
+                + _mod_params(getattr(model.encoder, "spatial_se", None))
+                + _mod_params(getattr(model, "tile_cond_proj", None))
+                + _mod_params(getattr(model, "head_gate", None))
+                + _mod_params(getattr(model, "tile_conv_head", None))
+            ),
             "macs": (
                 (c3 * c2 * 9 + (c2 * 2) * c2 * 9 + c2 * c2 * 9) * 25 * 25
                 + (c2 * c1 * 9 + (c1 * 2) * spatial_dim * 9 + spatial_dim * spatial_dim * 9) * 50 * 50
                 + (spatial_dim * 32 * 9 + 32 * 1) * 50 * 50
+                + (spatial_dim * max(8, spatial_dim // 4) * 2 if getattr(model.encoder, "spatial_se", None) is not None else 0)
+                + ((embed_dim + 17) * spatial_dim if getattr(model, "head_gate", None) is not None else 0)
             ),
             "color": "#d97706",
             "border": "#facc15",
@@ -311,12 +333,16 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
             "stage": "heads",
             "type": "critic_head (Head 5)",
             "short": "Critic",
-            "desc": f"MLP({embed_dim} → 128 → 1 Value V(s), SiLU, 2.5× Actor LR)",
+            "desc": f"MLP({embed_dim} → {head_hidden_dim}" + (f" → {head_hidden_dim}" if critic_depth >= 3 else "") + f" → 1 Value V(s), SiLU, depth={critic_depth})",
             "inputShape": [embed_dim],
             "outputShape": [1],
             "receptiveField": 50,
             "params": _mod_params(model.critic_head),
-            "macs": embed_dim * 128 + 128,
+            "macs": (
+                (embed_dim * head_hidden_dim + head_hidden_dim * head_hidden_dim + head_hidden_dim * 1)
+                if critic_depth >= 3
+                else (embed_dim * head_hidden_dim + head_hidden_dim * 1)
+            ),
             "color": "#16a34a",
             "border": "#4ade80",
         },
@@ -457,11 +483,14 @@ def render_model_architecture(
     model: nn.Module,
     out_dir: str,
     stem_name: str,
-    input_size: tuple[int, ...] = (1, 31, 50, 50),
+    input_size: Optional[tuple[int, ...]] = None,
     depth: int = 2,
     graph_name: str = "CoCActorCritic",
 ) -> Dict[str, str]:
     """Renders SVG and PNG diagram for any model instance into `out_dir`."""
+    if input_size is None:
+        in_ch = int(getattr(model, "in_channels", 59))
+        input_size = (1, in_ch, 50, 50)
     orig_device = next(model.parameters()).device if list(model.parameters()) else torch.device("cpu")
     model.to("cpu")
     res = _render_torchview_variant(

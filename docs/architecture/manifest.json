@@ -491,7 +491,7 @@
         "stage": "heads",
         "type": "critic_head (Head 5)",
         "short": "Critic",
-        "desc": "MLP(256 \u2192 128 \u2192 1 Value V(s), SiLU, 2.5\u00d7 Actor LR)",
+        "desc": "MLP(256 \u2192 128 \u2192 1 Value V(s), SiLU, depth=2)",
         "inputShape": [
           256
         ],
