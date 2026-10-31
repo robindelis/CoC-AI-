@@ -12,7 +12,7 @@ updated: 2026-10-30
 
 # 🧠 CoC TH18 Deep RL — Project Long-Term Memory & Source of Truth
 
-Back to [[00_Index_MOC|Vault Index (MOC)]] • Architecture: [[architectures/v3.0_31Ch_PerDefense_SingleArmy_ActorCritic|v3.0 Architecture Spec]] • Encodings: [[encodings/Defense_And_Unit_Spatial_Encoding|50-Channel Defense & Unit Encoding Spec]]
+Back to [[00_Index_MOC|Vault Index (MOC)]] • Architecture: [[architectures/v3.0_59Ch_UNet_SingleArmy_ActorCritic|v3.0 Architecture Spec]] • Encodings: [[encodings/Defense_And_Unit_Spatial_Encoding|59-Channel Defense & Unit Encoding Spec]]
 
 ---
 

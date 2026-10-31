@@ -1218,7 +1218,7 @@ This canvas dynamically tracks our **v3.0** neural network architecture, `59 × 
 
 - **Single-Army Specialist Paradigm**: Each model is trained exclusively for **1 dedicated Army Composition**, reflected in its default filename (`{{army_slug}}_ep{{N}}_{{pct}}pct_{{stars}}star.pt`) and exported inside the `.pt` checkpoint for automatic loading in the AI Model Tester.
 - **59-Channel Dedicated Spatial Grid + 64-D Live Available Inventory**: Channels `0..4` encode base state & Red Zone; Channels `5..16` dedicate **1 channel per loadout troop/siege/CC**; Channels `17..20` encode friendly heroes; Channels `21..24` encode active spells; Channels `25..33` encode defending CC, heroes, ground and air skeletons; Channels `34..55` dedicate **1 channel per defense type & Clan Castle**; Channels `56..58` encode non-offensive building groups; `army_context (64-D)` encodes live inventory.
-- **Vault Documentation**: [[00_Index_MOC|Vault Map of Content]] • [[architectures/v3.0_31Ch_PerDefense_SingleArmy_ActorCritic|v3.0 Architecture Spec]] • [[encodings/Defense_And_Unit_Spatial_Encoding|50-Channel Defense & Unit Encoding Spec]] • [[decisions/Architecture_Decisions_And_System_Memory|System Memory & ADRs]]""",
+- **Vault Documentation**: [[00_Index_MOC|Vault Map of Content]] • [[architectures/v3.0_59Ch_UNet_SingleArmy_ActorCritic|v3.0 Architecture Spec]] • [[encodings/Defense_And_Unit_Spatial_Encoding|59-Channel Defense & Unit Encoding Spec]] • [[decisions/Architecture_Decisions_And_System_Memory|System Memory & ADRs]]""",
     })
 
     group_width = 1500

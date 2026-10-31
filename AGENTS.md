@@ -70,8 +70,8 @@ The [`obsidian_vault/`](file:///home/robin/Projects/CoC/obsidian_vault) director
 - **Key Memory Assets**:
   - [`00_Index_MOC.md`](file:///home/robin/Projects/CoC/obsidian_vault/00_Index_MOC.md): Central Map of Content index.
   - [`Architecture_Decisions_And_System_Memory.md`](file:///home/robin/Projects/CoC/obsidian_vault/decisions/Architecture_Decisions_And_System_Memory.md): Architectural Decision Records (ADR-001 through ADR-006) and formal system memory ledger.
-  - [`v3.0_31Ch_PerDefense_SingleArmy_ActorCritic.md`](file:///home/robin/Projects/CoC/obsidian_vault/architectures/v3.0_31Ch_PerDefense_SingleArmy_ActorCritic.md): Full layer-by-layer neural network specification (1.36M params).
-  - [`Defense_And_Unit_Spatial_Encoding.md`](file:///home/robin/Projects/CoC/obsidian_vault/encodings/Defense_And_Unit_Spatial_Encoding.md): Detailed 31-channel per-defense spatial grid and 64-D live inventory encoding.
+  - [`v3.0_59Ch_UNet_SingleArmy_ActorCritic.md`](file:///home/robin/Projects/CoC/obsidian_vault/architectures/v3.0_59Ch_UNet_SingleArmy_ActorCritic.md): Full layer-by-layer neural network specification (2.48M params).
+  - [`Defense_And_Unit_Spatial_Encoding.md`](file:///home/robin/Projects/CoC/obsidian_vault/encodings/Defense_And_Unit_Spatial_Encoding.md): Detailed 59-channel dedicated spatial grid and 64-D live inventory encoding.
   - [`Unit_Type_Spatial_Encoding.md`](file:///home/robin/Projects/CoC/obsidian_vault/encodings/Unit_Type_Spatial_Encoding.md): Hierarchical unit archetype signature mapping for allied and enemy units.
   - [`01_Model_Architecture_and_Training_Tracker.canvas`](file:///home/robin/Projects/CoC/obsidian_vault/01_Model_Architecture_and_Training_Tracker.canvas): Interactive visual 2D whiteboard tracking computation graphs, comp-vs-village evaluations, and training curves.
 
