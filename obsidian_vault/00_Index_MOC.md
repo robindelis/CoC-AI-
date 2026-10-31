@@ -6,15 +6,15 @@ tags:
   - ppo
   - architecture
 updated: 2026-10-31
-last_synced_commit: "47e884b"
-last_synced_at: "2026-10-31 16:32:16"
+last_synced_commit: "221d836"
+last_synced_at: "2026-10-31 16:48:30"
 ---
 
 # 🏰 CoC TH18 Deep RL — Architecture & Training Vault
 
 > [!NOTE] 🔄 Codebase Synchronization Status
-> **Synchronized Commit**: [`47e884b`](file:///home/robin/Projects/CoC) &mdash; *feat(rl): support multi-solution simultaneous application and OpenCode Argon 4 Medium code-editing agent in recursive loop*
-> **Synced At**: `2026-10-31 16:32:16 UTC` • **Full SHA**: `47e884bf858482c4a842530f08f4cf9ad21ec2c7`
+> **Synchronized Commit**: [`221d836`](file:///home/robin/Projects/CoC) &mdash; *fix(rl): gate 10-minute recursive loop countdown and daemon strictly on active training*
+> **Synced At**: `2026-10-31 16:48:30 UTC` • **Full SHA**: `221d836e9f0aa05ace7a9902163aa733c1562be8`
 
 Welcome to the central research vault tracking our **v3.0 59-Channel Dedicated Spatial CNN & Single-Army Specialist Actor-Critic** architecture, input/output tensor specifications, per-troop, per-hero, per-spell, and per-defense spatial encodings, and empirical training benchmarks for Clash of Clans Town Hall 18.
 
@@ -31,7 +31,7 @@ Open the interactive 2D whiteboard visualizer presenting the 59-channel stacked 
 
 | Model Run | Arch | Inputs (`obs` + `army_context`) | Dedicated Army Composition | Total Episodes | Peak Combat Record | Status |
 | :--- | :---: | :---: | :--- | :---: | :---: | :---: |
-| [[runs/v3_per_defense_31ch\|v3.0 — 50-Channel Dedicated CNN & Single-Army Specialist Actor-Critic]] | `v3.0` | `(59, 50, 50)` + `64D` | **TH18 Thrower + Healer + Totem Smash (Meta)** | **`15,264`** (16 sessions) | **`100%` (3★)** | **ACTIVE** |
+| [[runs/v3_per_defense_31ch\|v3.0 — 50-Channel Dedicated CNN & Single-Army Specialist Actor-Critic]] | `v3.0` | `(59, 50, 50)` + `64D` | **TH18 Thrower + Healer + Totem Smash (Meta)** | **`15,672`** (17 sessions) | **`100%` (3★)** | **ACTIVE** |
 
 ---
 

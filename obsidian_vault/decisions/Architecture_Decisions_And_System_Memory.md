@@ -430,5 +430,28 @@ Defined in `CoCActorCritic` (`python/coc_rl/networks.py`), the policy parameteri
   - Empowers autonomous code-level enhancements via Google Vertex Gemini 4 Argon with zero risk to codebase stability thanks to cryptographic backups and automated smoke rollback.
   - Full transparency: all code diffs, backup manifests, and smoke-test verifications are indexed in the Obsidian Vault.
 
+### ADR-015: Training-Gated Autonomous Daemon Lifecycle & Standby State Machine for Recursive AI Self-Improvement Loop
+- **Date**: 2026-10-31
+- **Status**: Accepted
+- **Context**:
+  1. **Spurious Inactive Daemon Firing & Premature Cycle Triggers**: Previously, when the 10-minute Recursive AI Self-Improvement Loop was enabled (`_loop_state["enabled"] = True`), the background daemon thread in `python/ai_server.py` decremented wall-clock time (`now_ts >= next_ts`) regardless of whether training rollouts were actually occurring or if the server was idling.
+  2. **Zero-Experience Diagnostics & Rollout Waste**: When training was paused or stopped, wall-clock triggers caused the daemon to execute LLM/hybrid audits without new rollout experience, attempt post-change verifications against zero additional episodes, and display negative or confusing countdown timers in the Web UI.
+- **Decision**:
+  1. **Active-Training Gated Countdown (`remaining_training_seconds`)**:
+     - Added persistent and in-memory tracker `remaining_training_seconds: float` (default `600s`).
+     - The background daemon loop (`_daemon`) computes elapsed wall-clock slice $\Delta t$, but strictly gates subtraction on `_training_state.get("is_training", False)`.
+     - When training is stopped or paused, $\Delta t$ deduction is bypassed entirely, freezing the remaining countdown at its exact active training duration.
+  2. **Standby Lifecycle State Machine**:
+     - Introduced `paused_waiting_for_training: bool` (`bool(enabled and not is_training and not is_running_cycle)`).
+     - Dynamically surfaces effective phase `standby_waiting_for_training` in `/api/ai/loop/status` whenever the loop is armed but training is inactive.
+  3. **Ergonomic Web AI Studio Synchronization**:
+     - Updated tab badges in `web/src/ai/AIStudioView.tsx`: displays `⏸ STANDBY (Start Training)` with cyan styling when loop is armed while trainer is idle, switching to active live countdown only when training is running.
+     - Updated button status in `web/src/ai/RecursiveLoopPanel.tsx`: labels state as `⏸ 10m Loop Armed (Paused — Start Training • mm:ss)`.
+- **Consequences**:
+  - Eliminates phantom self-improvement cycles and LLM API cost when training is halted.
+  - Guarantees exactly 600 seconds of genuine PPO exploration and rollout transitions between recursive cycles.
+  - Clear, intuitive developer status indicators across all Web AI Studio panels.
+
+
 
 
