@@ -1,7 +1,7 @@
 {
-  "last_synced_commit": "dd3852954646c255969494876288424bc5cd30ad",
-  "last_synced_commit_short": "dd38529",
-  "last_synced_at": "2026-10-31T11:12:50.666507+00:00",
-  "last_synced_subject": "docs(vault): sync long-term memory for v3.0 U-Net architecture & model-visualizer agent (ADR-011, ADR-012)",
+  "last_synced_commit": "321c7b48fd6cbb90d9b77570d4c87f89de779148",
+  "last_synced_commit_short": "321c7b4",
+  "last_synced_at": "2026-10-31T11:16:33.587264+00:00",
+  "last_synced_subject": "docs(agents): document mandatory asynchronous background post-task protocol and trim AGENTS.md under 24KB limit",
   "branch": "main"
 }
