@@ -404,4 +404,31 @@ Defined in `CoCActorCritic` (`python/coc_rl/networks.py`), the policy parameteri
   - Eliminates silent regressions through mandatory before-vs-after baseline comparison.
   - Ensures all self-improvement experiments, parameter mutations, and empirical results are permanently recorded in the Obsidian vault.
 
+### ADR-014: Multi-Solution Simultaneous Application and OpenCode Argon 4 Medium Code-Editing Agent Integration with Pre-Change Backup and Automated Rollback Smoke-Testing
+- **Date**: 2026-10-31
+- **Status**: Accepted
+- **Context**:
+  1. **Compounding Pathologies Across Distinct Modules**: Self-improvement cycles in the Recursive AI Improvement Loop often identify systemic bottlenecks spanning multiple domains simultaneously (e.g. Town Hall breach attraction failing due to both under-weighted spatial prior logits and lack of milestone reward incentives). Applying candidate solutions in sequential isolation forced artificial evaluation delays, increased rollout cycle count, and obscured multi-parameter synergies.
+  2. **Need for Surgical Code Modifications Beyond Runtime Config**: While runtime `DEFAULT_ARCH_CONFIG` and `DEFAULT_REWARD_CONFIG` patch dictionaries handle hyperparameter adjustments, structural hypotheses (such as modifying mathematical formulas, adjusting loss terms, refactoring layer activations, or altering spatial breach priors directly in source files) require direct modifications to `python/coc_rl/networks.py`, `python/coc_rl/ppo.py`, and `python/train_ai.py`.
+  3. **Risk of Code Breakage and Silent Failures**: Modifying core deep RL code dynamically during autonomous or semi-autonomous cycles risks syntax errors, broken tensor shapes, CUDA runtime exceptions, and simulation desyncs if modifications are unverified.
+- **Decision**:
+  1. **Multi-Solution Simultaneous Application (`merge_selected_solutions` in `python/coc_rl/recursive_loop.py`)**:
+     - Enables bundling $N \ge 1$ candidate solutions into a single composite execution unit with unified config patching, combined diff summaries, and joint rationale tracking.
+     - Added multi-solution request payloads (`selected_solution_ids: Optional[List[str]]`) to `/api/ai/loop/apply-solution` and `/api/ai/loop/run-cycle` in `python/ai_server.py`, alongside interactive multi-checkbox selection in `web/src/ai/RecursiveLoopPanel.tsx`.
+  2. **OpenCode Argon 4 Medium Code-Editing Agent Integration (`execute_opencode_argon_code_edit`)**:
+     - Directly interfaces with the OpenCode CLI (`google-vertex/gemini-4-argon#medium`) inside the repository root (`/home/robin/Projects/CoC`) to perform targeted, surgical code edits on specified target files (`python/coc_rl/networks.py`, `python/coc_rl/ppo.py`, `python/train_ai.py`).
+  3. **Pre-Change Backup & Digest Manifest (`backup_code_files_before_change`)**:
+     - Prior to invoking the code agent, the system automatically captures exact file copies and short SHA-256 digests in `trained_models/code_backups/cycle_NNN/`, generating an immutable manifest.
+  4. **Automated Smoke Testing & Instant Rollback (`_smoke_test_rl_modules`, `restore_code_files_from_backup`)**:
+     - Following code edits, the runtime dynamically reloads `coc_rl.networks` and `coc_rl.ppo` and executes a live forward-pass smoke check with dummy 59×50×50 observation tensors and 64-D army contexts.
+     - If syntax errors, shape mismatches, or exception asserts occur, the system automatically triggers `restore_code_files_from_backup()`, discarding faulty modifications, capturing error logs, and protecting training stability.
+     - If successful, captures unified `git diff` for immediate inspection in the Web AI Studio UI and vault synchronization.
+  5. **Empirical Consolidation in Cycle 008**:
+     - Applied a multi-solution bundle combining architectural spatial prior tuning (`th_threat_weight: 7.8 -> 8.6`, `breach_prior_weight: 9.8 -> 10.6`, `film_cond_scale: 0.72 -> 0.8`) with reward bonus intensification (`th_bonus: 14.0 -> 20.0`), permanently hardening the updated defaults in `networks.py` and `ppo.py`.
+- **Consequences**:
+  - Enables holistic, multi-dimensional self-improvement across architecture, reward functions, and hyperparameters within a single cycle.
+  - Empowers autonomous code-level enhancements via Google Vertex Gemini 4 Argon with zero risk to codebase stability thanks to cryptographic backups and automated smoke rollback.
+  - Full transparency: all code diffs, backup manifests, and smoke-test verifications are indexed in the Obsidian Vault.
+
+
 
