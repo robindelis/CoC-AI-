@@ -662,21 +662,22 @@ export class WasmBattleSession {
       const y = Math.max(0, Math.min(49, Math.floor(u.y)));
 
       if (u.team === 'Attacker') {
-        if (u.unit_id === 'Totem') {
+        if (u.kind === 'Totem') {
           const hpRatio = Math.max(0, Math.min(1, u.hp / Math.max(1, u.max_hp)));
           if (hpRatio > obs[idx(21, y, x)]) {
             obs[idx(21, y, x)] = hpRatio;
           }
-        } else if (u.is_hero) {
+        } else if (typeof u.kind === 'object' && 'Hero' in u.kind) {
           const heroChMap: Record<string, number> = {
             BarbarianKing: 17,
             ArcherQueen: 18,
             GrandWarden: 19,
             RoyalChampion: 20,
           };
-          const ch = heroChMap[u.unit_id] ?? 17;
+          const heroId = u.kind.Hero ?? '';
+          const ch = heroChMap[heroId] ?? 17;
           obs[idx(ch, y, x)] = 1.0;
-        } else {
+        } else if (typeof u.kind === 'object' && 'Troop' in u.kind) {
           // Attacker Troops
           const troopSpecMap: Record<string, [number, number]> = {
             Thrower: [5, 12.0],
@@ -693,7 +694,8 @@ export class WasmBattleSession {
             SuperYeti: [15, 1.0],
             SuperValkyrie: [16, 1.0],
           };
-          const entry = troopSpecMap[u.unit_id];
+          const troopId = u.kind.Troop ?? '';
+          const entry = troopSpecMap[troopId];
           if (entry) {
             const [ch, maxCnt] = entry;
             obs[idx(ch, y, x)] = Math.min(1.0, obs[idx(ch, y, x)] + 1.0 / maxCnt);
@@ -701,7 +703,7 @@ export class WasmBattleSession {
         }
       } else {
         // Defender team
-        if (u.is_hero) {
+        if (typeof u.kind === 'object' && 'Hero' in u.kind) {
           const defHeroMap: Record<string, number> = {
             BarbarianKing: 26,
             ArcherQueen: 27,
@@ -710,9 +712,10 @@ export class WasmBattleSession {
             MinionPrince: 30,
             DragonDuke: 31,
           };
-          const heroCh = defHeroMap[u.unit_id] ?? 26;
+          const heroId = u.kind.Hero ?? '';
+          const heroCh = defHeroMap[heroId] ?? 26;
           obs[idx(heroCh, y, x)] = 1.0;
-        } else if (u.unit_id === 'Skeleton') {
+        } else if (typeof u.kind === 'object' && u.kind.Troop === 'Skeleton') {
           const ch = u.is_air ? 33 : 32;
           obs[idx(ch, y, x)] = Math.min(1.0, obs[idx(ch, y, x)] + 0.1);
         } else {

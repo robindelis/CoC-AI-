@@ -27,7 +27,7 @@ A Clash of Clans Town Hall 18 combat simulator, village layout editor, and reinf
 ```text
 /home/robin/Projects/CoC/
 ├── Cargo.toml                        # Rust workspace manifest (coc-data, coc-engine, coc-wasm, coc-py)
-├── start_ai_studio.sh                # Launcher for PyTorch GPU backend (8000) + Vite UI (5173)
+├── start_ai_studio.sh                # Launcher for PyTorch GPU backend (8000) + Vite UI (3000)
 ├── crates/
 │   ├── coc-data/                     # Static catalog, stats, footprints, and presets (src/lib.rs, buildings.rs, presets.rs)
 │   ├── coc-engine/                   # Deterministic simulation engine (src/lib.rs, grid.rs, sim.rs)
