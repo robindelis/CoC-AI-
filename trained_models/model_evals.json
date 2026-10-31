@@ -898,5 +898,95 @@
       "TH18 Anti-Fireball Wide Spread (3 Single Infernos)",
       "TH18 Teaser War Base (Double Rage Towers + Killzone)"
     ]
+  },
+  "thrower_healer_totem_smash_ep2_53pct_2star.pt_0": {
+    "model_file": "thrower_healer_totem_smash_ep2_53pct_2star.pt",
+    "updated_at": "2026-10-31 13:10:09",
+    "matrix": [
+      [
+        {
+          "destruction_pct": 37,
+          "stars": 0,
+          "total_reward": 20.73,
+          "steps_run": 65,
+          "noop_pct": 50.8
+        },
+        {
+          "destruction_pct": 28,
+          "stars": 1,
+          "total_reward": 42.07,
+          "steps_run": 69,
+          "noop_pct": 53.6
+        },
+        {
+          "destruction_pct": 51,
+          "stars": 2,
+          "total_reward": 66.18,
+          "steps_run": 67,
+          "noop_pct": 52.2
+        },
+        {
+          "destruction_pct": 15,
+          "stars": 0,
+          "total_reward": 9.64,
+          "steps_run": 59,
+          "noop_pct": 47.5
+        },
+        {
+          "destruction_pct": 58,
+          "stars": 2,
+          "total_reward": 68.67,
+          "steps_run": 97,
+          "noop_pct": 66.0
+        }
+      ]
+    ],
+    "comp_stats": [
+      {
+        "name": "TH18 Thrower + Healer + Totem Smash (Meta)",
+        "avg_pct": 37.8,
+        "avg_stars": 1.0,
+        "three_star_rate": 0.0
+      }
+    ],
+    "village_stats": [
+      {
+        "name": "TH18 Central Box Legends (Cake-A-Pult + Smasher)",
+        "avg_pct": 37.0,
+        "avg_stars": 0.0
+      },
+      {
+        "name": "TH18 Offset Diamond (Hot Candle + Longshot)",
+        "avg_pct": 28.0,
+        "avg_stars": 1.0
+      },
+      {
+        "name": "TH18 Anti-Hydra Air Ring (4 Air X-Bows + Sweepers)",
+        "avg_pct": 51.0,
+        "avg_stars": 2.0
+      },
+      {
+        "name": "TH18 Anti-Fireball Wide Spread (3 Single Infernos)",
+        "avg_pct": 15.0,
+        "avg_stars": 0.0
+      },
+      {
+        "name": "TH18 Teaser War Base (Double Rage Towers + Killzone)",
+        "avg_pct": 58.0,
+        "avg_stars": 2.0
+      }
+    ],
+    "overall_avg_pct": 37.8,
+    "overall_avg_stars": 1.0,
+    "armies": [
+      "TH18 Thrower + Healer + Totem Smash (Meta)"
+    ],
+    "villages": [
+      "TH18 Central Box Legends (Cake-A-Pult + Smasher)",
+      "TH18 Offset Diamond (Hot Candle + Longshot)",
+      "TH18 Anti-Hydra Air Ring (4 Air X-Bows + Sweepers)",
+      "TH18 Anti-Fireball Wide Spread (3 Single Infernos)",
+      "TH18 Teaser War Base (Double Rage Towers + Killzone)"
+    ]
   }
 }
