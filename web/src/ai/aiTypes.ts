@@ -687,6 +687,19 @@ export interface AIRecursiveLoopReason {
   root_cause: string;
 }
 
+export interface AIStrategyResearch {
+  cycle_id: number;
+  agent: string;
+  model: string;
+  agy_cli_executed: boolean;
+  tactical_focus: string;
+  io_recommendation: string;
+  recommended_features: string[];
+  summary: string;
+  vault_reference: string;
+  duration_sec: number;
+}
+
 export interface AIRecursiveLoopCycle {
   cycle_id: number;
   started_at: string;
@@ -694,6 +707,7 @@ export interface AIRecursiveLoopCycle {
   trigger: string;
   episode_at_analysis: number;
   restarted_from_scratch?: boolean;
+  strategy_research?: AIStrategyResearch | null;
   health_verdict: {
     status: 'healthy_progressing' | 'plateaued' | 'degrading' | string;
     health_score: number;
@@ -746,6 +760,7 @@ export interface AIRecursiveLoopState {
     baseline_episode: number;
     pre_restart_episode?: number;
     restarted_from_scratch?: boolean;
+    weight_transfer_mode?: string;
     target_episodes: number;
     baseline_metrics: AICompactBaselineMetrics;
   } | null;
@@ -755,7 +770,11 @@ export interface AIRecursiveLoopState {
     reward_config: Record<string, number>;
     hyperparams: Record<string, number | string>;
   };
+  latest_strategy_research?: AIStrategyResearch | null;
   reward_formula?: string;
   vault_note_path: string;
+  sota_vault_note_path?: string;
+  strategy_vault_note_path?: string;
+  evolution_ledger_vault_path?: string;
   cycles: AIRecursiveLoopCycle[];
 }

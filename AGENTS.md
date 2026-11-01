@@ -41,12 +41,14 @@ A Clash of Clans Town Hall 18 combat simulator, village layout editor, and reinf
 │   └── generate_vault.py             # CLI entrypoint to rebuild Obsidian vault & canvas
 ├── .agents/agents/                   # Version-controlled agent definitions
 │   ├── vault-updater/agent.md        # Specialist Obsidian vault sync agent (agy, gemini-3.8-flash-medium)
-│   └── model-visualizer/agent.md     # Specialist neural model visualizer agent (agy, gemini-3.8-flash-medium)
+│   ├── model-visualizer/agent.md     # Specialist neural model visualizer agent (agy, gemini-3.8-flash-medium)
+│   ├── coc-strategy-researcher/agent.md # CoC strategy & I/O research agent (agy, gemini-3.8-flash-medium)
+│   └── opencode-model-evolver/agent.md  # Progressive SOTA vision model evolver (opencode, gemini-4-argon#medium)
 ├── obsidian_vault/                   # Central Long-Term Memory & Source of Truth
 │   ├── 00_Index_MOC.md               # Central Map of Content index & sync banner
 │   ├── 01_Model_Architecture_and_Training_Tracker.canvas # Visual interactive 2D whiteboard
-│   ├── decisions/                    # Architectural Decision Records (ADR ledger)
-│   ├── architectures/                # Model architecture dossiers
+│   ├── decisions/                    # Architectural Decision Records & CoC Strategy / I/O Design
+│   ├── architectures/                # SOTA Vision Catalog, Model Evolution Ledger & Architecture Dossiers
 │   ├── encodings/                    # Spatial tensor (59ch) & inventory (64-D) specifications
 │   ├── experiments/                  # Benchmark dossiers & AI diagnostics
 │   └── assets/                       # SVG computation graphs & training curve charts
@@ -69,8 +71,11 @@ The [`obsidian_vault/`](file:///home/robin/Projects/CoC/obsidian_vault) director
 - **Mandatory Invariant**: The content of the Obsidian vault represents the canonical decisions taken along the project and **must be updated as the project evolves**. Any modification to simulation logic, observation formats, action heads, reward functions, or training paradigms must be documented in the vault.
 - **Key Memory Assets**:
   - [`00_Index_MOC.md`](file:///home/robin/Projects/CoC/obsidian_vault/00_Index_MOC.md): Central Map of Content index.
-  - [`Architecture_Decisions_And_System_Memory.md`](file:///home/robin/Projects/CoC/obsidian_vault/decisions/Architecture_Decisions_And_System_Memory.md): Architectural Decision Records (ADR-001 through ADR-006) and formal system memory ledger.
-  - [`v3.0_59Ch_UNet_SingleArmy_ActorCritic.md`](file:///home/robin/Projects/CoC/obsidian_vault/architectures/v3.0_59Ch_UNet_SingleArmy_ActorCritic.md): Full layer-by-layer neural network specification (2.48M params).
+  - [`Architecture_Decisions_And_System_Memory.md`](file:///home/robin/Projects/CoC/obsidian_vault/decisions/Architecture_Decisions_And_System_Memory.md): Architectural Decision Records (ADR-001 through ADR-018) and formal system memory ledger.
+  - [`SOTA_Vision_And_Spatial_RL_Architectures.md`](file:///home/robin/Projects/CoC/obsidian_vault/architectures/SOTA_Vision_And_Spatial_RL_Architectures.md): State-of-the-art vision & spatial-RL architecture reference catalog (`ConvNeXt V2 GRN`, `SegNeXt MSCA`, `UniRepLKNet`, `HRNet`, `Swin V2`, `CoordConv`, `FiLM`, `AlphaStar Pointer`) and the `Gen 0 -> Gen 5` progressive morphing ladder.
+  - [`CoC_Strategy_Concepts_And_Input_Output_Design.md`](file:///home/robin/Projects/CoC/obsidian_vault/decisions/CoC_Strategy_Concepts_And_Input_Output_Design.md): Classical & pro TH18 Clash of Clans strategy concepts (Rule-of-3 funneling, Hero Charges, Warden Walk Fireball, Log Launcher line-of-sight rays, RC Electro Boots back-end sweep) and optimal input/output representation design.
+  - [`Model_Architecture_Evolution_Ledger.md`](file:///home/robin/Projects/CoC/obsidian_vault/architectures/Model_Architecture_Evolution_Ledger.md): Chronological generation ledger starting at `Gen 0 (v4.0-Gen0-TinyCNN, ~50K params)` over 5,000-episode horizons.
+  - [`v3.0_59Ch_UNet_SingleArmy_ActorCritic.md`](file:///home/robin/Projects/CoC/obsidian_vault/architectures/v3.0_59Ch_UNet_SingleArmy_ActorCritic.md): Full layer-by-layer U-Net reference specification.
   - [`Defense_And_Unit_Spatial_Encoding.md`](file:///home/robin/Projects/CoC/obsidian_vault/encodings/Defense_And_Unit_Spatial_Encoding.md): Detailed 59-channel dedicated spatial grid and 64-D live inventory encoding.
   - [`Unit_Type_Spatial_Encoding.md`](file:///home/robin/Projects/CoC/obsidian_vault/encodings/Unit_Type_Spatial_Encoding.md): Hierarchical unit archetype signature mapping for allied and enemy units.
   - [`01_Model_Architecture_and_Training_Tracker.canvas`](file:///home/robin/Projects/CoC/obsidian_vault/01_Model_Architecture_and_Training_Tracker.canvas): Interactive visual 2D whiteboard tracking computation graphs, comp-vs-village evaluations, and training curves.

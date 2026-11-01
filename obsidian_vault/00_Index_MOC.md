@@ -37,7 +37,9 @@ Open the interactive 2D whiteboard visualizer presenting the 59-channel stacked 
 
 ## 📚 Technical Reference Sections
 
-### 1. Neural Architecture (`architectures/`)
+### 1. Neural Architecture & Evolutionary Morphing (`architectures/`)
+- [[architectures/SOTA_Vision_And_Spatial_RL_Architectures|State-of-the-Art (SOTA) Vision & Spatial RL Architectures — Reference Catalog for Evolutionary Model Morphing]]
+- [[architectures/Model_Architecture_Evolution_Ledger|Model Architecture Evolution Ledger — Bottom-Up Morphing History (Gen 0 ~50K TinyCNN to SOTA)]]
 - [[architectures/v3.0_59Ch_UNet_SingleArmy_ActorCritic|v3.0 — 59-Channel Multi-Scale U-Net Contracting-Expansive Backbone & Single-Army Specialist Actor-Critic (2.48M Params)]]
 - [[architectures/v3.0_59Ch_CascadedDilatedResNet_SingleArmy_ActorCritic|v3.0 — 59-Channel Cascaded Dilated ResNet (Superseded)]]
 - [[architectures/v3.0_31Ch_PerDefense_SingleArmy_ActorCritic|v3.0 — Legacy 31-Channel Specification]]
@@ -47,10 +49,11 @@ Open the interactive 2D whiteboard visualizer presenting the 59-channel stacked 
 - [[encodings/Unit_Type_Spatial_Encoding|Hierarchical Tactical-Archetype Unit Encoding (Offline Diagnostics & ADR-007 Transition)]]
 
 
-### 3. Long-Term Memory & Architectural Decisions (`decisions/`)
+### 3. Long-Term Memory, CoC Strategy & Architectural Decisions (`decisions/`)
+- [[decisions/CoC_Strategy_Concepts_And_Input_Output_Design|Clash of Clans TH18 Tactical Strategy Concepts & Input/Output Representation Design (AGY Researcher + OpenCode Evolver)]]
 - [[decisions/Architecture_Decisions_And_System_Memory|Project Memory, Architectural Decision Records (ADRs) & Source of Truth]]
 
 ### 4. Empirical Benchmark Logs & AI Training Diagnostics (`experiments/`)
-- [[experiments/Recursive_AI_Improvement_Loop|Recursive AI Self-Improvement Loop — 10-Minute Autonomous Diagnosis, Pre-Change Baselines & Verification Ledger]]
+- [[experiments/Recursive_AI_Improvement_Loop|Recursive AI Self-Improvement Loop — 5,000-Episode Evolutionary Diagnosis, Pre-Change Baselines & Verification Ledger]]
 - [[experiments/Experiment_Log_And_Benchmarks|Master Experiment Log & Single-Army Specialist Benchmarks]]
 - [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Telemetry Architecture & PPO Pathology Fixes]]

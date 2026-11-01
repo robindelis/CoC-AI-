@@ -1,15 +1,23 @@
 """
-PyTorch Neural Network Architectures for Clash of Clans TH18 Deep RL:
-  1. CoCSpatialEncoder: U-Net Contracting-Expansive Spatial Backbone for the (59, 50, 50) Village Grid
-     - Stage 1 (Contracting / Downscaling): 50x50 (32ch) -> 25x25 (64ch) -> 12x12 (128ch) -> 6x6 Bottleneck (256ch)
-     - Stage 2 (Expansive / Upscaling):
-       * Upscales 6x6 -> 12x12 (128ch with skip connection) before feeding into the Global Tower (256-D) for the 5 heads
-       * Continues upscaling 12x12 -> 25x25 (64ch) -> 50x50 (32ch) with skip connections for 50x50 grid position selection
-  2. CoCActorCritic: Factorized Multi-Discrete Actor-Critic ([7, 10, 50, 50, 5]) with
-     Autoregressive Conditioning, U-Net Spatial Tile Segmentation Head, and Invalid-Action Logit Masking
+PyTorch Neural Network Architectures for Clash of Clans TH18 Deep RL (Progressive Evolution Framework):
+  1. Stage 0 Baseline (`v4.0-Gen0-TinyCNN`, ~50K params):
+     - Bare-minimum 2-layer strided CNN (`50x50 -> 25x25 -> 50x50`) + 1x1 spatial projection head
+       for ultra-fast throughput over 5,000-episode evaluation cycles.
+  2. Progressive SOTA Vision & Spatial-RL Morphing Building Blocks (Gen 1 -> Gen 5):
+     - `TacticalFeatureSynthesizer`: Explicit CoC spatial strategy channels (CoordConv X/Y, TH18 radial
+       distance & Siege line-of-sight angle, exterior funnel trash density, active frontline zone).
+     - `SEChannelAttention`: Squeeze-and-Excitation dynamic 59-channel defense/troop re-weighting.
+     - `DilatedResBlock`: Multi-scale dilated residual context (dilation 2 & 4).
+     - `GlobalResponseNorm` & `ConvNeXtV2Block`: 7x7 depthwise ConvNeXt V2 block with GRN to prevent
+       feature collapse on sparse defense/unit channels.
+     - `SegNeXtMSCABlock`: Multi-Scale Strip Convolutional Attention (1x7 + 7x1 and 1x11 + 11x1)
+       capturing axis-aligned wall compartments and Log Launcher / Firespitter corridors.
+     - `UNetConvBlock` & `UNetUpBlock`: Full 4-stage contracting-expansive U-Net decoder path.
+     - `DualModeSpatialTileHead`: Decoupled Perimeter Funneling Entry vs. Interior Spell Engagement pointer.
+  3. `transfer_compatible_weights`: Shape-aware partial & exact weight transfer across architecture morphs.
 """
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -17,6 +25,152 @@ import torch.nn.functional as F
 from torch.distributions import Categorical
 
 NEG_INF = -1e8
+
+
+class TacticalFeatureSynthesizer(nn.Module):
+    """
+    Synthesizes 6 explicit Clash of Clans tactical geometry channels on-the-fly from the
+    (B, 59, 50, 50) spatial observation tensor:
+      0. Normalized X coordinate in [-1, 1]
+      1. Normalized Y coordinate in [-1, 1]
+      2. Normalized radial distance to Town Hall 18 (Ch 2) centroid
+      3. Normalized angle atan2(dy, dx) / pi to Town Hall 18 (Siege Machine line-of-sight axis)
+      4. Exterior Funnel Trash Density (Ch 56..58 Collectors/Storages/Utility outside walls)
+      5. Active Frontline Combat Engagement Zone (Allied Units Ch 5..20 overlapping Defenses Ch 1)
+    """
+
+    def __init__(self, grid_size: int = 50):
+        super().__init__()
+        self.grid_size = grid_size
+        coords = torch.linspace(-1.0, 1.0, grid_size, dtype=torch.float32)
+        yy, xx = torch.meshgrid(coords, coords, indexing="ij")
+        self.register_buffer("grid_x", xx.unsqueeze(0).unsqueeze(0), persistent=False)
+        self.register_buffer("grid_y", yy.unsqueeze(0).unsqueeze(0), persistent=False)
+
+    def forward(self, obs: torch.Tensor) -> torch.Tensor:
+        B, C, H, W = obs.shape
+        gx = self.grid_x.expand(B, 1, H, W).to(dtype=obs.dtype, device=obs.device)
+        gy = self.grid_y.expand(B, 1, H, W).to(dtype=obs.dtype, device=obs.device)
+
+        # Town Hall 18 mask is Ch 2
+        th_mask = obs[:, 2:3]
+        th_sum = th_mask.sum(dim=(-2, -1), keepdim=True).clamp(min=1e-5)
+        th_cx = (th_mask * gx).sum(dim=(-2, -1), keepdim=True) / th_sum
+        th_cy = (th_mask * gy).sum(dim=(-2, -1), keepdim=True) / th_sum
+
+        dx = gx - th_cx
+        dy = gy - th_cy
+        th_dist = torch.sqrt(dx * dx + dy * dy + 1e-6) / 1.4142
+        th_angle = torch.atan2(dy, dx) / 3.14159265
+
+        # Exterior Funnel Trash Density (non-offensive buildings Ch 56..58)
+        if C >= 59:
+            trash_raw = obs[:, 56:59].sum(dim=1, keepdim=True).clamp(max=1.0)
+        else:
+            trash_raw = obs[:, 0:1] * (1.0 - obs[:, 1:2].clamp(max=1.0))
+        wall_ring = F.avg_pool2d(obs[:, 3:4], kernel_size=5, stride=1, padding=2)
+        funnel_trash = F.avg_pool2d(
+            trash_raw * (1.0 - 0.5 * wall_ring.clamp(max=1.0)),
+            kernel_size=3,
+            stride=1,
+            padding=1,
+        )
+
+        # Active Frontline Combat Zone (Allied Units Ch 5..20 near Defenses Ch 1)
+        allies = obs[:, 5:21].sum(dim=1, keepdim=True).clamp(max=1.0) if C >= 21 else obs[:, 0:1] * 0.0
+        allies_blur = F.avg_pool2d(allies, kernel_size=5, stride=1, padding=2)
+        def_blur = F.avg_pool2d(obs[:, 1:2], kernel_size=5, stride=1, padding=2)
+        frontline_zone = (allies_blur * def_blur).clamp(max=1.0)
+
+        tactical_feats = torch.cat(
+            [gx, gy, th_dist, th_angle, funnel_trash, frontline_zone], dim=1
+        )
+        return torch.cat([obs, tactical_feats.to(obs.dtype)], dim=1)
+
+
+class GlobalResponseNorm(nn.Module):
+    """
+    ConvNeXt V2 Global Response Normalization (GRN):
+    Normalizes channel responses by global L2 norm to prevent dead/collapsed channels
+    across sparse 59-channel defense and troop maps.
+    """
+
+    def __init__(self, channels: int, eps: float = 1e-6):
+        super().__init__()
+        self.eps = eps
+        self.gamma = nn.Parameter(torch.zeros(1, channels, 1, 1))
+        self.beta = nn.Parameter(torch.zeros(1, channels, 1, 1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        gx = torch.norm(x.float(), p=2, dim=(-2, -1), keepdim=True)
+        nx = gx / (gx.mean(dim=1, keepdim=True) + self.eps)
+        out = self.gamma.to(x.dtype) * (x * nx.to(x.dtype)) + self.beta.to(x.dtype) + x
+        return out
+
+
+class ConvNeXtV2Block(nn.Module):
+    """
+    ConvNeXt V2 7x7 Depthwise Separable Block with Global Response Normalization (GRN):
+    Captures 7x7 medium-range weapon radii (Wizard Tower, Bomb Tower, Royal Champion)
+    with minimal parameter overhead.
+    """
+
+    def __init__(self, channels: int, expansion: int = 2, groups: int = 8):
+        super().__init__()
+        g = min(groups, channels)
+        mid = max(channels, channels * expansion)
+        self.dwconv = nn.Conv2d(
+            channels, channels, kernel_size=7, padding=3, groups=channels, bias=False
+        )
+        self.norm = nn.GroupNorm(g, channels)
+        self.pwconv1 = nn.Conv2d(channels, mid, kernel_size=1, bias=True)
+        self.act = nn.SiLU(inplace=True)
+        self.grn = GlobalResponseNorm(mid)
+        self.pwconv2 = nn.Conv2d(mid, channels, kernel_size=1, bias=True)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        residual = x
+        h = self.dwconv(x)
+        h = self.norm(h).to(x.dtype)
+        h = self.act(self.pwconv1(h))
+        h = self.grn(h)
+        h = self.pwconv2(h)
+        return residual + h
+
+
+class SegNeXtMSCABlock(nn.Module):
+    """
+    SegNeXt Multi-Scale Convolutional Attention (MSCA) Block:
+    Uses factorized depthwise strip convolutions (1x7 + 7x1 and 1x11 + 11x1)
+    to model orthogonal CoC wall compartments, funneling lanes, and long-range
+    X-Bow / Monolith / Eagle / Log Launcher corridors.
+    """
+
+    def __init__(self, channels: int):
+        super().__init__()
+        self.dw_local = nn.Conv2d(
+            channels, channels, kernel_size=5, padding=2, groups=channels, bias=False
+        )
+        self.strip7_h = nn.Conv2d(
+            channels, channels, kernel_size=(1, 7), padding=(0, 3), groups=channels, bias=False
+        )
+        self.strip7_v = nn.Conv2d(
+            channels, channels, kernel_size=(7, 1), padding=(3, 0), groups=channels, bias=False
+        )
+        self.strip11_h = nn.Conv2d(
+            channels, channels, kernel_size=(1, 11), padding=(0, 5), groups=channels, bias=False
+        )
+        self.strip11_v = nn.Conv2d(
+            channels, channels, kernel_size=(11, 1), padding=(5, 0), groups=channels, bias=False
+        )
+        self.mixer = nn.Conv2d(channels, channels, kernel_size=1, bias=True)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        u = self.dw_local(x)
+        b7 = self.strip7_v(self.strip7_h(u))
+        b11 = self.strip11_v(self.strip11_h(u))
+        attn = torch.sigmoid(self.mixer(u + b7 + b11))
+        return x * attn
 
 
 class UNetConvBlock(nn.Module):
@@ -45,6 +199,51 @@ class UNetConvBlock(nn.Module):
         return self.block[5](self.block[4](c2).to(c2.dtype))
 
 
+class TinySingleConvBlock(nn.Module):
+    """
+    Lightweight Single 3x3 Convolution Block for Stage 0 (`v4.0-Gen0-TinyCNN`):
+      1 x (3x3 Conv2d -> GroupNorm -> SiLU)
+    Provides ultra-fast feature extraction while keeping total model parameters ~50K.
+    """
+
+    def __init__(self, in_ch: int, out_ch: int, groups: int = 4):
+        super().__init__()
+        g = min(groups, out_ch)
+        self.block = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1, bias=False),
+            nn.GroupNorm(g, out_ch),
+            nn.SiLU(inplace=True),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        c1 = self.block[0](x)
+        return self.block[2](self.block[1](c1).to(c1.dtype))
+
+
+class TinySkipUpBlock(nn.Module):
+    """
+    Lightweight Bilinear Upsampling + Skip Fusion Block for Stage 0 (`v4.0-Gen0-TinyCNN`):
+    Upsamples 25x25 -> 50x50, concatenates the 50x50 encoder skip tensor, and fuses via 3x3 Conv.
+    """
+
+    def __init__(self, in_ch: int, skip_ch: int, out_ch: int, groups: int = 4):
+        super().__init__()
+        g = min(groups, out_ch)
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_ch + skip_ch, out_ch, kernel_size=3, padding=1, bias=False),
+            nn.GroupNorm(g, out_ch),
+            nn.SiLU(inplace=True),
+        )
+
+    def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
+        u = F.interpolate(
+            x, size=skip.shape[-2:], mode="bilinear", align_corners=False
+        )
+        fused = torch.cat([u, skip.to(u.dtype)], dim=1)
+        c = self.conv[0](fused)
+        return self.conv[2](self.conv[1](c).to(c.dtype))
+
+
 class UNetUpBlock(nn.Module):
     """
     U-Net Expansive Upsampling Stage:
@@ -63,7 +262,7 @@ class UNetUpBlock(nn.Module):
         groups: int = 8,
     ):
         super().__init__()
-        up_ch = in_ch // 2
+        up_ch = max(4, in_ch // 2)
         g_up = min(groups, up_ch)
         self.up = nn.Sequential(
             nn.ConvTranspose2d(
@@ -144,88 +343,130 @@ class DilatedResBlock(nn.Module):
 
 class CoCSpatialEncoder(nn.Module):
     """
-    U-Net Contracting-Expansive Spatial Backbone for the 59x50x50 Village Observation Grid.
+    Evolvable Spatial Backbone for the 59x50x50 Village Observation Grid.
 
-    Architecture Overview:
-      - Stage 1 (Contracting / Downscaling Encoder):
-        * `enc1`: (59, 50, 50)  -> (32, 50, 50)   [2x Conv3x3-GN8-SiLU, Skip 1]
-        * `pool1` + `enc2`:     -> (64, 25, 25)   [2x2 MaxPool + 2x Conv3x3-GN8-SiLU, Skip 2]
-        * `pool2` + `enc3`:     -> (128, 12, 12)  [2x2 MaxPool + 2x Conv3x3-GN8-SiLU, Skip 3]
-        * `pool3` + `bottleneck`: -> (256, 6, 6)  [2x2 MaxPool + 2x Conv3x3-GN8-SiLU]
-
-      - Stage 2 (Expansive / Upscaling Decoder & Dual-Branch Split):
-        * Partial Upscale (`up3`): (256, 6, 6) + Skip 3 (128, 12, 12) -> `d3` (128, 12, 12)
-        * Branch A — `global_tower`: Pools partially upscaled `d3` (128, 12, 12) into
-          `global_embedding` (B, 256) to feed the 5 tactical decision heads.
-        * Branch B — Full U-Net Upscale for Grid Position Selection:
-          - `up2`: `d3` (128, 12, 12) + Skip 2 (64, 25, 25) -> `d2` (64, 25, 25)
-          - `up1`: `d2` (64, 25, 25) + Skip 1 (32, 50, 50)  -> `spatial_features` (32, 50, 50)
+    Supports progressive architectural morphing from Stage 0 (`tiny_cnn`, ~50K total model params)
+    through SOTA Vision & Spatial-RL stages (`coord_se_res`, `convnext_v2`, `segnext_msca`, `unet`):
+      - Stage 0 (`backbone_type="tiny_cnn"`, `use_unet_decoder=False`):
+        * `enc1`: (59, 50, 50) -> (base_ch, 50, 50) [Single 3x3 Conv + GN + SiLU]
+        * `pool1` + `enc2`: -> (c2, 25, 25) [2x2 MaxPool + 3x3 Conv + GN + SiLU]
+        * `global_tower`: (c2, 25, 25) -> `global_embedding` (B, embed_dim)
+        * `up1`: Bilinear Upsample (25x25 -> 50x50) + Skip 1 -> `spatial_features` (B, spatial_dim, 50, 50)
+      - Evolved Stages (`use_coord_features`, `use_se_attention`, `use_convnext_grn`, `use_segnext_msca`, `use_unet_decoder`):
+        * Adds explicit CoC tactical strategy coordinate channels, SE attention, ConvNeXt V2 7x7 GRN blocks,
+          SegNeXt Multi-Scale Strip Attention, and/or full 4-stage U-Net contracting-expansive pathways.
     """
 
     def __init__(
         self,
         in_channels: int = 59,
-        base_ch: int = 32,
-        spatial_dim: int = 32,
-        embed_dim: int = 256,
+        base_ch: int = 20,
+        spatial_dim: int = 20,
+        embed_dim: int = 64,
+        backbone_type: str = "tiny_cnn",
+        use_coord_features: bool = False,
         use_dilated_context: bool = False,
         use_se_attention: bool = False,
+        use_convnext_grn: bool = False,
+        use_segnext_msca: bool = False,
+        use_unet_decoder: bool = False,
     ):
         super().__init__()
         self.in_channels = in_channels
         self.base_ch = base_ch
         self.spatial_dim = spatial_dim
         self.embed_dim = embed_dim
+        self.backbone_type = str(backbone_type or "tiny_cnn")
+        self.use_coord_features = bool(use_coord_features)
         self.use_dilated_context = bool(use_dilated_context)
         self.use_se_attention = bool(use_se_attention)
+        self.use_convnext_grn = bool(use_convnext_grn)
+        self.use_segnext_msca = bool(use_segnext_msca)
+        self.use_unet_decoder = bool(use_unet_decoder or self.backbone_type == "unet")
 
-        c1 = base_ch          # 32
-        c2 = base_ch * 2      # 64
-        c3 = base_ch * 4      # 128
-        c4 = base_ch * 8      # 256
+        self.tactical_synth = TacticalFeatureSynthesizer() if self.use_coord_features else None
+        effective_in_ch = in_channels + (6 if self.use_coord_features else 0)
 
-        # Stage 1: U-Net Contracting (Downscaling) Path (50x50 -> 25x25 -> 12x12 -> 6x6)
-        self.enc1 = UNetConvBlock(in_channels, c1)
-        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+        c1 = base_ch
+        c2 = int(round(base_ch * 1.6)) if (self.backbone_type == "tiny_cnn" and not self.use_unet_decoder) else (base_ch * 2)
+        c2 = max(16, (c2 // 4) * 4)
 
-        self.enc2 = UNetConvBlock(c1, c2)
-        self.dilated_context = DilatedResBlock(c2) if self.use_dilated_context else None
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+        if self.use_unet_decoder:
+            c3 = base_ch * 4
+            c4 = base_ch * 8
+            self.enc1 = UNetConvBlock(effective_in_ch, c1)
+            self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+            self.enc2 = UNetConvBlock(c1, c2)
+            self.dilated_context = DilatedResBlock(c2) if self.use_dilated_context else None
+            self.convnext_block = ConvNeXtV2Block(c2) if self.use_convnext_grn else None
+            self.msca_block = SegNeXtMSCABlock(c2) if self.use_segnext_msca else None
+            self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.enc3 = UNetConvBlock(c2, c3)
-        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
+            self.enc3 = UNetConvBlock(c2, c3)
+            self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.bottleneck = UNetConvBlock(c3, c4)
-        self.bottleneck_se = SEChannelAttention(c4) if self.use_se_attention else None
+            self.bottleneck = UNetConvBlock(c3, c4)
+            self.bottleneck_se = SEChannelAttention(c4) if self.use_se_attention else None
 
-        # Stage 2A: Initial U-Net Upscale (6x6 -> 12x12 with Skip 3)
-        # Feeds both the Global Tower (for the 5 heads) and the remaining U-Net decoder path
-        self.up3 = UNetUpBlock(
-            in_ch=c4, skip_ch=c3, out_ch=c3, padding=1, output_padding=1
-        )
+            self.up3 = UNetUpBlock(
+                in_ch=c4, skip_ch=c3, out_ch=c3, padding=1, output_padding=1
+            )
+            g_tower = min(8, c3)
+            self.global_tower = nn.Sequential(
+                nn.Conv2d(c3, c3, kernel_size=3, stride=2, padding=1, bias=False),
+                nn.GroupNorm(g_tower, c3),
+                nn.SiLU(inplace=True),
+                nn.AdaptiveAvgPool2d((1, 1)),
+                nn.Flatten(),
+                nn.Linear(c3, embed_dim),
+                nn.LayerNorm(embed_dim),
+                nn.SiLU(inplace=True),
+            )
+            self.up2 = UNetUpBlock(
+                in_ch=c3, skip_ch=c2, out_ch=c2, padding=0, output_padding=0
+            )
+            self.up1 = UNetUpBlock(
+                in_ch=c2, skip_ch=c1, out_ch=spatial_dim, padding=1, output_padding=1
+            )
+            self.spatial_se = SEChannelAttention(spatial_dim) if self.use_se_attention else None
+        else:
+            # Lightweight 2-Stage Strided CNN Pathway (Gen 0 TinyCNN ~50K params -> Gen 1..3 Mid-Scale)
+            is_tiny = (
+                self.backbone_type == "tiny_cnn"
+                and not self.use_dilated_context
+                and not self.use_convnext_grn
+                and not self.use_segnext_msca
+            )
+            self.enc1 = (
+                TinySingleConvBlock(effective_in_ch, c1)
+                if is_tiny
+                else UNetConvBlock(effective_in_ch, c1)
+            )
+            self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+            self.enc2 = (
+                TinySingleConvBlock(c1, c2)
+                if is_tiny
+                else UNetConvBlock(c1, c2)
+            )
+            self.dilated_context = DilatedResBlock(c2) if self.use_dilated_context else None
+            self.convnext_block = ConvNeXtV2Block(c2) if self.use_convnext_grn else None
+            self.msca_block = SegNeXtMSCABlock(c2) if self.use_segnext_msca else None
+            self.bottleneck = self.enc2
+            self.bottleneck_se = SEChannelAttention(c2) if self.use_se_attention else None
 
-        # Global Tower: Branches off from Stage 2's partially upscaled d3 (128x12x12 -> 256-D)
-        self.global_tower = nn.Sequential(
-            nn.Conv2d(c3, c3, kernel_size=3, stride=2, padding=1, bias=False),
-            nn.GroupNorm(8, c3),
-            nn.SiLU(inplace=True),
-            nn.AdaptiveAvgPool2d((1, 1)),
-            nn.Flatten(),
-            nn.Linear(c3, embed_dim),
-            nn.LayerNorm(embed_dim),
-            nn.SiLU(inplace=True),
-        )
-
-        # Stage 2B: Full U-Net Upscaling back to 50x50 for Grid Position Selection (12x12 -> 25x25 -> 50x50)
-        # Note: 12x12 with kernel=3, stride=2, pad=0, out_pad=0 produces (12-1)*2 + 3 = 25x25 exact
-        self.up2 = UNetUpBlock(
-            in_ch=c3, skip_ch=c2, out_ch=c2, padding=0, output_padding=0
-        )
-        # 25x25 with kernel=3, stride=2, pad=1, out_pad=1 produces (25-1)*2 - 2 + 3 + 1 = 50x50 exact
-        self.up1 = UNetUpBlock(
-            in_ch=c2, skip_ch=c1, out_ch=spatial_dim, padding=1, output_padding=1
-        )
-        self.spatial_se = SEChannelAttention(spatial_dim) if self.use_se_attention else None
+            g_tower = min(8, c2)
+            self.global_tower = nn.Sequential(
+                nn.Conv2d(c2, c2, kernel_size=3, stride=2, padding=1, bias=False),
+                nn.GroupNorm(g_tower, c2),
+                nn.SiLU(inplace=True),
+                nn.AdaptiveAvgPool2d((1, 1)),
+                nn.Flatten(),
+                nn.Linear(c2, embed_dim),
+                nn.LayerNorm(embed_dim),
+                nn.SiLU(inplace=True),
+            )
+            self.up1 = TinySkipUpBlock(in_ch=c2, skip_ch=c1, out_ch=spatial_dim)
+            self.spatial_se = SEChannelAttention(spatial_dim) if self.use_se_attention else None
 
     @property
     def spatial_stem(self) -> nn.Module:
@@ -235,7 +476,7 @@ class CoCSpatialEncoder(nn.Module):
     def context_res(self) -> nn.Module:
         return self.bottleneck
 
-    def forward(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _adapt_input_channels(self, obs: torch.Tensor) -> torch.Tensor:
         if obs.shape[1] != self.in_channels:
             if obs.shape[1] == 50 and self.in_channels == 59:
                 adapted = torch.zeros(
@@ -275,26 +516,48 @@ class CoCSpatialEncoder(nn.Module):
                 adapted[:, 9] = torch.clamp(obs[:, 25:29].max(dim=1).values, max=1.0)
                 adapted[:, 10:31] = obs[:, 29:50]
                 obs = adapted
+        return obs
 
-        # Stage 1: Downscale 50x50 -> 25x25 -> 12x12 -> 6x6
-        e1 = self.enc1(obs)               # (B, 32, 50, 50)
-        e2 = self.enc2(self.pool1(e1))    # (B, 64, 25, 25)
+    def forward(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        obs = self._adapt_input_channels(obs)
+        x = self.tactical_synth(obs) if self.tactical_synth is not None else obs
+
+        if self.use_unet_decoder:
+            e1 = self.enc1(x)
+            e2 = self.enc2(self.pool1(e1))
+            if self.dilated_context is not None:
+                e2 = self.dilated_context(e2)
+            if self.convnext_block is not None:
+                e2 = self.convnext_block(e2)
+            if self.msca_block is not None:
+                e2 = self.msca_block(e2)
+            e3 = self.enc3(self.pool2(e2))
+            b = self.bottleneck(self.pool3(e3))
+            if self.bottleneck_se is not None:
+                b = self.bottleneck_se(b)
+
+            d3 = self.up3(b, e3)
+            global_embedding = self.global_tower(d3)
+            d2 = self.up2(d3, e2)
+            spatial_features = self.up1(d2, e1)
+            if self.spatial_se is not None:
+                spatial_features = self.spatial_se(spatial_features)
+            return spatial_features.float(), global_embedding.float()
+
+        # Fast 2-Stage Strided CNN + Skip Upsample Path (Stage 0 TinyCNN & Mid-Scale Evolutions)
+        e1 = self.enc1(x)                   # (B, c1, 50, 50)
+        e2 = self.enc2(self.pool1(e1))      # (B, c2, 25, 25)
         if self.dilated_context is not None:
             e2 = self.dilated_context(e2)
-        e3 = self.enc3(self.pool2(e2))    # (B, 128, 12, 12)
-        b = self.bottleneck(self.pool3(e3))  # (B, 256, 6, 6)
+        if self.convnext_block is not None:
+            e2 = self.convnext_block(e2)
+        if self.msca_block is not None:
+            e2 = self.msca_block(e2)
         if self.bottleneck_se is not None:
-            b = self.bottleneck_se(b)
+            e2 = self.bottleneck_se(e2)
 
-        # Stage 2: Upscale a little bit (6x6 -> 12x12) with Skip 3
-        d3 = self.up3(b, e3)              # (B, 128, 12, 12)
-
-        # Branch A: Feed partially upscaled Stage 2 features into the Global Tower for the 5 heads
-        global_embedding = self.global_tower(d3)  # (B, 256)
-
-        # Branch B: Upscale completely back to 50x50 (12x12 -> 25x25 -> 50x50) for grid position selection
-        d2 = self.up2(d3, e2)             # (B, 64, 25, 25)
-        spatial_features = self.up1(d2, e1)  # (B, 32, 50, 50)
+        global_embedding = self.global_tower(e2)   # (B, embed_dim)
+        spatial_features = self.up1(e2, e1)        # (B, spatial_dim, 50, 50)
         if self.spatial_se is not None:
             spatial_features = self.spatial_se(spatial_features)
 
@@ -304,21 +567,29 @@ class CoCSpatialEncoder(nn.Module):
 DEPLOY_FRACTION_BINS: Tuple[float, ...] = (0.0, 0.25, 0.50, 0.75, 1.00)
 
 DEFAULT_ARCH_CONFIG: Dict[str, Any] = {
-    "arch_version": "3.0-UNet",
+    "arch_version": "v4.0-Gen0-TinyCNN",
+    "generation": 0,
+    "backbone_type": "tiny_cnn",
+    "weight_transfer_mode": "scratch_restart",
     "in_channels": 59,
-    "base_ch": 32,
-    "spatial_dim": 32,
-    "embed_dim": 256,
-    "head_hidden_dim": 128,
+    "base_ch": 20,
+    "spatial_dim": 20,
+    "embed_dim": 64,
+    "head_hidden_dim": 48,
+    "use_coord_features": False,
     "use_dilated_context": False,
     "use_se_attention": False,
+    "use_convnext_grn": False,
+    "use_segnext_msca": False,
+    "use_unet_decoder": False,
+    "use_dual_spatial_head": False,
     "use_gated_heads": False,
     "critic_depth": 2,
     "logit_temp_type": 1.4,
     "logit_temp_idx": 1.6,
     "logit_temp_frac": 1.4,
     "tile_logit_scale": 2.2,
-    "th_threat_weight": 9.5,  # Cycle 20 spatial breach & TH focus
+    "th_threat_weight": 9.5,
     "defense_threat_weight": 2.0,
     "breach_prior_weight": 11.0,
     "spell_combat_prior_weight": 8.0,
@@ -342,21 +613,81 @@ def compute_deploy_count(avail_count: int, deploy_fraction: float) -> int:
     return max(1, min(int(avail_count), int(round(avail_count * frac))))
 
 
+def transfer_compatible_weights(
+    old_state_dict: Dict[str, torch.Tensor],
+    new_model: nn.Module,
+) -> Dict[str, Any]:
+    """
+    Shape-Aware Warm-Start Weight Transfer across Progressive Architecture Generations:
+      - Copies exact matching parameter tensors directly.
+      - Copies overlapping tensor slices when dimensions expand/contract (e.g., widening
+        `base_ch` from 20 -> 28 -> 32, `embed_dim` from 64 -> 128 -> 256, or adding
+        6 tactical coordinate input channels from 59 -> 65).
+      - Leaves newly introduced layers (e.g., ConvNeXtV2Block, SegNeXtMSCABlock) at their
+        clean initial weights.
+    """
+    new_sd = new_model.state_dict()
+    updated_sd: Dict[str, torch.Tensor] = {}
+    exact_matches: List[str] = []
+    sliced_matches: List[str] = []
+    fresh_keys: List[str] = []
+    transferred_params = 0
+    total_new_params = 0
+
+    for key, new_tensor in new_sd.items():
+        numel = int(new_tensor.numel())
+        total_new_params += numel
+        if key not in old_state_dict:
+            updated_sd[key] = new_tensor
+            fresh_keys.append(key)
+            continue
+
+        old_tensor = old_state_dict[key].to(
+            device=new_tensor.device, dtype=new_tensor.dtype
+        )
+        if old_tensor.shape == new_tensor.shape:
+            updated_sd[key] = old_tensor.clone()
+            exact_matches.append(key)
+            transferred_params += numel
+        elif old_tensor.ndim == new_tensor.ndim and old_tensor.ndim >= 1:
+            merged = new_tensor.clone()
+            slices = tuple(
+                slice(0, min(int(s_old), int(s_new)))
+                for s_old, s_new in zip(old_tensor.shape, new_tensor.shape)
+            )
+            merged[slices] = old_tensor[slices]
+            updated_sd[key] = merged
+            sliced_matches.append(key)
+            overlap_count = 1
+            for s in slices:
+                overlap_count *= int(s.stop - s.start)
+            transferred_params += overlap_count
+        else:
+            updated_sd[key] = new_tensor
+            fresh_keys.append(key)
+
+    new_model.load_state_dict(updated_sd, strict=False)
+    ratio = float(transferred_params) / float(max(1, total_new_params))
+    return {
+        "exact_matched_count": len(exact_matches),
+        "sliced_matched_count": len(sliced_matches),
+        "fresh_initialized_count": len(fresh_keys),
+        "transferred_params": int(transferred_params),
+        "total_new_params": int(total_new_params),
+        "transferred_param_ratio": round(ratio, 4),
+    }
+
+
 class CoCActorCritic(nn.Module):
     """
-    Live Tactical Attacker Network: Factorized Multi-Discrete Actor-Critic.
+    Live Tactical Attacker Network: Evolvable Factorized Multi-Discrete Actor-Critic.
 
-    Fuses the (B, 10, 50, 50) spatial battlefield tensor with the (B, 64) live available
-    army inventory vector (encoding what troops, spells, heroes, equipment, pets, and siege
-    machine are available and in what remaining quantity) to parameterize a factorized policy
-    over MultiDiscrete([7, 10, 50, 50, 5]):
-
+    Fuses the (B, 59, 50, 50) spatial battlefield tensor with the (B, 64) live available
+    army inventory vector to parameterize a factorized policy over MultiDiscrete([7, 10, 50, 50, 5]):
       1. `slot_type`       (7 choices):  0=NoOp, 1=Troop, 2=Hero, 3=HeroAbility, 4=Siege, 5=PopSiege, 6=Spell
       2. `slot_idx`        (10 choices): Loadout slot index, conditioned on the chosen `slot_type`
       3. `deploy_fraction` (5 bins in [0, 1]): Fraction of remaining available troops of `slot_idx` to deploy
-                                         at once (0.0 -> min 1 troop, 0.25 -> 25%, 0.50 -> 50%, 0.75 -> 75%, 1.00 -> all)
-      4. `tile_xy`         (2500 tiles): Flattened (tile_y * 50 + tile_x) deployment coordinate,
-                                         conditioned on both the 50x50 spatial map and chosen `slot_type`
+      4. `tile_xy`         (2500 tiles): Flattened (tile_y * 50 + tile_x) deployment coordinate
       5. `value`           (scalar):     Critic state-value estimate V(s)
     """
 
@@ -375,14 +706,26 @@ class CoCActorCritic(nn.Module):
         self.army_context_dim = army_context_dim
         self.num_fraction_bins = num_fraction_bins
 
-        base_ch = int(cfg.get("base_ch", 32))
-        spatial_dim_cfg = int(cfg.get("spatial_dim", 32))
-        embed_dim_cfg = int(cfg.get("embed_dim", 256))
-        head_hidden_dim = int(cfg.get("head_hidden_dim", 128))
+        base_ch = int(cfg.get("base_ch", 20))
+        spatial_dim_cfg = int(cfg.get("spatial_dim", 20))
+        embed_dim_cfg = int(cfg.get("embed_dim", 64))
+        head_hidden_dim = int(cfg.get("head_hidden_dim", 48))
         self.head_hidden_dim = head_hidden_dim
-        self.arch_version: str = str(cfg.get("arch_version", "3.0-UNet"))
+        self.arch_version: str = str(cfg.get("arch_version", "v4.0-Gen0-TinyCNN"))
+        self.generation: int = int(cfg.get("generation", 0))
+        self.backbone_type: str = str(cfg.get("backbone_type", "tiny_cnn"))
+        self.weight_transfer_mode: str = str(
+            cfg.get("weight_transfer_mode", "scratch_restart")
+        )
+        self.use_coord_features: bool = bool(cfg.get("use_coord_features", False))
         self.use_dilated_context: bool = bool(cfg.get("use_dilated_context", False))
         self.use_se_attention: bool = bool(cfg.get("use_se_attention", False))
+        self.use_convnext_grn: bool = bool(cfg.get("use_convnext_grn", False))
+        self.use_segnext_msca: bool = bool(cfg.get("use_segnext_msca", False))
+        self.use_unet_decoder: bool = bool(
+            cfg.get("use_unet_decoder", self.backbone_type == "unet")
+        )
+        self.use_dual_spatial_head: bool = bool(cfg.get("use_dual_spatial_head", False))
         self.use_gated_heads: bool = bool(cfg.get("use_gated_heads", False))
         self.critic_depth: int = int(cfg.get("critic_depth", 2))
 
@@ -401,26 +744,31 @@ class CoCActorCritic(nn.Module):
         self.reg_ent_frac_weight: float = float(cfg.get("reg_ent_frac_weight", 2.2))
         self.reg_ent_tile_weight: float = float(cfg.get("reg_ent_tile_weight", 0.12))
 
-        # U-Net Contracting-Expansive Spatial Backbone
+        # Evolvable Spatial Backbone (Gen 0 TinyCNN -> Gen 1..5 SOTA Vision Backbones)
         self.encoder = CoCSpatialEncoder(
             in_channels=in_channels,
             base_ch=base_ch,
             spatial_dim=spatial_dim_cfg,
             embed_dim=embed_dim_cfg,
+            backbone_type=self.backbone_type,
+            use_coord_features=self.use_coord_features,
             use_dilated_context=self.use_dilated_context,
             use_se_attention=self.use_se_attention,
+            use_convnext_grn=self.use_convnext_grn,
+            use_segnext_msca=self.use_segnext_msca,
+            use_unet_decoder=self.use_unet_decoder,
         )
-        spatial_dim = self.encoder.spatial_dim  # 32
-        embed_dim = self.encoder.embed_dim  # 256
+        spatial_dim = self.encoder.spatial_dim
+        embed_dim = self.encoder.embed_dim
 
-        # Live available army inventory & remaining quantities projection (64-D -> 256-D)
+        # Live available army inventory & remaining quantities projection (64-D -> embed_dim)
         self.army_context_proj = nn.Sequential(
             nn.Linear(army_context_dim, embed_dim),
             nn.LayerNorm(embed_dim),
             nn.SiLU(),
         )
 
-        # Head 1: Action Type logits (256-D -> 7 action types)
+        # Head 1: Action Type logits (embed_dim -> 7 action types)
         self.slot_type_head = nn.Linear(embed_dim, 7)
 
         # Head 2: Army Slot Index logits, conditioned on global_emb + one_hot(slot_type)
@@ -430,15 +778,14 @@ class CoCActorCritic(nn.Module):
             nn.Linear(head_hidden_dim, 10),
         )
 
-        # Head 3: Troop Deployment Fraction logits (bins in [0.0, 0.25, 0.50, 0.75, 1.00]),
-        # conditioned on global_emb + one_hot(slot_type) + one_hot(slot_idx)
+        # Head 3: Troop Deployment Fraction logits (bins in [0.0, 0.25, 0.50, 0.75, 1.00])
         self.deploy_fraction_head = nn.Sequential(
             nn.Linear(embed_dim + 7 + 10, head_hidden_dim),
             nn.SiLU(),
             nn.Linear(head_hidden_dim, num_fraction_bins),
         )
 
-        # Head 4: Spatial Tile Pointer (projects conditioned embedding onto the spatial map)
+        # Head 4: Spatial Tile Pointer (1x1 projection in Gen 0 TinyCNN; 3x3 + Dual Pointer in evolved generations)
         self.tile_cond_proj = nn.Linear(embed_dim + 7 + 10, spatial_dim)
         self.head_gate = (
             nn.Sequential(
@@ -448,10 +795,25 @@ class CoCActorCritic(nn.Module):
             if self.use_gated_heads
             else None
         )
-        self.tile_conv_head = nn.Sequential(
-            nn.Conv2d(spatial_dim, 32, kernel_size=3, padding=1),
-            nn.SiLU(),
-            nn.Conv2d(32, 1, kernel_size=1),
+        if self.backbone_type == "tiny_cnn" and not self.use_unet_decoder and not self.use_dual_spatial_head:
+            self.tile_conv_head = nn.Sequential(
+                nn.Conv2d(spatial_dim, 1, kernel_size=1),
+            )
+        else:
+            mid_tile_ch = max(16, spatial_dim)
+            self.tile_conv_head = nn.Sequential(
+                nn.Conv2d(spatial_dim, mid_tile_ch, kernel_size=3, padding=1),
+                nn.SiLU(),
+                nn.Conv2d(mid_tile_ch, 1, kernel_size=1),
+            )
+        self.spell_tile_conv_head = (
+            nn.Sequential(
+                nn.Conv2d(spatial_dim, max(16, spatial_dim), kernel_size=3, padding=1),
+                nn.SiLU(),
+                nn.Conv2d(max(16, spatial_dim), 1, kernel_size=1),
+            )
+            if self.use_dual_spatial_head
+            else None
         )
 
         # Head 5: State-Value Critic V(s)
@@ -482,6 +844,12 @@ class CoCActorCritic(nn.Module):
             return
         if "arch_version" in cfg and cfg["arch_version"]:
             self.arch_version = str(cfg["arch_version"])
+        if "generation" in cfg and cfg["generation"] is not None:
+            self.generation = int(cfg["generation"])
+        if "backbone_type" in cfg and cfg["backbone_type"]:
+            self.backbone_type = str(cfg["backbone_type"])
+        if "weight_transfer_mode" in cfg and cfg["weight_transfer_mode"]:
+            self.weight_transfer_mode = str(cfg["weight_transfer_mode"])
         for attr in (
             "logit_temp_type",
             "logit_temp_idx",
@@ -502,14 +870,24 @@ class CoCActorCritic(nn.Module):
 
     def get_arch_config(self) -> Dict[str, Any]:
         return {
-            "arch_version": str(getattr(self, "arch_version", "3.0-UNet")),
+            "arch_version": str(getattr(self, "arch_version", "v4.0-Gen0-TinyCNN")),
+            "generation": int(getattr(self, "generation", 0)),
+            "backbone_type": str(getattr(self, "backbone_type", "tiny_cnn")),
+            "weight_transfer_mode": str(
+                getattr(self, "weight_transfer_mode", "scratch_restart")
+            ),
             "in_channels": int(self.in_channels),
             "base_ch": int(self.encoder.base_ch),
             "spatial_dim": int(self.encoder.spatial_dim),
             "embed_dim": int(self.encoder.embed_dim),
-            "head_hidden_dim": int(getattr(self, "head_hidden_dim", 128)),
+            "head_hidden_dim": int(getattr(self, "head_hidden_dim", 48)),
+            "use_coord_features": bool(getattr(self, "use_coord_features", False)),
             "use_dilated_context": bool(getattr(self, "use_dilated_context", False)),
             "use_se_attention": bool(getattr(self, "use_se_attention", False)),
+            "use_convnext_grn": bool(getattr(self, "use_convnext_grn", False)),
+            "use_segnext_msca": bool(getattr(self, "use_segnext_msca", False)),
+            "use_unet_decoder": bool(getattr(self, "use_unet_decoder", False)),
+            "use_dual_spatial_head": bool(getattr(self, "use_dual_spatial_head", False)),
             "use_gated_heads": bool(getattr(self, "use_gated_heads", False)),
             "critic_depth": int(getattr(self, "critic_depth", 2)),
             "total_params": int(sum(p.numel() for p in self.parameters())),
@@ -527,6 +905,16 @@ class CoCActorCritic(nn.Module):
             "reg_ent_frac_weight": round(float(self.reg_ent_frac_weight), 4),
             "reg_ent_tile_weight": round(float(self.reg_ent_tile_weight), 4),
         }
+
+    def _compute_raw_tile_logits(
+        self, fused_spatial: torch.Tensor, is_spell: torch.Tensor
+    ) -> torch.Tensor:
+        B = fused_spatial.shape[0]
+        perimeter_logits = self.tile_conv_head(fused_spatial).reshape(B, 2500)
+        if self.spell_tile_conv_head is not None:
+            spell_logits = self.spell_tile_conv_head(fused_spatial).reshape(B, 2500)
+            return (1.0 - is_spell) * perimeter_logits + is_spell * spell_logits
+        return perimeter_logits
 
     def forward(
         self, obs: torch.Tensor, army_context: Optional[torch.Tensor] = None
@@ -564,7 +952,8 @@ class CoCActorCritic(nn.Module):
         fused_spatial = F.silu(
             spatial_feat * (1.0 + self.film_cond_scale * torch.tanh(cond_spatial)) + cond_spatial
         )
-        tile_logits = self.tile_conv_head(fused_spatial).reshape(B, 2500)
+        is_spell = (chosen_type == 6).float().unsqueeze(-1)
+        tile_logits = self._compute_raw_tile_logits(fused_spatial, is_spell)
 
         # 5. Critic Value V(s)
         value = self.critic_head(global_emb).squeeze(-1)
@@ -606,7 +995,6 @@ class CoCActorCritic(nn.Module):
             )
 
         # 1. Action Type Distribution (0=NoOp is always valid as a fallback)
-        # Smooth logit bounding prevents premature discrete-head entropy collapse
         type_logits = self.logit_temp_type * torch.tanh(self.slot_type_head(global_emb) / 3.0)
         if masks is not None and "slot_type" in masks:
             type_mask = masks["slot_type"].to(device=device, dtype=torch.bool).clone()
@@ -671,7 +1059,6 @@ class CoCActorCritic(nn.Module):
             chosen_frac_bin = action[:, 4].long().clamp(0, self.num_fraction_bins - 1)
 
         # 4. Spatial Tile Distribution (50x50 = 2500 tiles)
-        # FiLM-style multiplicative + additive spatial conditioning & multi-scale core/defense proximity focus
         cond_spatial = self.tile_cond_proj(frac_cond_emb).unsqueeze(-1).unsqueeze(-1)
         if self.head_gate is not None:
             gate_w = self.head_gate(frac_cond_emb).unsqueeze(-1).unsqueeze(-1)
@@ -679,8 +1066,9 @@ class CoCActorCritic(nn.Module):
         fused_spatial = F.silu(
             spatial_feat * (1.0 + self.film_cond_scale * torch.tanh(cond_spatial)) + cond_spatial
         )
-        raw_tile_logits = self.tile_conv_head(fused_spatial).reshape(B, 2500)
         is_spell = (chosen_type == 6).float().unsqueeze(-1)
+        raw_tile_logits = self._compute_raw_tile_logits(fused_spatial, is_spell)
+
         threat_field = (
             0.6 * obs[:, 0:1]
             + self.defense_threat_weight * obs[:, 1:2]
@@ -756,7 +1144,6 @@ class CoCActorCritic(nn.Module):
             out_action = action.long()
 
         # 5. Joint Log-Probability, Entropy, and Critic Value
-        # Sub-actions only contribute to log_prob and entropy when active for `chosen_type`.
         uses_idx = (
             (chosen_type == 1)
             | (chosen_type == 2)
@@ -783,8 +1170,6 @@ class CoCActorCritic(nn.Module):
         e_tile = uses_tile * tile_dist.entropy()
 
         entropy = e_type + e_idx + e_frac + e_tile
-        # Normalized per-head entropy with decoupled coefficients so the 2500-tile spatial head
-        # does not drown out discrete head exploration (slot_type, slot_idx, deploy_fraction)
         h_type_norm = e_type / 1.94591
         h_idx_norm = e_idx / 2.30259
         h_frac_norm = e_frac / 1.60944

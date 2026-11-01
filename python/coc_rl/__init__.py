@@ -8,6 +8,7 @@ from .networks import (
     DEFAULT_ARCH_CONFIG,
     CoCActorCritic,
     CoCSpatialEncoder,
+    transfer_compatible_weights,
 )
 from .ppo import (
     DEFAULT_HYPERPARAMS,

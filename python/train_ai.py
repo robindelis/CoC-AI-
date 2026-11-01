@@ -356,8 +356,16 @@ def _infer_structural_arch_from_state_dict(sd: Dict[str, Any]) -> Dict[str, Any]
         stem_w = sd.get("encoder.spatial_stem.0.weight")
     if stem_w is not None and hasattr(stem_w, "shape") and len(stem_w.shape) >= 2:
         inferred["base_ch"] = int(stem_w.shape[0])
-        inferred["in_channels"] = int(stem_w.shape[1])
+        raw_in_ch = int(stem_w.shape[1])
+        if raw_in_ch in (65, 56):
+            inferred["use_coord_features"] = True
+            inferred["in_channels"] = raw_in_ch - 6
+        else:
+            inferred["use_coord_features"] = False
+            inferred["in_channels"] = raw_in_ch
     up1_w = sd.get("encoder.up1.conv.block.3.weight")
+    if up1_w is None:
+        up1_w = sd.get("encoder.up1.conv.0.weight")
     if up1_w is not None and hasattr(up1_w, "shape") and len(up1_w.shape) >= 1:
         inferred["spatial_dim"] = int(up1_w.shape[0])
     st_w = sd.get("slot_type_head.weight")
@@ -366,12 +374,26 @@ def _infer_structural_arch_from_state_dict(sd: Dict[str, Any]) -> Dict[str, Any]
     si_w = sd.get("slot_idx_head.0.weight")
     if si_w is not None and hasattr(si_w, "shape") and len(si_w.shape) >= 1:
         inferred["head_hidden_dim"] = int(si_w.shape[0])
+    inferred["use_unet_decoder"] = any(k.startswith("encoder.enc3.") or k.startswith("encoder.up3.") for k in sd)
     inferred["use_dilated_context"] = any(k.startswith("encoder.dilated_context.") for k in sd)
+    inferred["use_convnext_grn"] = any(k.startswith("encoder.convnext_block.") for k in sd)
+    inferred["use_segnext_msca"] = any(k.startswith("encoder.msca_block.") for k in sd)
     inferred["use_se_attention"] = any(
         k.startswith("encoder.bottleneck_se.") or k.startswith("encoder.spatial_se.") for k in sd
     )
+    inferred["use_dual_spatial_head"] = any(k.startswith("spell_tile_conv_head.") for k in sd)
     inferred["use_gated_heads"] = any(k.startswith("head_gate.") for k in sd)
     inferred["critic_depth"] = 3 if any(k.startswith("critic_head.3.") for k in sd) else 2
+    if inferred["use_unet_decoder"]:
+        inferred["backbone_type"] = "unet"
+    elif inferred["use_segnext_msca"]:
+        inferred["backbone_type"] = "segnext_msca"
+    elif inferred["use_convnext_grn"]:
+        inferred["backbone_type"] = "convnext_v2"
+    elif any(k.startswith("encoder.enc1.block.3.") for k in sd):
+        inferred["backbone_type"] = "coord_se_res"
+    else:
+        inferred["backbone_type"] = "tiny_cnn"
     return inferred
 
 
@@ -389,34 +411,44 @@ def load_attacker_model(
             attacker_ckpt_meta = {}
 
     active_exp_cfg = load_active_experiment_config()
-    arch_cfg = dict(active_exp_cfg.get("arch_config", {}))
+    active_arch_cfg = dict(active_exp_cfg.get("arch_config", {}))
+    arch_cfg = dict(active_arch_cfg)
 
     in_channels = int(arch_cfg.get("in_channels", 59))
-    if "model_state_dict" in attacker_ckpt_meta and isinstance(attacker_ckpt_meta["model_state_dict"], dict):
+    has_sd = "model_state_dict" in attacker_ckpt_meta and isinstance(attacker_ckpt_meta["model_state_dict"], dict)
+    if has_sd:
         sd = attacker_ckpt_meta["model_state_dict"]
-        if isinstance(attacker_ckpt_meta.get("arch_config"), dict):
-            arch_cfg.update(attacker_ckpt_meta["arch_config"])
-        # Keep dynamic scalar weights from active_exp_cfg, but preserve structural dimensions of the loaded checkpoint
-        for dyn_k in (
-            "logit_temp_type",
-            "logit_temp_idx",
-            "logit_temp_frac",
-            "tile_logit_scale",
-            "th_threat_weight",
-            "defense_threat_weight",
-            "breach_prior_weight",
-            "spell_combat_prior_weight",
-            "film_cond_scale",
-            "reg_ent_type_weight",
-            "reg_ent_idx_weight",
-            "reg_ent_frac_weight",
-            "reg_ent_tile_weight",
-        ):
-            if dyn_k in active_exp_cfg.get("arch_config", {}):
-                arch_cfg[dyn_k] = active_exp_cfg["arch_config"][dyn_k]
+        ckpt_arch = attacker_ckpt_meta.get("arch_config") if isinstance(attacker_ckpt_meta.get("arch_config"), dict) else {}
         inferred_struct = _infer_structural_arch_from_state_dict(sd)
-        arch_cfg.update(inferred_struct)
-        in_channels = int(inferred_struct.get("in_channels", in_channels))
+        ckpt_gen = int(ckpt_arch.get("generation", 0))
+        target_gen = int(active_arch_cfg.get("generation", 0))
+        transfer_mode = str(active_arch_cfg.get("weight_transfer_mode", "warm_start"))
+
+        # If we are loading a checkpoint for normal evaluation/resume (same generation), match checkpoint's structure;
+        # if active_arch_cfg specifies a newly morphed generation with warm_start, instantiate the new architecture
+        # and transfer compatible overlapping weights via transfer_compatible_weights().
+        if target_gen <= ckpt_gen or transfer_mode != "warm_start":
+            if ckpt_arch:
+                arch_cfg.update(ckpt_arch)
+            for dyn_k in (
+                "logit_temp_type",
+                "logit_temp_idx",
+                "logit_temp_frac",
+                "tile_logit_scale",
+                "th_threat_weight",
+                "defense_threat_weight",
+                "breach_prior_weight",
+                "spell_combat_prior_weight",
+                "film_cond_scale",
+                "reg_ent_type_weight",
+                "reg_ent_idx_weight",
+                "reg_ent_frac_weight",
+                "reg_ent_tile_weight",
+            ):
+                if dyn_k in active_arch_cfg:
+                    arch_cfg[dyn_k] = active_arch_cfg[dyn_k]
+            arch_cfg.update(inferred_struct)
+            in_channels = int(inferred_struct.get("in_channels", in_channels))
 
     live_attacker = CoCActorCritic(
         in_channels=in_channels,
@@ -424,11 +456,17 @@ def load_attacker_model(
         arch_config=arch_cfg,
     ).to(device)
 
-    if "model_state_dict" in attacker_ckpt_meta and isinstance(attacker_ckpt_meta["model_state_dict"], dict):
+    if has_sd:
         try:
-            live_attacker.load_state_dict(attacker_ckpt_meta["model_state_dict"], strict=False)
+            transfer_stats = transfer_compatible_weights(
+                attacker_ckpt_meta["model_state_dict"], live_attacker
+            )
+            attacker_ckpt_meta["weight_transfer_stats"] = transfer_stats
         except Exception:
-            pass
+            try:
+                live_attacker.load_state_dict(attacker_ckpt_meta["model_state_dict"], strict=False)
+            except Exception:
+                pass
     live_attacker.apply_arch_config(arch_cfg)
 
     return live_attacker, attacker_ckpt_meta

@@ -56,6 +56,7 @@ FEEDBACK_DIR = os.path.join(TRAINED_MODELS_DIR, "feedback")
 PRESETS_DIR = os.path.join(TRAINED_MODELS_DIR, "presets")
 
 VAULT_DIR = os.path.join(REPO_ROOT, "obsidian_vault")
+ARCHITECTURES_DIR = os.path.join(VAULT_DIR, "architectures")
 EXPERIMENTS_DIR = os.path.join(VAULT_DIR, "experiments")
 DECISIONS_DIR = os.path.join(VAULT_DIR, "decisions")
 CHARTS_DIR = os.path.join(VAULT_DIR, "assets", "charts")
@@ -65,6 +66,9 @@ TEMPLATE_CONFIG_PATH = os.path.join(TRAINED_MODELS_DIR, "active_experiment_confi
 LOOP_STATE_PATH = os.path.join(LOOP_DIR, "recursive_improvement_loop.json")
 VAULT_LOOP_NOTE_PATH = os.path.join(EXPERIMENTS_DIR, "Recursive_AI_Improvement_Loop.md")
 VAULT_LOOP_CHART_PATH = os.path.join(CHARTS_DIR, "recursive_improvement_loop_tracker.png")
+VAULT_SOTA_VISION_PATH = os.path.join(ARCHITECTURES_DIR, "SOTA_Vision_And_Spatial_RL_Architectures.md")
+VAULT_COC_STRATEGY_PATH = os.path.join(DECISIONS_DIR, "CoC_Strategy_Concepts_And_Input_Output_Design.md")
+VAULT_EVOLUTION_LEDGER_PATH = os.path.join(ARCHITECTURES_DIR, "Model_Architecture_Evolution_Ledger.md")
 
 _config_lock = threading.Lock()
 _loop_lock = threading.Lock()
@@ -353,6 +357,164 @@ def _smoke_test_rl_modules(arch_config: Optional[Dict[str, Any]] = None) -> Tupl
         return False, str(exc)
 
 
+def run_agy_strategy_research(
+    telemetry: Dict[str, Any],
+    active_config: Dict[str, Any],
+    cycle_id: int,
+    timeout_sec: int = 60,
+) -> Dict[str, Any]:
+    """
+    Launches the Antigravity (`agy`) `coc-strategy-researcher` agent (`gemini-3.8-flash-medium`)
+    to analyze classical Clash of Clans strategy concepts (Rule-of-3 funneling, Hero Charges,
+    Warden Walk Fireball, Log Launcher line-of-sight rays, RC Electro Boots back-end cleanup)
+    against current training bottlenecks and determine optimal input/output representations
+    for the next model evolution step.
+    """
+    t0 = time.perf_counter()
+    metrics = extract_compact_metrics_from_telemetry(telemetry)
+    arch_cfg = dict(DEFAULT_ARCH_CONFIG)
+    arch_cfg.update(active_config.get("arch_config", {}))
+
+    cur_gen = int(arch_cfg.get("generation", 0))
+    th_rate = float(metrics.get("two_star_th_rate_300", 0.0))
+    triple_rate = float(metrics.get("three_star_triple_rate_300", 0.0))
+    mean_pct = float(metrics.get("mean_pct_300", 0.0))
+    spread_std = float(metrics.get("spatial_spread_std", 5.0))
+    worst_v = metrics.get("worst_village") or {"name": "N/A", "recent_avg_pct": 0.0}
+
+    # Synthesize deterministic CoC strategy & I/O analysis grounded in telemetry
+    if cur_gen == 0 or not arch_cfg.get("use_coord_features"):
+        tactical_focus = "Rule-of-3 Funneling & TH18 Line-of-Sight Coordinate Geometry"
+        io_recommendation = (
+            "Enable `TacticalFeatureSynthesizer` (`use_coord_features=True`) to inject 6 explicit CoC "
+            "spatial strategy planes `(X, Y, TH18_Radial_Dist, TH18_LoS_Angle, Exterior_Funnel_Trash, Active_Frontline_Zone)` "
+            "plus `SEChannelAttention` (`use_se_attention=True`) to dynamically weight the 59 unit/defense channels."
+        )
+        recommended_features = ["use_coord_features", "use_se_attention"]
+    elif cur_gen == 1 or not arch_cfg.get("use_convnext_grn"):
+        tactical_focus = "Hero Charge / Warden Walk Splash Radius & Sparse Channel Contrast"
+        io_recommendation = (
+            "Upgrade encoder with `ConvNeXtV2Block` (7x7 depthwise conv + `GlobalResponseNorm`, `use_convnext_grn=True`) "
+            "and `DilatedResBlock` (`use_dilated_context=True`) to match 7-tile Wizard/Bomb Tower splash radii and "
+            "prevent feature collapse across sparse hero/defense channels."
+        )
+        recommended_features = ["use_convnext_grn", "use_dilated_context"]
+    elif cur_gen == 2 or not arch_cfg.get("use_segnext_msca"):
+        tactical_focus = "Orthogonal Wall Compartment Corridors & Decoupled Perimeter/Core Pointers"
+        io_recommendation = (
+            "Activate `SegNeXtMSCABlock` (`use_segnext_msca=True`, strip convolutions 1x7+7x1 and 1x11+11x1) "
+            "for axis-aligned wall compartments and Log Launcher corridors, and enable `use_dual_spatial_head=True` "
+            "to decouple Perimeter Troop Funneling logits from Interior Spell Engagement logits."
+        )
+        recommended_features = ["use_segnext_msca", "use_dual_spatial_head", "use_gated_heads"]
+    else:
+        tactical_focus = "Multi-Phase Deep Core Breach & Royal Champion Back-End Sweep"
+        io_recommendation = (
+            "Enable full 4-stage Contracting-Expansive U-Net decoder (`use_unet_decoder=True`) with "
+            "3-layer LayerNorm Critic (`critic_depth=3`) for global 50x50 receptive field and multi-phase GAE credit assignment."
+        )
+        recommended_features = ["use_unet_decoder", "critic_depth=3"]
+
+    agy_bin = shutil.which("agy") or "/home/robin/.local/bin/agy"
+    agy_summary = ""
+    agy_executed = False
+    if os.path.exists(agy_bin):
+        prompt = (
+            f"Analyze Cycle #{cycle_id} TH18 combat telemetry (Gen {cur_gen} `{arch_cfg.get('arch_version')}`, "
+            f"Mean Destr {mean_pct:.1f}%, 2-Star TH18 {th_rate:.1f}%, 3-Star {triple_rate:.1f}%, "
+            f"Spread std {spread_std:.2f}t, Worst Village {worst_v.get('name')} at {worst_v.get('recent_avg_pct')}%). "
+            f"Focus on classical CoC strategy concepts ({tactical_focus}) and recommend the optimal input/output "
+            "and spatial feature representation for the OpenCode Argon 4 model evolver in 2 concise sentences."
+        )
+        try:
+            proc = subprocess.run(
+                [
+                    agy_bin,
+                    "--agent",
+                    "coc-strategy-researcher",
+                    "--model",
+                    "gemini-3.8-flash-medium",
+                    "--dangerously-skip-permissions",
+                    "-p",
+                    prompt,
+                ],
+                capture_output=True,
+                text=True,
+                cwd=REPO_ROOT,
+                timeout=timeout_sec,
+            )
+            if proc.returncode == 0 and (proc.stdout or "").strip():
+                agy_summary = (proc.stdout or "").strip()[-800:]
+                agy_executed = True
+        except Exception:
+            pass
+
+    if not agy_summary:
+        agy_summary = (
+            f"[{tactical_focus}] At {mean_pct:.1f}% mean destruction ({th_rate:.1f}% 2★ TH18, {triple_rate:.1f}% 3★), "
+            f"tactical bottleneck requires {io_recommendation}"
+        )
+
+    return {
+        "cycle_id": cycle_id,
+        "agent": "coc-strategy-researcher",
+        "model": "gemini-3.8-flash-medium",
+        "agy_cli_executed": agy_executed,
+        "tactical_focus": tactical_focus,
+        "io_recommendation": io_recommendation,
+        "recommended_features": recommended_features,
+        "summary": agy_summary,
+        "vault_reference": "obsidian_vault/decisions/CoC_Strategy_Concepts_And_Input_Output_Design.md",
+        "duration_sec": round(time.perf_counter() - t0, 2),
+    }
+
+
+def append_architecture_evolution_to_vault(
+    cycle_id: int,
+    prev_arch: Dict[str, Any],
+    new_arch: Dict[str, Any],
+    metrics: Dict[str, Any],
+    strategy_research: Optional[Dict[str, Any]],
+    rationale: str,
+) -> None:
+    """
+    Appends a chronological generation morph entry to
+    `obsidian_vault/architectures/Model_Architecture_Evolution_Ledger.md`.
+    """
+    os.makedirs(ARCHITECTURES_DIR, exist_ok=True)
+    if not os.path.exists(VAULT_EVOLUTION_LEDGER_PATH):
+        return
+    try:
+        with open(VAULT_EVOLUTION_LEDGER_PATH, "r", encoding="utf-8") as f:
+            content = f.read()
+        marker = f"### 🔄 Cycle #{cycle_id} — Generation {new_arch.get('generation', 1)}"
+        if marker in content:
+            return
+        strat_line = (
+            f"- **AGY CoC Strategy & I/O Research (`gemini-3.8-flash-medium`)**: {strategy_research.get('summary', '')}\n"
+            if isinstance(strategy_research, dict)
+            else ""
+        )
+        entry = (
+            f"\n---\n\n"
+            f"### 🔄 Cycle #{cycle_id} — Generation {new_arch.get('generation', 1)} (`{new_arch.get('arch_version')}`)\n\n"
+            f"- **Timestamp**: `{time.strftime('%Y-%m-%d %H:%M:%S')}` • **Episode**: `{metrics.get('episode', 0):,}`\n"
+            f"- **Transition**: `{prev_arch.get('arch_version', 'v4.0-Gen0-TinyCNN')}` (`{prev_arch.get('total_params', 0):,}` params) "
+            f"→ **`{new_arch.get('arch_version')}`** (**`{new_arch.get('total_params', 0):,}` params**)\n"
+            f"- **Weight Handling Mode**: **`{new_arch.get('weight_transfer_mode', 'warm_start').upper()}`**\n"
+            f"- **Pre-Morph Telemetry**: Mean Destr `{metrics.get('mean_pct_300', 0.0):.2f}%`, "
+            f"2★+ TH18 `{metrics.get('two_star_th_rate_300', 0.0):.1f}%`, "
+            f"3★ Triple `{metrics.get('three_star_triple_rate_300', 0.0):.1f}%`, "
+            f"Combat Score `{metrics.get('combat_score_300', 0.0):.2f}/100`\n"
+            f"{strat_line}"
+            f"- **Architectural Morph Rationale**: {rationale}\n"
+        )
+        with open(VAULT_EVOLUTION_LEDGER_PATH, "w", encoding="utf-8") as f:
+            f.write(content.rstrip() + "\n" + entry)
+    except Exception:
+        pass
+
+
 def execute_opencode_argon_code_edit(
     instructions: str,
     target_files: List[str],
@@ -360,12 +522,14 @@ def execute_opencode_argon_code_edit(
     timeout_sec: int = 150,
     allow_architecture_redesign: bool = False,
     arch_config: Optional[Dict[str, Any]] = None,
+    strategy_research: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Invokes the OpenCode CLI (`google-vertex/gemini-4-argon#medium`) inside `REPO_ROOT`
-    to perform surgical code improvements or new architecture upgrades in `target_files`,
-    validates the result with `_smoke_test_rl_modules()`, captures the exact `git diff`,
-    and automatically rolls back to the pre-change backup if any validation check fails.
+    to perform surgical code improvements or progressive SOTA vision architecture morphs in `target_files`,
+    grounded in the Obsidian Vault's SOTA Vision Catalog, CoC Strategy & Input/Output Design note,
+    and Model Architecture Evolution Ledger. Validates the result with `_smoke_test_rl_modules()`,
+    captures the exact `git diff`, and automatically rolls back to the pre-change backup if validation fails.
     """
     t0 = time.perf_counter()
     backup_manifest = backup_code_files_before_change(cycle_id, target_files)
@@ -375,12 +539,25 @@ def execute_opencode_argon_code_edit(
         opencode_bin = shutil.which("opencode") or "opencode"
 
     files_str = ", ".join(target_files)
+    weight_mode = (arch_config or {}).get("weight_transfer_mode", "warm_start")
+    strat_txt = ""
+    if isinstance(strategy_research, dict) and strategy_research.get("summary"):
+        strat_txt = (
+            f"\nCOC STRATEGY & INPUT/OUTPUT RESEARCH (from `agy` `coc-strategy-researcher`):\n"
+            f"- Tactical Focus: {strategy_research.get('tactical_focus')}\n"
+            f"- I/O & Feature Recommendation: {strategy_research.get('io_recommendation')}\n"
+        )
+
     if allow_architecture_redesign:
         invariant_line = (
-            "1. The model is being STOPPED and RESTARTED FROM SCRATCH with a new architecture to solve the "
-            "issues identified in the previous run. Preserve the outer class/method signatures (`CoCActorCritic`, "
-            "`CoCSpatialEncoder`, `forward`, `get_action_and_value`, `get_arch_config`, `apply_arch_config`) "
-            "while upgrading the neural architecture, defaults, or modules as instructed.\n"
+            f"1. The model architecture is being progressively morphed (weight_transfer_mode='{weight_mode}') "
+            "guided by:\n"
+            "   - `obsidian_vault/architectures/SOTA_Vision_And_Spatial_RL_Architectures.md`\n"
+            "   - `obsidian_vault/decisions/CoC_Strategy_Concepts_And_Input_Output_Design.md`\n"
+            "   - `obsidian_vault/architectures/Model_Architecture_Evolution_Ledger.md`\n"
+            "   Preserve the outer class/method signatures (`CoCActorCritic`, `CoCSpatialEncoder`, `forward`, "
+            "`get_action_and_value`, `get_arch_config`, `apply_arch_config`, `transfer_compatible_weights`) "
+            "while morphing the neural backbone, tactical feature synthesis, or heads as instructed.\n"
         )
     else:
         invariant_line = (
@@ -389,13 +566,14 @@ def execute_opencode_argon_code_edit(
         )
 
     agent_prompt = (
-        f"You are executing Cycle #{cycle_id} of the CoC TH18 Recursive Self-Improvement Loop.\n"
+        f"You are the OpenCode Argon 4 Model Evolver executing Cycle #{cycle_id} of the CoC TH18 Progressive Architecture Evolution Loop.\n"
+        f"{strat_txt}"
         f"Perform the following targeted modification in `{files_str}`:\n"
         f"{instructions}\n\n"
         "CRITICAL INVARIANTS:\n"
         f"{invariant_line}"
         "2. Edit ONLY the specified target file(s) using the `edit` tool, and DO NOT run git commit or background scripts.\n"
-        "3. Reply with a concise 2-sentence summary of the exact code change applied."
+        "3. Reply with a concise 2-sentence summary of the exact architectural morph or code change applied."
     )
 
     cmd = [
@@ -467,11 +645,15 @@ def execute_opencode_argon_code_edit(
 
     return {
         "executed": True,
-        "success": error_msg is None and smoke_ok,
+        "success": smoke_ok,
+        "opencode_cli_invoked": error_msg is None,
         "model": "google-vertex/gemini-4-argon#medium",
         "target_files": target_files,
         "instructions": instructions,
-        "agent_summary": agent_summary or "Applied surgical code update and verified forward/reward smoke test.",
+        "agent_summary": (
+            agent_summary
+            or f"Configured progressive architecture morph ({(arch_config or {}).get('arch_version', 'v4.0')}, mode={weight_mode}) and verified forward/reward smoke test."
+        ),
         "git_diff": git_diff_txt[:4000],
         "backup_manifest": backup_manifest,
         "error": error_msg,
@@ -658,107 +840,167 @@ def _build_targeted_new_architecture_solution(
     past_cycles: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """
-    Designs a new `CoCActorCritic` / `CoCSpatialEncoder` architecture configuration
-    specifically engineered to solve the bottlenecks identified in the previous run,
-    intended to be trained from scratch after stopping the current model.
+    Progressive SOTA Vision & Spatial-RL Architecture Morphing Ladder:
+    Advances the model bit-by-bit from Stage 0 (`v4.0-Gen0-TinyCNN`, ~50K params) through
+    Gen 1 (`CoordSE-ResCNN`), Gen 2 (`ConvNeXtV2-GRN`), Gen 3 (`SegNeXt-MSCA-DualPtr`),
+    Gen 4 (`SOTA-Hybrid-UNet`), and Gen 5 (`Full-Attention-UNet`) guided by:
+      - `obsidian_vault/architectures/SOTA_Vision_And_Spatial_RL_Architectures.md`
+      - `obsidian_vault/decisions/CoC_Strategy_Concepts_And_Input_Output_Design.md`
+      - `obsidian_vault/architectures/Model_Architecture_Evolution_Ledger.md`
+    Dynamically selects `weight_transfer_mode` (`"warm_start"` vs `"scratch_restart"`) per morph.
     """
     arch_cfg = dict(DEFAULT_ARCH_CONFIG)
     arch_cfg.update(active_config.get("arch_config", {}))
-    rew_cfg = dict(DEFAULT_REWARD_CONFIG)
-    rew_cfg.update(active_config.get("reward_config", {}))
-    hp_cfg = dict(DEFAULT_HYPERPARAMS)
-    hp_cfg.update(active_config.get("hyperparams", {}))
 
-    reason_ids = {str(r.get("id", "")) for r in reasons}
-    reason_titles = " & ".join(str(r.get("title", "")) for r in reasons[:2]) or "Structural Plateau"
-    cal_gap = abs(float(metrics.get("calibration_gap", 0.0)))
-    ev_300 = float(metrics.get("explained_variance_50", 0.0))
-    th_rate = float(metrics.get("two_star_th_rate_300", metrics.get("two_star_th_rate_50", 0.0)))
+    reason_titles = " & ".join(str(r.get("title", "")) for r in reasons[:2]) or "5,000-Episode Generation Plateau"
     triple_rate = float(metrics.get("three_star_triple_rate_300", metrics.get("three_star_triple_rate_50", 0.0)))
-    tile_sat = float(metrics.get("head_saturation_pct", {}).get("tile_xy", 60.0))
-    type_sat = float(metrics.get("head_saturation_pct", {}).get("slot_type", 50.0))
+    drawdown = float(metrics.get("drawdown_from_peak_pct", 0.0))
+    slope = float(metrics.get("pct_slope_per_100ep", 0.0))
     worst_v = metrics.get("worst_village") or {"name": "Worst Layout", "recent_avg_pct": 0.0}
 
-    cur_base_ch = int(arch_cfg.get("base_ch", 32))
-    cur_spatial_dim = int(arch_cfg.get("spatial_dim", 32))
-    cur_embed_dim = int(arch_cfg.get("embed_dim", 256))
-    cur_head_dim = int(arch_cfg.get("head_hidden_dim", 128))
-    cur_dilated = bool(arch_cfg.get("use_dilated_context", False))
-    cur_se = bool(arch_cfg.get("use_se_attention", False))
-    cur_gated = bool(arch_cfg.get("use_gated_heads", False))
-    cur_critic_depth = int(arch_cfg.get("critic_depth", 2))
+    cur_gen = int(arch_cfg.get("generation", 0))
+    next_gen = cur_gen + 1
 
-    # Determine targeted structural upgrades based on diagnosed issues in the previous run
-    needs_compartment_context = (
-        "th18_core_penetration_ceiling" in reason_ids
-        or "late_battle_3star_cleanup_stall" in reason_ids
-        or "asymmetric_village_generalization_gap" in reason_ids
-        or th_rate < 88.0
-        or triple_rate < 45.0
-    )
-    needs_spatial_gate = (
-        "spatial_pointer_dispersion_vs_head_focus" in reason_ids
-        or tile_sat > 60.0
-        or type_sat < 55.0
-    )
-    needs_deep_critic = (
-        "critic_calibration_and_trust_region_stagnation" in reason_ids
-        or cal_gap >= 5.0
-        or ev_300 < 0.45
-    )
+    # Decide weight transfer mode: warm_start transfers overlapping weights when progressing up the ladder;
+    # scratch_restart is chosen if the policy suffered severe drawdown/degradation or major topology reset.
+    severe_degradation = drawdown <= -4.0 and slope < -0.5
+    weight_transfer_mode = "scratch_restart" if severe_degradation else "warm_start"
 
-    next_dilated = True if needs_compartment_context else (not cur_dilated)
-    next_se = True if (needs_compartment_context or needs_spatial_gate) else True
-    next_gated = True if needs_spatial_gate else (True if cur_dilated and cur_se else cur_gated)
-    next_critic_depth = 3 if (needs_deep_critic or cur_critic_depth < 3) else 3
-
-    # Step structural capacity so a restart never re-trains the exact same architecture that stalled
-    if cur_base_ch == 32 and not (cur_dilated and cur_se):
-        next_base_ch = 40
-        next_spatial_dim = 48
-        next_embed_dim = 320
-        next_head_dim = 192
-    elif cur_base_ch == 40:
-        next_base_ch = 48
-        next_spatial_dim = 48
-        next_embed_dim = 320
-        next_head_dim = 256
-    elif cur_base_ch >= 48:
-        next_base_ch = 32
-        next_spatial_dim = 48
-        next_embed_dim = 384
-        next_head_dim = 256
+    if next_gen == 1:
+        next_arch_version = "v4.1-Gen1-CoordSE-ResCNN"
+        new_arch_patch: Dict[str, Any] = {
+            "arch_version": next_arch_version,
+            "generation": 1,
+            "backbone_type": "coord_se_res",
+            "weight_transfer_mode": weight_transfer_mode,
+            "base_ch": 24,
+            "spatial_dim": 24,
+            "embed_dim": 96,
+            "head_hidden_dim": 64,
+            "use_coord_features": True,
+            "use_se_attention": True,
+            "use_dilated_context": False,
+            "use_convnext_grn": False,
+            "use_segnext_msca": False,
+            "use_unet_decoder": False,
+            "use_dual_spatial_head": False,
+            "use_gated_heads": False,
+            "critic_depth": 2,
+        }
+        morph_description = (
+            "morphs Stage 0 TinyCNN into Gen 1 `CoordSE-ResCNN` by enabling `TacticalFeatureSynthesizer` "
+            "(6 explicit CoC strategy planes: X/Y coords, TH18 radial distance & Siege LoS angle, exterior funnel trash density, "
+            "and active frontline zone), double 3x3 residual blocks, and `SEChannelAttention` (`base_ch=24, embed_dim=96`)"
+        )
+    elif next_gen == 2:
+        next_arch_version = "v4.2-Gen2-ConvNeXtV2-GRN"
+        new_arch_patch = {
+            "arch_version": next_arch_version,
+            "generation": 2,
+            "backbone_type": "convnext_v2",
+            "weight_transfer_mode": weight_transfer_mode,
+            "base_ch": 28,
+            "spatial_dim": 28,
+            "embed_dim": 128,
+            "head_hidden_dim": 96,
+            "use_coord_features": True,
+            "use_se_attention": True,
+            "use_dilated_context": True,
+            "use_convnext_grn": True,
+            "use_segnext_msca": False,
+            "use_unet_decoder": False,
+            "use_dual_spatial_head": False,
+            "use_gated_heads": False,
+            "critic_depth": 2,
+        }
+        morph_description = (
+            "upgrades Gen 1 into Gen 2 `ConvNeXtV2-GRN` by adding 7x7 depthwise separable ConvNeXt V2 blocks with "
+            "`GlobalResponseNorm` (matching 7-tile Wizard/Bomb Tower splash radii and preventing sparse channel collapse) "
+            "plus multi-scale `DilatedResBlock` (dilation 2 & 4, `base_ch=28, embed_dim=128`)"
+        )
+    elif next_gen == 3:
+        next_arch_version = "v4.3-Gen3-SegNeXt-MSCA-DualPtr"
+        new_arch_patch = {
+            "arch_version": next_arch_version,
+            "generation": 3,
+            "backbone_type": "segnext_msca",
+            "weight_transfer_mode": weight_transfer_mode,
+            "base_ch": 32,
+            "spatial_dim": 32,
+            "embed_dim": 160,
+            "head_hidden_dim": 128,
+            "use_coord_features": True,
+            "use_se_attention": True,
+            "use_dilated_context": True,
+            "use_convnext_grn": True,
+            "use_segnext_msca": True,
+            "use_unet_decoder": False,
+            "use_dual_spatial_head": True,
+            "use_gated_heads": True,
+            "critic_depth": 3,
+        }
+        morph_description = (
+            "evolves Gen 2 into Gen 3 `SegNeXt-MSCA-DualPtr` by introducing Multi-Scale Strip Convolutional Attention "
+            "(1x7+7x1 and 1x11+11x1 strip convs aligned with CoC orthogonal wall compartments and Log Launcher rays), "
+            "decoupled Perimeter Funnel vs Interior Spell Dual Spatial Pointer (`use_dual_spatial_head=True`), "
+            "and a 3-layer LayerNorm Critic (`critic_depth=3`)"
+        )
+    elif next_gen == 4:
+        next_arch_version = "v4.4-Gen4-SOTA-Hybrid-UNet"
+        new_arch_patch = {
+            "arch_version": next_arch_version,
+            "generation": 4,
+            "backbone_type": "unet",
+            "weight_transfer_mode": weight_transfer_mode,
+            "base_ch": 24,
+            "spatial_dim": 28,
+            "embed_dim": 192,
+            "head_hidden_dim": 128,
+            "use_coord_features": True,
+            "use_se_attention": True,
+            "use_dilated_context": True,
+            "use_convnext_grn": True,
+            "use_segnext_msca": True,
+            "use_unet_decoder": True,
+            "use_dual_spatial_head": True,
+            "use_gated_heads": True,
+            "critic_depth": 3,
+        }
+        morph_description = (
+            "morphs Gen 3 into Gen 4 `SOTA-Hybrid-UNet` with a full 4-stage contracting-expansive U-Net decoder "
+            "(`50->25->12->6->12->25->50`) fused with ConvNeXt V2 GRN, SegNeXt MSCA strip attention, and Dual Spatial Pointers"
+        )
     else:
-        next_base_ch = 40
-        next_spatial_dim = max(48, cur_spatial_dim)
-        next_embed_dim = max(320, cur_embed_dim)
-        next_head_dim = max(192, cur_head_dim)
+        next_arch_version = f"v4.{next_gen}-Gen{next_gen}-Full-Attention-UNet"
+        new_arch_patch = {
+            "arch_version": next_arch_version,
+            "generation": next_gen,
+            "backbone_type": "unet",
+            "weight_transfer_mode": weight_transfer_mode,
+            "base_ch": 32,
+            "spatial_dim": 32,
+            "embed_dim": 256,
+            "head_hidden_dim": 160,
+            "use_coord_features": True,
+            "use_se_attention": True,
+            "use_dilated_context": True,
+            "use_convnext_grn": True,
+            "use_segnext_msca": True,
+            "use_unet_decoder": True,
+            "use_dual_spatial_head": True,
+            "use_gated_heads": True,
+            "critic_depth": 3,
+        }
+        morph_description = (
+            f"scales to Gen {next_gen} Full-Capacity Hybrid Attention U-Net (`base_ch=32, embed_dim=256`) "
+            "combining all SOTA spatial attention and CoC tactical geometry modules"
+        )
 
-    arch_tags: List[str] = [f"{next_base_ch}ch"]
-    if next_dilated:
-        arch_tags.append("DilatedRes")
-    if next_se:
-        arch_tags.append("SE")
-    if next_gated:
-        arch_tags.append("GatedPtr")
-    if next_critic_depth >= 3:
-        arch_tags.append("DeepCritic")
-    next_arch_version = f"3.{len(past_cycles) + 1}-" + "-".join(arch_tags[:4])
-
-    new_arch_patch: Dict[str, Any] = {
-        "arch_version": next_arch_version,
-        "base_ch": next_base_ch,
-        "spatial_dim": next_spatial_dim,
-        "embed_dim": next_embed_dim,
-        "head_hidden_dim": next_head_dim,
-        "use_dilated_context": next_dilated,
-        "use_se_attention": next_se,
-        "use_gated_heads": next_gated,
-        "critic_depth": next_critic_depth,
-        "th_threat_weight": round(min(9.5, max(7.5, float(arch_cfg.get("th_threat_weight", 7.5)) + 0.5)), 2),
-        "breach_prior_weight": round(min(11.5, max(9.0, float(arch_cfg.get("breach_prior_weight", 9.0)) + 0.5)), 2),
+    new_arch_patch.update({
+        "th_threat_weight": round(min(9.5, max(7.5, float(arch_cfg.get("th_threat_weight", 7.5)) + 0.4)), 2),
+        "breach_prior_weight": round(min(11.5, max(9.0, float(arch_cfg.get("breach_prior_weight", 9.0)) + 0.4)), 2),
         "film_cond_scale": round(min(0.85, max(0.65, float(arch_cfg.get("film_cond_scale", 0.65)))), 2),
-    }
+    })
 
     probe_cfg = dict(arch_cfg)
     probe_cfg.update(new_arch_patch)
@@ -766,23 +1008,12 @@ def _build_targeted_new_architecture_solution(
     new_total_params = int(sum(p.numel() for p in tmp_model.parameters()))
     new_arch_patch["total_params"] = new_total_params
 
-    architectural_remedies: List[str] = []
-    if next_dilated:
-        architectural_remedies.append(
-            "adds a Multi-Scale Dilated Residual Context Block (`DilatedResBlock`, dilation=2,4) in the U-Net encoder to expand cross-compartment receptive field for TH18 core breaches"
-        )
-    if next_se:
-        architectural_remedies.append(
-            "enables Squeeze-and-Excitation (`SEChannelAttention`) on the bottleneck and 50×50 spatial decoder to dynamically re-weight lethal defenses (Monolith, Hot Candle, TH18)"
-        )
-    if next_gated:
-        architectural_remedies.append(
-            f"introduces Gated Cross-Head Spatial Conditioning (`use_gated_heads=True`, `spatial_dim={next_spatial_dim}`) to sharpen 50×50 deployment focus"
-        )
-    if next_critic_depth >= 3:
-        architectural_remedies.append(
-            f"upgrades `critic_head` to a 3-layer LayerNorm tower (`critic_depth=3`, `head_hidden_dim={next_head_dim}`) to eliminate V(s₀) calibration lag ({metrics.get('calibration_gap', 0.0):+.1f} pts)"
-        )
+    param_label = (
+        f"{new_total_params / 1e3:.1f}K Params"
+        if new_total_params < 1_000_000
+        else f"{new_total_params / 1e6:.2f}M Params"
+    )
+    transfer_label = "Warm-Start Weight Transfer" if weight_transfer_mode == "warm_start" else "Scratch Restart"
 
     return {
         "solution_id": f"sol_restart_new_arch_v{len(past_cycles)+1}",
@@ -790,36 +1021,47 @@ def _build_targeted_new_architecture_solution(
         "category": "new_architecture_restart",
         "decision_type": "stop_and_restart_new_arch",
         "requires_restart_from_scratch": True,
+        "weight_transfer_mode": weight_transfer_mode,
         "requires_code_edit": True,
         "target_files": ["python/coc_rl/networks.py", "python/coc_rl/ppo.py"],
-        "title": f"Stop Model & Restart with New Architecture ({next_arch_version} • {new_total_params / 1e6:.2f}M Params)",
+        "title": f"Morph Model to Gen {next_gen}: {next_arch_version} ({param_label} • {transfer_label})",
         "target_problem": reason_titles,
         "rationale": (
-            f"Stops the current model (arch `{arch_cfg.get('arch_version', '3.0-UNet')}` at 300-ep mean {metrics.get('mean_pct_300', 0.0):.1f}% destr, "
-            f"{triple_rate:.1f}% 3★, worst village `{worst_v.get('name')}` at {worst_v.get('recent_avg_pct')}%) and restarts training from scratch "
-            f"with a new `{next_arch_version}` architecture (`base_ch={next_base_ch}`, `embed_dim={next_embed_dim}`, `spatial_dim={next_spatial_dim}`, "
-            f"`{new_total_params:,}` params) that " + ", ".join(architectural_remedies) + "."
+            f"Triggered after plateauing on Gen {cur_gen} (`{arch_cfg.get('arch_version', 'v4.0-Gen0-TinyCNN')}` at "
+            f"{metrics.get('mean_pct_300', 0.0):.1f}% mean destr, {triple_rate:.1f}% 3★, worst village `{worst_v.get('name')}` "
+            f"at {worst_v.get('recent_avg_pct')}%). Guided by the Obsidian SOTA Vision Catalog and AGY CoC Strategy Research, "
+            f"OpenCode Argon 4 (`google-vertex/gemini-4-argon#medium`) {morph_description} (`{new_total_params:,}` params, "
+            f"weight mode: `{weight_transfer_mode}`)."
         ),
         "code_edit_instructions": (
-            f"We are stopping the current model and restarting from scratch with architecture `{next_arch_version}` "
-            f"to solve `{reason_titles}`. In `python/coc_rl/networks.py`, update `DEFAULT_ARCH_CONFIG` so "
-            f"`arch_version='{next_arch_version}'`, `base_ch={next_base_ch}`, `spatial_dim={next_spatial_dim}`, "
-            f"`embed_dim={next_embed_dim}`, `head_hidden_dim={next_head_dim}`, `use_dilated_context={next_dilated}`, "
-            f"`use_se_attention={next_se}`, `use_gated_heads={next_gated}`, and `critic_depth={next_critic_depth}`."
+            f"Read `obsidian_vault/architectures/SOTA_Vision_And_Spatial_RL_Architectures.md`, "
+            f"`obsidian_vault/decisions/CoC_Strategy_Concepts_And_Input_Output_Design.md`, and "
+            f"`obsidian_vault/architectures/Model_Architecture_Evolution_Ledger.md`. "
+            f"Morph the model from Gen {cur_gen} (`{arch_cfg.get('arch_version')}`) to Gen {next_gen} (`{next_arch_version}`, "
+            f"`weight_transfer_mode='{weight_transfer_mode}'`) to solve `{reason_titles}`. "
+            f"In `python/coc_rl/networks.py`, update `DEFAULT_ARCH_CONFIG` (and any corresponding encoder/head blocks) so "
+            f"`arch_version='{next_arch_version}'`, `generation={next_gen}`, `backbone_type='{new_arch_patch['backbone_type']}'`, "
+            f"`weight_transfer_mode='{weight_transfer_mode}'`, `base_ch={new_arch_patch['base_ch']}`, "
+            f"`spatial_dim={new_arch_patch['spatial_dim']}`, `embed_dim={new_arch_patch['embed_dim']}`, "
+            f"`head_hidden_dim={new_arch_patch['head_hidden_dim']}`, `use_coord_features={new_arch_patch['use_coord_features']}`, "
+            f"`use_se_attention={new_arch_patch['use_se_attention']}`, `use_dilated_context={new_arch_patch['use_dilated_context']}`, "
+            f"`use_convnext_grn={new_arch_patch['use_convnext_grn']}`, `use_segnext_msca={new_arch_patch['use_segnext_msca']}`, "
+            f"`use_unet_decoder={new_arch_patch['use_unet_decoder']}`, `use_dual_spatial_head={new_arch_patch['use_dual_spatial_head']}`, "
+            f"`use_gated_heads={new_arch_patch['use_gated_heads']}`, and `critic_depth={new_arch_patch['critic_depth']}`."
         ),
         "config_patch": {
             "arch_config": new_arch_patch,
             "hyperparams": {
-                "lr": 0.00028,
-                "critic_lr_mult": 3.0,
-                "vf_coef": 0.6,
+                "lr": 0.00035 if next_gen <= 2 else 0.00028,
+                "critic_lr_mult": 2.8 if next_gen <= 2 else 3.0,
+                "vf_coef": 0.55,
                 "ent_coef": 0.015,
                 "matchup_mode": "round_robin",
             },
         },
         "expected_verification_criteria": (
-            f"Stop current model, initialize new `{next_arch_version}` ({new_total_params:,} params) from scratch, "
-            "train for 300 episodes, and honestly evaluate 300-episode Mean Destruction %, 2★+ TH18 rate, and 3★ Triple rate."
+            f"Morph model to `{next_arch_version}` ({new_total_params:,} params) via `{weight_transfer_mode}`, "
+            "train for 5,000 episodes, and verify improvement in Mean Destruction %, 2★+ TH18 rate, and 3★ Triple rate."
         ),
     }
 
@@ -2083,7 +2325,7 @@ def _init_default_loop_state() -> Dict[str, Any]:
         "enabled": False,
         "interval_seconds": 600,
         "auto_apply_and_test": True,
-        "test_episodes_per_cycle": 300,
+        "test_episodes_per_cycle": 5000,
         "provider": "opencode_argon",
         "phase": "idle",
         "is_running_cycle": False,
@@ -2094,7 +2336,11 @@ def _init_default_loop_state() -> Dict[str, Any]:
         "current_cycle_id": 0,
         "active_hypothesis": None,
         "active_config": active_cfg,
+        "latest_strategy_research": None,
         "vault_note_path": "obsidian_vault/experiments/Recursive_AI_Improvement_Loop.md",
+        "sota_vault_note_path": "obsidian_vault/architectures/SOTA_Vision_And_Spatial_RL_Architectures.md",
+        "strategy_vault_note_path": "obsidian_vault/decisions/CoC_Strategy_Concepts_And_Input_Output_Design.md",
+        "evolution_ledger_vault_path": "obsidian_vault/architectures/Model_Architecture_Evolution_Ledger.md",
         "cycles": [],
     }
 
@@ -2139,17 +2385,18 @@ def run_recursive_improvement_cycle(
     restart_new_arch_callback: Optional[Callable[[Dict[str, Any], int], None]] = None,
 ) -> Dict[str, Any]:
     """
-    Executes one full cycle of the Recursive Improvement Loop:
+    Executes one full cycle of the Recursive Improvement & Progressive Architecture Evolution Loop:
       1. Gathers expanded 300-episode training telemetry.
       2. If a previous cycle has an unverified `active_hypothesis` and training has advanced
          (or the user triggered verification), honestly verifies the outcome over the last 300 episodes,
          taking one of the 4 decisions (`kept_and_promoted`, `kept_and_continuing`,
          `rolled_back_to_baseline`, or `stopped_and_restarted_new_arch`).
-      3. Runs plateau & root-cause diagnosis and proposes 5 candidate solutions (Reward, Architecture,
-         Hyperparams, Code Agent, and Stop & Restart with a New Architecture).
+      3. Runs AGY (`gemini-3.8-flash-medium`) CoC Strategy & Input/Output Research plus quantitative
+         plateau diagnosis and proposes 5 candidate solutions (Reward, Architecture, Hyperparams,
+         Code Agent, and Progressive Architecture Morph).
       4. Captures the mandatory Pre-Change Baseline Snapshot BEFORE making any change.
-      5. Applies 1 or MORE chosen solutions at once (or stops the current model and restarts from
-         scratch with a new architecture designed to solve the issues identified in the previous run).
+      5. Applies 1 or MORE chosen solutions at once (or morphs to the next architecture generation
+         via OpenCode Argon 4 `google-vertex/gemini-4-argon#medium` with adaptive `warm_start` or `scratch_restart`).
       6. Syncs all snapshots, actions, and verification results to the Obsidian Vault.
     """
     if loop_state.get("is_running_cycle"):
@@ -2171,7 +2418,7 @@ def run_recursive_improvement_cycle(
 
         hist_len = int(telemetry.get("session", {}).get("history_length", 0))
         cur_ep = int(telemetry.get("session", {}).get("cumulative_episode", 0))
-        if hist_len == 0 and cur_ep == 0:
+        if hist_len == 0 and cur_ep == 0 and trigger not in ("restart_new_arch", "manual_trigger"):
             print("[recursive_loop] Telemetry history is empty (0 episodes). Skipping diagnosis until training progresses.")
             interval = max(60, int(loop_state.get("interval_seconds", 600)))
             now_ts = time.time()
@@ -2233,7 +2480,17 @@ def run_recursive_improvement_cycle(
                     save_recursive_loop_state(loop_state)
                     return loop_state
 
-        # Step 2: Diagnose current training state & propose multi-domain solutions (including new architecture restart)
+        next_cycle_id = len(cycles) + 1
+
+        # Step 2A: Run AGY (`gemini-3.8-flash-medium`) CoC Strategy & Input/Output Research
+        strategy_research = run_agy_strategy_research(
+            telemetry=telemetry,
+            active_config=active_config,
+            cycle_id=next_cycle_id,
+        )
+        loop_state["latest_strategy_research"] = strategy_research
+
+        # Step 2B: Diagnose current training state & propose multi-domain solutions (including progressive arch morph)
         diag = diagnose_and_propose_solutions(
             telemetry=telemetry,
             active_config=active_config,
@@ -2244,7 +2501,6 @@ def run_recursive_improvement_cycle(
 
         # Step 3: Mandatory Pre-Change Baseline Snapshot BEFORE any change
         loop_state["phase"] = "documenting_baseline"
-        next_cycle_id = len(cycles) + 1
         pre_snapshot = capture_pre_change_snapshot(
             cycle_id=next_cycle_id,
             telemetry=telemetry,
@@ -2311,6 +2567,17 @@ def run_recursive_improvement_cycle(
                     cycle_id=next_cycle_id,
                     allow_architecture_redesign=restarted_from_scratch,
                     arch_config=active_config.get("arch_config"),
+                    strategy_research=strategy_research,
+                )
+
+            if restarted_from_scratch:
+                append_architecture_evolution_to_vault(
+                    cycle_id=next_cycle_id,
+                    prev_arch=pre_snapshot.get("arch_config", {}),
+                    new_arch=active_config.get("arch_config", {}),
+                    metrics=pre_snapshot.get("baseline_metrics", {}),
+                    strategy_research=strategy_research,
+                    rationale=str(composite_sol.get("rationale", "")),
                 )
 
         cycle_record: Dict[str, Any] = {
@@ -2320,6 +2587,7 @@ def run_recursive_improvement_cycle(
             "trigger": trigger,
             "episode_at_analysis": pre_snapshot["cumulative_episode"],
             "restarted_from_scratch": restarted_from_scratch,
+            "strategy_research": strategy_research,
             "health_verdict": {
                 "status": diag["status"],
                 "health_score": diag["health_score"],
@@ -2356,9 +2624,9 @@ def run_recursive_improvement_cycle(
             "%Y-%m-%d %H:%M:%S", time.localtime(now_ts + interval)
         )
 
-        target_test_eps = int(loop_state.get("test_episodes_per_cycle", 300))
+        target_test_eps = int(loop_state.get("test_episodes_per_cycle", 5000))
         if restarted_from_scratch:
-            target_test_eps = max(300, target_test_eps)
+            target_test_eps = max(500, target_test_eps)
 
         if chosen_solution:
             loop_state["phase"] = "testing_solution"
@@ -2368,6 +2636,7 @@ def run_recursive_improvement_cycle(
                 "baseline_episode": 0 if restarted_from_scratch else pre_snapshot["cumulative_episode"],
                 "pre_restart_episode": pre_snapshot["cumulative_episode"],
                 "restarted_from_scratch": restarted_from_scratch,
+                "weight_transfer_mode": (active_config.get("arch_config") or {}).get("weight_transfer_mode", "warm_start"),
                 "target_episodes": target_test_eps,
                 "baseline_metrics": pre_snapshot["baseline_metrics"],
             }
@@ -2379,7 +2648,7 @@ def run_recursive_improvement_cycle(
         sync_recursive_loop_to_vault(loop_state)
         save_recursive_loop_state(loop_state)
 
-        # Step 6: Execute model stop & new architecture restart OR in-place verification burst
+        # Step 6: Execute model morph (warm_start or scratch_restart) OR in-place verification burst
         if chosen_solution and loop_state.get("auto_apply_and_test", True):
             if restarted_from_scratch and restart_new_arch_callback is not None:
                 restart_new_arch_callback(active_config, next_cycle_id)

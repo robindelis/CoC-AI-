@@ -134,11 +134,22 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
   const enabled = Boolean(loopState?.enabled);
   const intervalSec = loopState?.interval_seconds ?? 600;
   const countdownSec = loopState?.seconds_until_next_check ?? intervalSec;
-  const testEps = loopState?.test_episodes_per_cycle ?? 300;
+  const testEps = loopState?.test_episodes_per_cycle ?? 5000;
   const provider: AIFeedbackProviderId =
     loopState?.provider ?? 'opencode_argon';
   const phase = loopState?.phase ?? 'idle';
   const activeHyp = loopState?.active_hypothesis ?? null;
+  const activeArchCfg = loopState?.active_config?.arch_config ?? {};
+  const activeGen = Number(activeArchCfg.generation ?? 0);
+  const activeArchVersion = String(
+    activeArchCfg.arch_version ?? 'v4.0-Gen0-TinyCNN'
+  );
+  const activeBackbone = String(activeArchCfg.backbone_type ?? 'tiny_cnn');
+  const activeWeightMode = String(
+    activeArchCfg.weight_transfer_mode ?? 'scratch_restart'
+  );
+  const latestStrategy =
+    activeCycle?.strategy_research ?? loopState?.latest_strategy_research ?? null;
 
   const activeStageIndex = useMemo(() => {
     if (phase === 'analyzing') return 1;
@@ -170,7 +181,7 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
   };
 
   const handleTestEpsChange = async (nextEps: number) => {
-    const clamped = Math.max(12, Math.min(500, nextEps));
+    const clamped = Math.max(12, Math.min(20000, nextEps));
     await configureRecursiveLoop({ test_episodes_per_cycle: clamped });
     await onRefreshStatus();
   };
@@ -327,6 +338,22 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
 
             <div className="rl-loop-pill-group">
               <span className="rl-loop-meta-chip">
+                <span>Arch Gen</span>
+                <code>
+                  Gen {activeGen} • {activeArchVersion} ({activeBackbone})
+                </code>
+              </span>
+
+              <span className="rl-loop-meta-chip">
+                <span>Weight Mode</span>
+                <code>
+                  {activeWeightMode === 'warm_start'
+                    ? 'Warm-Start Transfer'
+                    : 'Scratch Restart'}
+                </code>
+              </span>
+
+              <span className="rl-loop-meta-chip">
                 <span>Cadence</span>
                 <select
                   className="rl-inline-select"
@@ -343,7 +370,7 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
               </span>
 
               <span className="rl-loop-meta-chip">
-                <span>Eval / Test Window</span>
+                <span>Evolution Horizon</span>
                 <select
                   className="rl-inline-select"
                   value={testEps}
@@ -351,17 +378,19 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
                     void handleTestEpsChange(Number(e.target.value))
                   }
                 >
-                  <option value={48}>48 Eps</option>
-                  <option value={96}>96 Eps</option>
-                  <option value={150}>150 Eps</option>
-                  <option value={300}>300 Eps (Low-Var Mean)</option>
-                  <option value={500}>500 Eps</option>
+                  <option value={300}>300 Eps</option>
+                  <option value={1000}>1,000 Eps</option>
+                  <option value={2500}>2,500 Eps</option>
+                  <option value={5000}>5,000 Eps (Gen Horizon)</option>
+                  <option value={10000}>10,000 Eps</option>
                 </select>
               </span>
 
               <span className="rl-loop-meta-chip">
-                <span>Vault Memory</span>
-                <code>obsidian_vault/experiments/Recursive_AI_Improvement_Loop.md</code>
+                <span>Vault Dossiers</span>
+                <code>
+                  SOTA_Vision_And_Spatial_RL • CoC_Strategy_Concepts • Evolution_Ledger
+                </code>
               </span>
             </div>
           </div>
@@ -418,8 +447,9 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
               }}
               disabled={isBusy || Boolean(loopState?.is_running_cycle)}
               onClick={() => void handleRestartWithNewArchitecture()}
+              title="Morph model to the next SOTA Vision Generation via AGY CoC Strategy Research + OpenCode Argon 4"
             >
-              🛑🔄 Stop &amp; Restart New Arch
+              🧬 Morph Next Arch Gen (Argon 4 + AGY)
             </button>
 
             <button
@@ -468,6 +498,32 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
             );
           })}
         </div>
+
+        {latestStrategy && (
+          <div
+            style={{
+              marginTop: 8,
+              padding: '8px 12px',
+              borderRadius: 8,
+              border: '1px solid rgba(56, 189, 248, 0.35)',
+              background: 'rgba(15, 23, 42, 0.75)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+              fontSize: 12,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong style={{ color: '#38bdf8' }}>
+                ⚔️ AGY CoC Strategy &amp; I/O Research ({latestStrategy.model}) — {latestStrategy.tactical_focus}
+              </strong>
+              <code style={{ fontSize: 11, color: '#94a3b8' }}>
+                {latestStrategy.vault_reference}
+              </code>
+            </div>
+            <span style={{ color: '#cbd5e1' }}>{latestStrategy.summary}</span>
+          </div>
+        )}
 
         {/* ACTIVE HYPOTHESIS UNDER TEST BANNER */}
         {activeHyp && (

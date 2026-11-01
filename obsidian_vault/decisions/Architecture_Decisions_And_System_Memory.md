@@ -505,3 +505,25 @@ Defined in `CoCActorCritic` (`python/coc_rl/networks.py`), the policy parameteri
   - Clean separation of concerns across filesystem storage, eliminating clutter and preventing storage leaks.
   - Flexible neural architecture supporting both lightweight baseline configurations and advanced dilated attention variants.
   - Live visualizer and architecture manifests stay mathematically accurate across all configuration states.
+
+### ADR-018: Bottom-Up Evolutionary Vision Architecture Pipeline (`Gen 0` ~50K TinyCNN Baseline, 5,000-Episode Horizons, AGY CoC Strategy Researcher & OpenCode Argon 4 Model Evolver)
+- **Date**: 2026-11-01
+- **Status**: Accepted
+- **Context**:
+  1. **Over-Parameterized Static Baseline**: Starting training directly with a 2.48M-parameter 4-stage U-Net slowed per-episode rollout/update throughput and obscured which spatial inductive biases and tactical representations were actually responsible for solving specific TH18 combat phases (perimeter funneling, core breach, hero charge timing, back-end Royal Champion cleanup).
+  2. **Need for Domain-Grounded SOTA Vision & Strategy Co-Evolution**: Evolving a spatial RL policy requires combining modern computer vision operators (`ConvNeXt V2` $7\times 7$ depthwise + `GRN`, `SegNeXt` strip attention `MSCA`, `UniRepLKNet` dilated kernels, `Attention U-Net`, `HRNet`, `Swin V2`, `Vision Mamba`) with classical Clash of Clans strategic concepts (Rule-of-3 funnel cutting, Hero Charges, Warden Walk Fireball, Log Launcher line-of-sight rays, and multi-phase pacing).
+- **Decision**:
+  1. **SOTA Vision Catalog & CoC Strategy Dossiers in Obsidian Vault**:
+     - Established `obsidian_vault/architectures/SOTA_Vision_And_Spatial_RL_Architectures.md` cataloging 11 SOTA vision and spatial-RL families and a progressive morphing ladder (`Gen 0` through `Gen 5`).
+     - Established `obsidian_vault/decisions/CoC_Strategy_Concepts_And_Input_Output_Design.md` documenting classical TH18 strategy concepts and in-network GPU tactical feature synthesis (CoordConv + TH18 radial polar vectors, exterior trash vs. core funnel density, Log Launcher line-of-sight corridor, frontline combat intersection mask, and attack phase embeddings).
+     - Established `obsidian_vault/architectures/Model_Architecture_Evolution_Ledger.md` to record every morphed generation, exact diff, weight transfer mode, and 5,000-episode empirical benchmark.
+  2. **Stage 0 Bare-Minimum Model (`v4.0-Gen0-TinyCNN`, ~50K Parameters)**:
+     - Refactored `python/coc_rl/networks.py` so `Gen 0` starts as an ultra-fast **2-layer strided CNN + $1\times 1$ spatial tile projection head** (`base_ch=20, spatial_dim=20, embed_dim=64, head_hidden_dim=48`, ~49.8K parameters—a 98% parameter reduction vs. the 2.48M U-Net), alongside a modular SOTA building-block library (`CoordPolarFeatureSynthesizer`, `ConvNeXtV2Block`, `SegNeXtMSCABlock`, `SEChannelAttention`, `DilatedResBlock`, `UNetConvBlock`, `UNetUpBlock`) and `transfer_compatible_weights()` for shape-aware partial weight transfer (`warm_start` vs. `scratch_restart`).
+  3. **5,000-Episode Evolutionary Evaluation Horizon & Dual-Agent Collaboration**:
+     - Set default evolutionary evaluation horizon to `test_episodes_per_cycle = 5000` episodes.
+     - Registered `.agents/agents/coc-strategy-researcher/agent.md` (`agy` • `gemini-3.8-flash-medium`) to research CoC tactical mechanics from forums, videos, and behavior specs and update the vault strategy dossier.
+     - Registered `.agents/agents/opencode-model-evolver/agent.md` (`opencode` • `google-vertex/gemini-4-argon#medium`) to freely morph `python/coc_rl/networks.py` step-by-step when a 5,000-episode horizon plateaus, choosing between `warm_start` weight transfer and `scratch_restart` and logging the evolution in Obsidian.
+- **Consequences**:
+  - ~5×–8× faster initial training iteration on the ~50K-parameter `Gen 0` baseline.
+  - Every architectural upgrade is empirically justified by 5,000-episode combat telemetry and permanently traced in the Obsidian Vault.
+

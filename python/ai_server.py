@@ -24,6 +24,7 @@ from pydantic import BaseModel
 import coc_py
 from coc_rl import (
     AI_PROVIDERS,
+    CoCActorCritic,
     CoCAttackerEnv,
     apply_config_patch,
     capture_pre_change_snapshot,
@@ -45,6 +46,7 @@ from coc_rl import (
     save_active_experiment_config,
     save_recursive_loop_state,
     sync_recursive_loop_to_vault,
+    transfer_compatible_weights,
     verify_solution_outcome,
 )
 from train_ai import (
