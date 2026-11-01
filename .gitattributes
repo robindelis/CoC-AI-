@@ -1,0 +1,36 @@
+# Auto-detect text files and normalize LF line endings across OS & cloud environments
+* text=auto eol=lf
+
+# Explicit text files
+*.rs text eol=lf
+*.py text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.sh text eol=lf
+*.canvas text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.svg text
+*.wasm binary
+*.pt binary
+*.pth binary
+*.onnx binary
+*.bin binary
+*.apk binary
+*.tar.gz binary
+*.zip binary

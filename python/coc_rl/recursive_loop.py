@@ -61,6 +61,7 @@ DECISIONS_DIR = os.path.join(VAULT_DIR, "decisions")
 CHARTS_DIR = os.path.join(VAULT_DIR, "assets", "charts")
 
 ACTIVE_CONFIG_PATH = os.path.join(LOOP_DIR, "active_experiment_config.json")
+TEMPLATE_CONFIG_PATH = os.path.join(TRAINED_MODELS_DIR, "active_experiment_config.template.json")
 LOOP_STATE_PATH = os.path.join(LOOP_DIR, "recursive_improvement_loop.json")
 VAULT_LOOP_NOTE_PATH = os.path.join(EXPERIMENTS_DIR, "Recursive_AI_Improvement_Loop.md")
 VAULT_LOOP_CHART_PATH = os.path.join(CHARTS_DIR, "recursive_improvement_loop_tracker.png")
@@ -112,9 +113,15 @@ def _ensure_loop_dirs() -> None:
 def load_active_experiment_config() -> Dict[str, Any]:
     _ensure_loop_dirs()
     default_cfg = get_default_experiment_config()
+    cfg_to_read = None
     if os.path.exists(ACTIVE_CONFIG_PATH):
+        cfg_to_read = ACTIVE_CONFIG_PATH
+    elif os.path.exists(TEMPLATE_CONFIG_PATH):
+        cfg_to_read = TEMPLATE_CONFIG_PATH
+
+    if cfg_to_read:
         try:
-            with open(ACTIVE_CONFIG_PATH, "r", encoding="utf-8") as f:
+            with open(cfg_to_read, "r", encoding="utf-8") as f:
                 loaded = json.load(f)
             if isinstance(loaded, dict):
                 for section in ("arch_config", "reward_config", "hyperparams"):

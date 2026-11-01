@@ -53,9 +53,11 @@ share/python-wheels/
 MANIFEST
 
 # --- PyTorch / Deep RL Training & Checkpoints ---
+trained_models/*
+!trained_models/.gitkeep
+!trained_models/*.template.json
+!trained_models/*.example.json
 checkpoints/
-trained_models/code_backups/
-trained_models/state/
 *.pt
 *.pth
 *.onnx
@@ -83,7 +85,7 @@ htmlcov/
 *.apks
 
 # --- Editor & OS Specific ---
-.obsidian/workspace.json
+**/.obsidian/workspace*.json
 .DS_Store
 .DS_Store?
 ._*
@@ -103,3 +105,4 @@ Thumbs.db
 .hermes/
 .gemini/
 .logs/
+.aistudio/

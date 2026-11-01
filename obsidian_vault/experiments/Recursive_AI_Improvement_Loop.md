@@ -7,9 +7,9 @@ tags:
   - ppo
   - architecture
   - reward-shaping
-updated: "2026-10-31 21:45:15"
+updated: "2026-10-31 22:06:08"
 total_cycles: 0
-loop_enabled: false
+loop_enabled: true
 interval_seconds: 600
 ---
 
@@ -23,7 +23,7 @@ Back to [[00_Index_MOC|Vault Index (MOC)]] • View [[01_Model_Architecture_and_
 
 The **Recursive AI Self-Improvement Loop** inspects training telemetry every **`10` minutes** (`600s`), determines whether training is healthy or plateaued, diagnoses root causes across **Network Architecture**, **Reward Shaping**, and **PPO Hyperparameters**, **documents the complete pre-change baseline state before every modification**, tests the selected solution, verifies whether the targeted bottleneck was solved, and logs the empirical outcome here for long-term institutional memory.
 
-- **Loop Status**: **`READY / ON-DEMAND`** • **Current Phase**: `IDLE`
+- **Loop Status**: **`ENABLED (AUTONOMOUS 10m TIMER)`** • **Current Phase**: `MONITORING`
 - **Total Improvement Cycles Logged**: **`0`**
 - **Active Reward Formula**: `R_t = 0.35·Δ%destr + 15.0·ΔHPratio + 12.0·Δstars + 20.0·I(TH18) + 0.08·C_funnel + 2.0·I(%≥75) + 4.0·I(%≥90) + 6.0·I(3★) + 0.020·I(wait_core) - 0.05·I(invalid)`
 - **Active Architecture Config**: `th_threat=9.5`, `breach_prior=11.0`, `spell_prior=8.0`, `film_scale=0.8`, `tile_scale=2.2`
