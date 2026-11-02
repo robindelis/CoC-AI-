@@ -21,17 +21,25 @@ Back to [[00_Index_MOC|Vault Index (MOC)]] • SOTA Catalog: [[architectures/SOT
 
 ## 1. Evolutionary Philosophy & Protocol
 
-Instead of locking into a single static neural network, `python/coc_rl/networks.py` is evolved **bit-by-bit** based on empirical 5,000-episode training horizons:
+Instead of stepping through an arbitrary predetermined 1-to-5 sequence, `python/coc_rl/networks.py` is evolved via the **Argon 4 Diagnostics-Driven 2-Stage Architecture Analysis & Targeted Synthesis System** ([[decisions/Architecture_Decisions_And_System_Memory#ADR-020|ADR-020]]):
 
 1. **Bare-Minimum Starting Point (`Gen 0: v4.0-Gen0-TinyCNN`, ~50K parameters)**:
    - Trains rapidly to establish the baseline destruction % and star conversion rate achievable with minimal local $3\times 3$ convolutions and a $1\times 1$ spatial tile head.
-2. **5,000-Episode Training Horizons**:
-   - Each architecture generation trains for **5,000 episodes** (evaluated via the honest 300-episode rolling combat score, $1\star \to 2\star \text{ TH18} \to 3\star$ funnel, and per-village breakdown).
-3. **Tactical & Vision Grounded Morphing (`agy` + `opencode`)**:
-   - When a generation plateaus, `coc-strategy-researcher` (`agy` • `gemini-3.8-flash-medium`) diagnoses the tactical bottleneck (e.g., exterior funnel drift, core defense range blindness, premature hero ability activation, or spell placement dispersion), and `opencode-model-evolver` (`opencode` • `google-vertex/gemini-4-argon#medium`) rewrites `python/coc_rl/networks.py` to morph the model to the next generation.
-4. **Adaptive Weight Transfer (`warm_start` vs. `scratch_restart`)**:
+2. **5,000-Episode Evaluation Horizons & Continuous Telemetry**:
+   - Each training block evaluates rolling 300-episode empirical combat telemetry ($1\star \to 2\star \text{ TH18} \to 3\star$ conversion funnel, inter-village spread $\Delta \text{destr}$, spatial spread std, entropy saturation, and worst-village score).
+3. **Stage 1 — Diagnostic Necessity Assessment**:
+   - OpenCode Argon 4 (`google-vertex/gemini-4-argon#medium`) and `recursive_loop.py` first evaluate whether an architectural evolution is strictly required (`architecture_evolution_required = true/false`).
+   - If performance is still advancing normally or issues are purely hyperparameter/reward-related, training continues **in-place** without disruptive structural churn.
+4. **Stage 2 — Targeted SOTA Vision Synthesis**:
+   - When structurally bottlenecked, Argon 4 synthesizes the exact SOTA vision module addressing the diagnosed failure mode:
+     - **Asymmetric wall compartments & corridor breaching** (`inter_village_gap_pct >= 9.0%` or worst village < 64%) $\to$ `SegNeXtMSCABlock` (anisotropic $1\times 7+7\times 1$ & $1\times 11+11\times 1$ strip convolutions) + `DilatedResBlock` ($d=2, 4$).
+     - **Sparse defense attrition & mid-battle stalling** (mean destr < 60% or TH18 rate < 35%) $\to$ `ConvNeXtV2Block` ($7\times 7$ depthwise conv + `GlobalResponseNorm`) + `SEChannelAttention`.
+     - **Perimeter funnel vs interior spell conflict** (spatial spread std < 3.2t or near-miss $\ge 15\%$) $\to$ Decoupled Dual Spatial Pointers (`use_dual_spatial_head=True`) + Gated Heads (`use_gated_heads=True`).
+     - **Perimeter trash drift / TH18 blindness** (TH rate < 40%) $\to$ `TacticalFeatureSynthesizer` (6 explicit spatial strategy planes) + `SEChannelAttention`.
+     - **Late-battle $2\star \to 3\star$ cleanup stall** (triple rate < 12%) $\to$ Full 4-Stage Contracting-Expansive U-Net Decoder (`use_unet_decoder=True`) + 3-Layer LayerNorm Critic (`critic_depth=3`).
+5. **Adaptive Weight Transfer (`warm_start` vs. `scratch_restart`)**:
    - Incremental morphs (widening channels, inserting residual/attention blocks, or adding input feature channels) use **shape-aware partial weight transfer (`warm_start`)** via `transfer_compatible_weights()` to preserve learned representations.
-   - Fundamental operator replacements use a clean **5,000-episode `scratch_restart`** while archiving the previous generation checkpoint in `trained_models/archives/`.
+   - Fundamental operator replacements use a clean **`scratch_restart`** while archiving the previous generation checkpoint in `trained_models/archives/`.
 
 ---
 

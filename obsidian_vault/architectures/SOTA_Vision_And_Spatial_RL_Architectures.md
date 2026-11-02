@@ -21,13 +21,14 @@ Back to [[00_Index_MOC|Vault Index (MOC)]] • Companion Strategy Spec: [[decisi
 
 ---
 
-## 1. Purpose & Role in the Bottom-Up Evolutionary Pipeline
+## 1. Purpose & Role in the Diagnostics-Driven Evolutionary Pipeline
 
-Rather than starting with an over-parameterized multi-million-weight network that is slow to iterate and masks structural bottlenecks, our **Evolutionary Vision Architecture Pipeline** builds the model bottom-up:
+Rather than starting with an over-parameterized multi-million-weight network that is slow to iterate and masks structural bottlenecks, or adhering to a rigid predetermined sequential sequence, our **Diagnostics-Driven Evolutionary Vision Architecture Pipeline** ([[decisions/Architecture_Decisions_And_System_Memory#ADR-020|ADR-020]]) builds the model purposefully:
 
 1. **Start at Generation 0 (`v4.0-Gen0-TinyCNN`, ~50K parameters)**: A bare-minimum 2-layer strided CNN + $1\times 1$ spatial tile projection head.
-2. **Train in 5,000-Episode Horizons**: Evaluate empirical combat metrics over a 300-episode rolling window at the end of each 5,000-episode training block.
-3. **Autonomous Morphing via OpenCode Argon 4 (`google-vertex/gemini-4-argon#medium`)**: When training plateaus, the OpenCode Argon 4 medium-effort agent consults **this SOTA Vision Catalog**, the **[[decisions/CoC_Strategy_Concepts_And_Input_Output_Design|Clash of Clans Strategy & Input/Output Design Dossier]]**, and **live training telemetry** to morph `python/coc_rl/networks.py` step-by-step—introducing only the architectural inductive biases warranted by the observed failure modes.
+2. **Train in 5,000-Episode Horizons with Continuous Telemetry**: Evaluate empirical combat metrics over rolling 300-episode windows ($1\star \to 2\star \text{ TH18} \to 3\star$ conversion funnel, inter-village variance, near-miss rates, spatial spread std, entropy saturation).
+3. **Stage 1 (Diagnostic Assessment)**: OpenCode Argon 4 (`google-vertex/gemini-4-argon#medium`) and `recursive_loop.py` first determine whether an architecture evolution is truly necessary (`architecture_evolution_required = true/false`). If false, the system optimizes in-place without disruptive structural churn.
+4. **Stage 2 (Targeted SOTA Vision Synthesis)**: When structurally bottlenecked, Argon 4 consults **this SOTA Vision Catalog**, the **[[decisions/CoC_Strategy_Concepts_And_Input_Output_Design|Clash of Clans Strategy & Input/Output Design Dossier]]**, and **live training telemetry** to synthesize the specific vision/tactical building blocks that directly address the observed combat pathology.
 
 ---
 
@@ -143,15 +144,19 @@ Rather than starting with an over-parameterized multi-million-weight network tha
 
 ---
 
-## 4. Progressive Evolutionary Morphing Ladder (For OpenCode Argon 4 Agent)
+## 4. Diagnostics-Driven 2-Stage Architecture Synthesis Paradigm (Replaces Rigid Sequential Ladder)
 
-When the **OpenCode Argon 4 (`google-vertex/gemini-4-argon#medium`)** agent is invoked after a 5,000-episode training horizon plateaus, it should consult the table below to select the most logical next structural upgrade:
+Rather than forcing the model through an arbitrary sequential ladder (`Gen 0 -> Gen 1 -> Gen 2 -> ...`), the **Argon 4 (`google-vertex/gemini-4-argon#medium`)** agent operates via an empirical two-stage protocol:
 
-| Generation Stage | Target Parameter Budget | Structural Upgrade to Apply in `python/coc_rl/networks.py` | Triggering Telemetry Bottleneck (After 5,000 Episodes) | Recommended Weight Mode |
-| :---: | :---: | :--- | :--- | :---: |
-| **Gen 0 (`v4.0-Gen0-TinyCNN`)** | **~50K params** | 2-layer strided CNN (`59→20→32`), bilinear + $1\times 1$ skip fusion (`→20`), `64-D` global tower, $1\times 1$ spatial tile head. | Initial starting point (0 episodes). Fast baseline convergence check. | `scratch_restart` |
-| **Gen 1 (`v4.1-CoordSE-ResCNN`)** | **~95K–130K params** | Add **CoordConv + TH18 Polar Channels** (`+4 ch` computed on-the-fly in `encoder.forward`), **Squeeze-and-Excitation (`SEChannelAttention`)** on stem/context, and Pre-Activation Residual Block. | Policy deploys randomly around border (`spatial_spread_std > 7t`) or ignores sparse hero/defense channels (`1★ < 85%` or `2★ TH18 < 45%`). | `warm_start` |
-| **Gen 2 (`v4.2-ConvNeXtV2-GRN`)** | **~180K–280K params** | Upgrade encoder stages to **ConvNeXt V2 Blocks** ($7\times 7$ Depthwise Separable Conv + Inverted Bottleneck + **Global Response Normalization `GRN`**) and widen `embed_dim` to `128`. | Policy achieves $1\star$ perimeter clearing (`60–72%` destr) but stalls against overlapping medium-range defense rings (`P(2★|1★) < 65%`). | `warm_start` or `scratch_restart` |
-| **Gen 3 (`v4.3-SegNeXt-MSCA-DualPtr`)** | **~320K–500K params** | Insert **SegNeXt Multi-Scale Strip Convolutional Attention (`MSCA`)** ($1\times 7, 7\times 1, 1\times 11, 11\times 1$) + **Dual-Branch Troop/Spell Spatial Pointer Head** (`deploy_conv_head` vs `spell_conv_head`). | Troops drift into "donut" rings around walls or spells are cast poorly during core pushes (`2★ TH18 < 78%`, poor spell efficiency). | `warm_start` |
-| **Gen 4 (`v4.4-UNet-DilatedRepLK`)** | **~650K–1.2M params** | Expand to 3-scale **Attention U-Net / HRNet** (`50→25→12→6` with Attention Gates and Multi-Scale Dilated RepLK bottleneck) + 3-layer LayerNorm Critic (`embed_dim=192..256`). | High inter-village variance (`inter_village_gap_pct > 10%`) or `2★ → 3★` back-end cleanup stall (`P(3★|2★) < 45%`, critic calibration lag). | `scratch_restart` or `warm_start` |
-| **Gen 5 (`v4.5-EntityCrossAttn-Pointer`)** | **~1.2M–2.2M params** | Add **Entity-to-Spatial Cross-Attention** between structured `army_context` tokens (Heroes, Troops, Spells, Siege) and spatial bottleneck tokens + **Multi-Head Key-Query Spatial Pointer**. | Fine-grained multi-phase coordination ceiling (e.g., timing Royal Champion back-end flank + Warden Eternal Tome + Siege Pop for $>65\%$ $3\star$ triples). | `warm_start` |
+1. **Stage 1 (Diagnostic Assessment)**: Determines if the current architecture has hit a structural representational limit (`architecture_evolution_required = true`), or if progress continues and in-place hyperparameter/reward tuning is preferable (`architecture_evolution_required = false`).
+2. **Stage 2 (Targeted SOTA Vision Synthesis)**: When evolution is required, selects and synthesizes the exact architectural modules that target the diagnosed combat failure mode:
+
+| Diagnosed Combat Bottleneck (300-Ep Telemetry) | Synthesized SOTA Architecture Solution | Target Modules & Config in `networks.py` | Target Param Budget | Recommended Weight Mode |
+| :--- | :--- | :--- | :---: | :---: |
+| **Initial Baseline Check (0 episodes)** | **`v4.0-Gen0-TinyCNN`** | 2-layer strided CNN (`59→20→32`), bilinear + $1\times 1$ skip fusion (`→20`), `64-D` global tower, $1\times 1$ spatial head. | **`~50K`** | `scratch_restart` |
+| **Perimeter Trash Drift / TH18 Line-of-Sight Blindness** (`2★ TH18 < 40%`, `spatial_spread_std > 6.5t`) | **`v4.1-CoordSE-ResCNN`** | `TacticalFeatureSynthesizer` (`use_coord_features=True`: 6 polar/LoS/funnel planes) + `SEChannelAttention` (`use_se_attention=True`) + double $3\times 3$ ResBlocks (`base_ch=24, embed=96`). | **`~130K`** | `warm_start` |
+| **Asymmetric Compartments & Cross-Village Wall Breaching** (`inter_village_gap_pct >= 9.0%` or worst village < 64%) | **`v4-SegNeXt-MSCA-CorridorNet`** | `SegNeXtMSCABlock` (`use_segnext_msca=True`: anisotropic $1\times 7+7\times 1$ & $1\times 11+11\times 1$ strip convolutions) + `DilatedResBlock` (`use_dilated_context=True`, $d=2,4$). | **`~160K–250K`** | `warm_start` |
+| **Sparse 59-Channel Defense Attrition & Mid-Battle Stalling** (mean destr < 60%, defense range blindness) | **`v4-ConvNeXtV2-GRN-ThreatNet`** | `ConvNeXtV2Block` (`use_convnext_grn=True`: $7\times 7$ depthwise conv + `GlobalResponseNorm`) + `SEChannelAttention` (`base_ch=28, embed=128`). | **`~180K–280K`** | `warm_start` |
+| **Perimeter Troop Funnel vs. Interior Spell Placement Conflict** (`spatial_spread_std < 3.2t` or near-miss $\ge 15\%$) | **`v4-DecoupledDualPointerNet`** | Decoupled Dual Spatial Pointer (`use_dual_spatial_head=True` splitting `spatial_troop_head` vs `spatial_spell_head`) + Sigmoid Head Gating (`use_gated_heads=True`). | **`~150K–320K`** | `warm_start` |
+| **Late-Battle $2\star \to 3\star$ Cleanup Stall & Value Lag** (triple rate < 12%, severe value estimation gap) | **`v4-FullSOTA-HybridAttention-UNet`** | Full 4-Stage Contracting-Expansive U-Net Decoder (`use_unet_decoder=True`) + 3-Layer LayerNorm Critic (`critic_depth=3`, `base_ch=32, embed=256`). | **`~650K–1.2M`** | `warm_start` or `scratch_restart` |
+

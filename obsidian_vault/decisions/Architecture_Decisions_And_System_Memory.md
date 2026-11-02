@@ -555,3 +555,34 @@ Defined in `CoCActorCritic` (`python/coc_rl/networks.py`), the policy parameteri
   - Robust GroupNorm operation across arbitrary model architectures and channel configurations.
   - Substantially sharper surgical funneling on exterior structures and rapid post-TH core clearing.
   - Real-time synchronization between active model checkpoints, `NetworkBuilderPanel`, and architecture diagrams.
+
+
+### ADR-020: Argon 4 Diagnostics-Driven 2-Stage Neural Architecture Analysis & Targeted SOTA Synthesis, Dynamic Active Config Visualization, and Decoupled Dual Spatial Pointers
+- **Date**: 2026-11-02
+- **Status**: Accepted
+- **Context**:
+  1. **Limitations of Rigid Sequential Gen 0..5 Climbing**: The initial bottom-up roadmap assumed a linear progression (`Gen 0 -> Gen 1 -> Gen 2 -> Gen 3 -> Gen 4 -> Gen 5`). In practice, empirical 300-episode combat telemetry reveals highly distinct failure modes: asymmetric wall compartment failures (e.g., Offset Diamond layouts) require anisotropic strip attention (`SegNeXt MSCA`), whereas sparse defense attrition requires broad receptive field depthwise kernels (`ConvNeXt V2 GRN`), and perimeter funnel vs. interior spell conflicts require decoupled spatial pointer branches. Forcing a rigid sequential order delayed or bypassed the exact inductive bias needed to resolve the observed bottleneck.
+  2. **Premature Architecture Morphing**: When training is progressing well or simply experiencing minor policy entropy dips or pacing misalignments, triggering a structural model morph wastes sample efficiency and resets optimizer state. Architecture evolution must be gated by an honest diagnostic assessment.
+  3. **Visualizer Desynchronization from Active Config**: Static default configs in `networks.py` did not always reflect the dynamically tuned `active_experiment_config.json` used by the active training daemon, leading to UI/manifest discrepancies during live experiments.
+  4. **Perimeter Troop vs Interior Spell Placement Spatial Head Contention**: Troops and heroes must deploy strictly on the perimeter green zone (`Ch 4 == 0`), whereas spells must target high-density interior combat clusters. Sharing a single $1\times 1$ spatial head forced compromise between perimeter entry scoring and interior spell concentration.
+- **Decision**:
+  1. **Argon 4 Diagnostics-Driven 2-Stage Evolutionary Vision System**:
+     - Replaced the rigid sequential ladder with a 2-stage analysis and synthesis protocol in `python/coc_rl/recursive_loop.py` and `.agents/agents/opencode-model-evolver/agent.md`:
+       - **Stage 1 (Diagnostic Assessment)**: OpenCode Argon 4 (`google-vertex/gemini-4-argon#medium`) audits rolling 300-episode combat telemetry (inter-village spread $\Delta \text{destr}$, $1\star \to 2\star \text{ TH18} \to 3\star$ funnel, near-miss rates $85\%-99\%$, spatial spread standard deviation, entropy saturation, worst-village performance). Explicitly outputs `architecture_evolution_required = true/false` and an empirical rationale. If false, training optimizes in-place without model modification.
+       - **Stage 2 (Targeted SOTA Vision Synthesis)**: When evolution is required, Argon 4 synthesizes the specific vision and spatial-RL module matching the diagnosed combat pathology:
+         - *Asymmetric Compartments & Cross-Village Wall Breaching* (`inter_village_gap_pct >= 9.0%` or worst village < 64%): Synthesizes `SegNeXtMSCABlock` (anisotropic $1\times 7+7\times 1$ and $1\times 11+11\times 1$ strip convolutions) and `DilatedResBlock` ($d=2, 4$) to capture linear wall corridors and Log Launcher breach lines.
+         - *Sparse 59-Channel Defense Attrition & Core Stalling* (mean destruction < 60% or TH18 rate < 35%): Synthesizes `ConvNeXtV2Block` ($7\times 7$ depthwise convolutions with Global Response Normalization `GRN`) and `SEChannelAttention` to cover 7–11 tile defense range rings.
+         - *Perimeter Funnel vs Interior Spell Conflict* (spatial spread std < 3.2 tiles or near-miss rate $\ge 15\%$): Synthesizes Decoupled Dual Spatial Pointers (`use_dual_spatial_head=True`) + Sigmoid Head Gating (`use_gated_heads=True`).
+         - *Perimeter Trash Drift / TH18 Blindness* (TH rate < 40%): Synthesizes `TacticalFeatureSynthesizer` (`use_coord_features=True`: 6 explicit spatial strategy planes) + `SEChannelAttention`.
+         - *Late-Battle $2\star \to 3\star$ Cleanup Stagnation & Value Lag* (triple rate < 12%): Synthesizes full 4-stage contracting-expansive U-Net decoder (`use_unet_decoder=True`) and 3-layer LayerNorm Critic (`critic_depth=3`).
+  2. **Decoupled Dual-Branch Spatial Pointer Head**:
+     - Introduced support for `use_dual_spatial_head=True` in `CoCActorCritic`, splitting spatial tile prediction into `spatial_troop_head` (perimeter breach scoring) and `spatial_spell_head` (interior cluster targeting), conditioned autoregressively on `is_spell`.
+  3. **Active Config Loading & Dynamic Layer Spec Visualization**:
+     - Updated `python/coc_rl/visualize.py`: implemented `load_active_arch_config()` reading `trained_models/loop/active_experiment_config.json` and hashing into `compute_networks_hash()`.
+     - Reconciled `extract_live_layer_specs()` to dynamically calculate exact shapes, parameter counts, MACs, and receptive fields across both 2-stage CNN backbones (`tiny_cnn`, `convnext_v2`, `segnext_msca`) and 4-stage U-Net backbones (`full_sota_unet`).
+  4. **Web UI Reconciliation**:
+     - Updated `RecursiveLoopPanel.tsx`, `NetworkBuilderPanel.tsx`, and `AIStudioView.tsx` to display 2-stage diagnostic verdicts, targeted failure modes, weight transfer labels, and dynamic layer inspection cards.
+- **Consequences**:
+  - Eliminates unnecessary and disruptive architectural churn; model modifications occur only when structurally bottlenecked.
+  - SOTA vision modules are chosen based on empirical combat evidence rather than arbitrary sequence.
+  - Accurate, real-time visualization and parameter accounting in the Web UI directly synchronized with active running configurations.
