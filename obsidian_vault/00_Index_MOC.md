@@ -6,15 +6,15 @@ tags:
   - ppo
   - architecture
 updated: 2026-11-02
-last_synced_commit: "2c6ab9e"
-last_synced_at: "2026-11-02 10:51:02"
+last_synced_commit: "83d4b6d"
+last_synced_at: "2026-11-02 10:52:03"
 ---
 
 # 🏰 CoC TH18 Deep RL — Architecture & Training Vault
 
 > [!NOTE] 🔄 Codebase Synchronization Status
-> **Synchronized Commit**: [`2c6ab9e`](file:///home/robin/Projects/CoC) &mdash; *Fix training start wedge & GroupNorm bugs, unify Gen 0-5 evolution UI, and streamline Parameter Studio*
-> **Synced At**: `2026-11-02 10:51:02 UTC` • **Full SHA**: `2c6ab9e5cec797665f7afac8d7b428d50898fc19`
+> **Synchronized Commit**: [`83d4b6d`](file:///home/robin/Projects/CoC) &mdash; *docs(vault): sync long-term memory up to 2c6ab9e*
+> **Synced At**: `2026-11-02 10:52:03 UTC` • **Full SHA**: `83d4b6dacac12f0bc0ce4b180c6b2ef33dde5c59`
 
 Welcome to the central research vault tracking our **v3.0 59-Channel Dedicated Spatial CNN & Single-Army Specialist Actor-Critic** architecture, input/output tensor specifications, per-troop, per-hero, per-spell, and per-defense spatial encodings, and empirical training benchmarks for Clash of Clans Town Hall 18.
 
