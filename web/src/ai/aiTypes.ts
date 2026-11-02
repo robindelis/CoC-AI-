@@ -194,6 +194,7 @@ export interface AIArchitectureSpec {
   total_macs: number;
   layers: AIArchitectureLayerSpec[];
   source_code?: string;
+  arch_config?: Record<string, number | string | boolean>;
 }
 
 export interface AIServerStatus {
@@ -732,11 +733,27 @@ export interface AIRecursiveLoopCycle {
   verification_result: AISolutionVerificationResult | null;
 }
 
+export interface AIModelVisualizerSync {
+  synced_at: string;
+  agent: string;
+  model: string;
+  arch_version: string;
+  generation: number;
+  backbone_type: string;
+  total_params: number;
+  architecture_hash?: string;
+  reason: string;
+  status: string;
+}
+
 export interface AIRecursiveLoopState {
   enabled: boolean;
   interval_seconds: number;
   auto_apply_and_test: boolean;
   test_episodes_per_cycle: number;
+  last_cycle_episode?: number;
+  next_cycle_target_episode?: number;
+  episodes_until_next_cycle?: number;
   provider: AIFeedbackProviderId;
   phase:
     | 'idle'
@@ -771,6 +788,8 @@ export interface AIRecursiveLoopState {
     hyperparams: Record<string, number | string>;
   };
   latest_strategy_research?: AIStrategyResearch | null;
+  last_model_visualizer_sync?: AIModelVisualizerSync | null;
+  live_telemetry_compact?: Partial<AICompactBaselineMetrics> | null;
   reward_formula?: string;
   vault_note_path: string;
   sota_vault_note_path?: string;

@@ -33,6 +33,7 @@ from coc_rl import (
     diagnose_and_propose_solutions,
     ensure_architecture_diagrams,
     execute_opencode_argon_code_edit,
+    extract_compact_metrics_from_telemetry,
     format_reward_formula,
     gather_training_telemetry,
     generate_ai_training_feedback,
@@ -47,6 +48,7 @@ from coc_rl import (
     save_recursive_loop_state,
     sync_recursive_loop_to_vault,
     transfer_compatible_weights,
+    trigger_model_visualizer_agent,
     verify_solution_outcome,
 )
 from train_ai import (
@@ -192,9 +194,68 @@ class LoopApplySolutionRequest(BaseModel):
     test_episodes: Optional[int] = None
 
 
+class LoopUpdateConfigRequest(BaseModel):
+    arch_config: Optional[Dict[str, Any]] = None
+    reward_config: Optional[Dict[str, Any]] = None
+    hyperparams: Optional[Dict[str, Any]] = None
+    restart_or_morph_model: bool = False
+    auto_test: bool = False
+    test_episodes: Optional[int] = None
+
+
 _loop_state: Dict[str, Any] = load_recursive_loop_state()
 if "remaining_training_seconds" not in _loop_state:
     _loop_state["remaining_training_seconds"] = int(_loop_state.get("interval_seconds", 600))
+
+
+def _compute_fast_telemetry_compact() -> Optional[Dict[str, Any]]:
+    hist = _training_state.get("history") or []
+    if not hist:
+        cycles = _loop_state.get("cycles") or []
+        if cycles:
+            return (cycles[-1].get("pre_change_snapshot") or {}).get("baseline_metrics")
+        return None
+    w = hist[-300:]
+    n = max(1, len(w))
+    pcts = [float(r.get("destruction_pct", 0.0)) for r in w]
+    stars = [int(r.get("stars", 0)) for r in w]
+    rews = [float(r.get("reward", 0.0)) for r in w]
+    mean_pct = round(sum(pcts) / n, 2)
+    s1 = round(sum(1 for s in stars if s >= 1) * 100.0 / n, 1)
+    s2 = round(sum(1 for s in stars if s >= 2) * 100.0 / n, 1)
+    s3 = round(sum(1 for s in stars if s >= 3) * 100.0 / n, 1)
+    p2_given_1 = round((s2 / max(1.0, s1)) * 100.0, 1) if s1 > 0 else 0.0
+    p3_given_2 = round((s3 / max(1.0, s2)) * 100.0, 1) if s2 > 0 else 0.0
+    last50 = hist[-50:]
+    n50 = max(1, len(last50))
+    ev50 = round(sum(float(r.get("explained_variance", 0.0)) for r in last50) / n50, 4)
+    kl50 = round(sum(float(r.get("approx_kl", 0.0)) for r in last50) / n50, 4)
+    noop50 = round(sum(float(r.get("noop_pct", 0.0)) for r in last50) / n50, 1)
+    v0_50 = round(sum(float(r.get("v_s0", 0.0)) for r in last50) / n50, 2)
+    rew50 = round(sum(float(r.get("reward", 0.0)) for r in last50) / n50, 2)
+    cum_ep = int(_training_state.get("cumulative_episode", 0) or _training_state.get("current_episode", len(hist)))
+    return {
+        "episode": cum_ep,
+        "history_length": len(hist),
+        "eval_window_episodes": n,
+        "mean_pct_300": mean_pct,
+        "mean_pct_50": mean_pct,
+        "one_star_rate_50": s1,
+        "two_star_th_rate_50": s2,
+        "three_star_triple_rate_50": s3,
+        "mean_reward_50": round(sum(rews) / n, 2),
+        "explained_variance_50": ev50,
+        "approx_kl_50": kl50,
+        "mean_noop_pct_50": noop50,
+        "critic_v_s0": v0_50,
+        "calibration_gap": round(v0_50 - rew50, 2),
+        "star_funnel": {
+            "p_1star_pct": s1,
+            "p_2star_given_1star_pct": p2_given_1,
+            "p_3star_given_2star_pct": p3_given_2,
+            "near_miss_85_to_99_pct_rate": round(sum(1 for p, s in zip(pcts, stars) if 85.0 <= p < 100.0 and s < 3) * 100.0 / n, 1),
+        },
+    }
 
 
 def _get_loop_status_payload() -> Dict[str, Any]:
@@ -207,6 +268,20 @@ def _get_loop_status_payload() -> Dict[str, Any]:
             int(round(float(_loop_state.get("remaining_training_seconds", interval)))),
         ),
     )
+    horizon_eps = max(12, int(_loop_state.get("test_episodes_per_cycle", 5000)))
+    cum_ep = int(_training_state.get("cumulative_episode", 0) or _training_state.get("current_episode", 0))
+    active_hyp = _loop_state.get("active_hypothesis")
+    if isinstance(active_hyp, dict):
+        base_ep = int(active_hyp.get("baseline_episode", 0))
+        target_ep = base_ep + int(active_hyp.get("target_episodes", horizon_eps))
+    else:
+        base_ep = int(_loop_state.get("last_cycle_episode", 0))
+        target_ep = base_ep + horizon_eps
+    eps_until_next = max(0, target_ep - cum_ep)
+    _loop_state["last_cycle_episode"] = base_ep
+    _loop_state["next_cycle_target_episode"] = target_ep
+    _loop_state["episodes_until_next_cycle"] = eps_until_next
+
     active_cfg = _loop_state.get("active_config") or load_active_experiment_config()
     paused_waiting = bool(_loop_state.get("enabled", False) and not is_training_now and not _loop_state.get("is_running_cycle", False))
     effective_phase = (
@@ -221,6 +296,9 @@ def _get_loop_status_payload() -> Dict[str, Any]:
         "active_config": active_cfg,
         "reward_formula": format_reward_formula(active_cfg.get("reward_config")),
         "seconds_until_next_check": rem_sec,
+        "episodes_until_next_cycle": eps_until_next,
+        "next_cycle_target_episode": target_ep,
+        "live_telemetry_compact": _compute_fast_telemetry_compact(),
     }
 
 
@@ -247,6 +325,8 @@ def _get_fresh_architecture_manifest(force: bool = False) -> Dict[str, Any]:
     importlib.reload(_net_mod)
     fresh_model = _net_mod.CoCActorCritic(arch_config=active_arch_cfg)
     manifest = ensure_architecture_diagrams(fresh_model, force=force)
+    if isinstance(manifest.get("live_spec"), dict):
+        manifest["live_spec"]["arch_config"] = fresh_model.get_arch_config()
     _ARCH_MANIFEST_CACHE = (mtime, arch_sig, manifest)
     return manifest
 
@@ -467,26 +547,29 @@ def start_ppo_training(req: TrainStartRequest) -> Dict[str, Any]:
         _training_state["total_episodes"] = req.episodes
         _training_state["history"] = []
 
-        # Reset recursive loop timer for this training session so first diagnostic starts after 10 min
-        interval = max(60, int(_loop_state.get("interval_seconds", 600)))
-        now_ts = time.time()
-        _loop_state["remaining_training_seconds"] = float(interval)
-        _loop_state["next_check_ts"] = now_ts + float(interval)
-        _loop_state["next_check_at"] = time.strftime(
-            "%Y-%m-%d %H:%M:%S", time.localtime(now_ts + float(interval))
-        )
+        # Reset episode horizon for this training session
+        horizon = max(12, int(_loop_state.get("test_episodes_per_cycle", 5000)))
         _loop_state["is_running_cycle"] = False
 
-        # When starting a new training from scratch, wipe any previous cycles & active hypothesis
+        # Only reset loop history if starting manually from scratch (not during a progressive arch morph)
         is_scratch = not req.resume_from or str(req.resume_from).strip().lower() in ("scratch", "none", "")
-        if is_scratch:
+        preserve_loop = bool(_loop_state.pop("preserve_loop_on_scratch_start", False))
+        if is_scratch and not preserve_loop:
             _loop_state["cycles"] = []
             _loop_state["current_cycle_id"] = 0
             _loop_state["active_hypothesis"] = None
+            _loop_state["last_cycle_episode"] = 0
+            _loop_state["next_cycle_target_episode"] = horizon
+            _loop_state["episodes_until_next_cycle"] = horizon
             _loop_state["phase"] = "monitoring" if _loop_state.get("enabled", False) else "idle"
             default_cfg = get_default_experiment_config()
             save_active_experiment_config(default_cfg)
             _loop_state["active_config"] = default_cfg
+            _loop_state["last_model_visualizer_sync"] = trigger_model_visualizer_agent(
+                arch_config=default_cfg.get("arch_config"),
+                reason="reset_to_gen0_baseline_on_scratch_start",
+            )
+            _get_fresh_architecture_manifest(force=True)
         else:
             if _loop_state.get("phase") in ("analyzing", "documenting_baseline", "applying_solution"):
                 _loop_state["phase"] = "testing_solution" if _loop_state.get("active_hypothesis") else ("monitoring" if _loop_state.get("enabled", False) else "idle")
@@ -650,30 +733,49 @@ def _stop_and_restart_new_architecture_training(
             waited += 0.25
         _loop_state["suppress_post_stop_auto_verify"] = False
 
-    # Move any existing active checkpoints into `trained_models/archives/`
-    if os.path.isdir(CHECKPOINTS_DIR):
-        for fname in list(os.listdir(CHECKPOINTS_DIR)):
-            if not fname.endswith(".pt"):
-                continue
-            src = os.path.join(CHECKPOINTS_DIR, fname)
-            if not os.path.isfile(src):
-                continue
-            dst_name = f"cycle_{cycle_id:03d}_{fname}"
-            dst = os.path.join(ARCHIVES_DIR, dst_name)
-            try:
-                shutil.move(src, dst)
-            except Exception:
-                pass
+    # Determine whether the Argon 4 agent selected warm_start weight transfer or scratch_restart
+    arch_cfg = active_cfg.get("arch_config", {})
+    weight_mode = str(arch_cfg.get("weight_transfer_mode", "warm_start"))
+    saved = [m for m in list_trained_models() if m.get("model_type") != "archived_attacker"]
+    latest_ckpt = _training_state.get("saved_filename") or (saved[0]["filename"] if saved else "")
+
+    if weight_mode == "scratch_restart" or not latest_ckpt:
+        # Archive existing active checkpoints into `trained_models/archives/`
+        if os.path.isdir(CHECKPOINTS_DIR):
+            for fname in list(os.listdir(CHECKPOINTS_DIR)):
+                if not fname.endswith(".pt"):
+                    continue
+                src = os.path.join(CHECKPOINTS_DIR, fname)
+                if not os.path.isfile(src):
+                    continue
+                dst_name = f"cycle_{cycle_id:03d}_{fname}"
+                dst = os.path.join(ARCHIVES_DIR, dst_name)
+                try:
+                    shutil.move(src, dst)
+                except Exception:
+                    pass
+        resume_target = "scratch"
+    else:
+        # Warm-start compatible weights from latest_ckpt via transfer_compatible_weights()
+        resume_target = latest_ckpt
 
     with _train_lock:
-        _training_state["saved_filename"] = ""
-        _training_state["resume_from"] = "scratch"
-        _training_state["current_episode"] = 0
-        _training_state["cumulative_episode"] = 0
-        _training_state["best_pct"] = 0
-        _training_state["best_stars"] = 0
-        _training_state["history"] = []
+        if resume_target == "scratch":
+            _training_state["saved_filename"] = ""
+            _training_state["resume_from"] = "scratch"
+            _training_state["current_episode"] = 0
+            _training_state["cumulative_episode"] = 0
+            _training_state["best_pct"] = 0
+            _training_state["best_stars"] = 0
+            _training_state["history"] = []
+        else:
+            _training_state["resume_from"] = resume_target
 
+    # Trigger model-visualizer agent and refresh the live architecture manifest so Model Trainer showcases the new model
+    _loop_state["last_model_visualizer_sync"] = trigger_model_visualizer_agent(
+        arch_config=arch_cfg,
+        reason=f"cycle_{cycle_id}_arch_morph_{arch_cfg.get('arch_version', 'v4.0')}",
+    )
     try:
         _get_fresh_architecture_manifest(force=True)
     except Exception:
@@ -685,9 +787,10 @@ def _stop_and_restart_new_architecture_training(
         int(
             test_episodes_override
             or _loop_state.get("test_episodes_per_cycle")
-            or 300
+            or 5000
         ),
     )
+    _loop_state["preserve_loop_on_scratch_start"] = True
     req = TrainStartRequest(
         episodes=eps_to_run,
         batch_episodes=int(hp.get("batch_episodes", 12)),
@@ -696,7 +799,7 @@ def _stop_and_restart_new_architecture_training(
         lr=float(hp.get("lr", 3e-4)),
         ticks_per_step=int(hp.get("ticks_per_step", 8)),
         matchup_mode=str(hp.get("matchup_mode", "round_robin")),
-        resume_from="scratch",
+        resume_from=resume_target,
     )
     res = start_ppo_training(req)
     return bool(res.get("started"))
@@ -894,17 +997,38 @@ def apply_specific_loop_solution(req: LoopApplySolutionRequest) -> Dict[str, Any
             arch_config=active_config.get("arch_config"),
         )
 
-    test_eps = int(req.test_episodes or _loop_state.get("test_episodes_per_cycle", 300))
+    # If arch_config changed, start the model-visualizer agent and refresh the Model Trainer spec
+    arch_changed = (
+        restarted_from_scratch
+        or bool((composite_sol.get("config_patch") or {}).get("arch_config"))
+        or any(d.get("section") == "arch_config" for d in (composite_sol.get("diffs") or []))
+    )
+    if arch_changed:
+        _loop_state["last_model_visualizer_sync"] = trigger_model_visualizer_agent(
+            arch_config=active_config.get("arch_config"),
+            reason=f"apply_solution_cycle_{cycle_num}",
+        )
+        try:
+            _get_fresh_architecture_manifest(force=True)
+        except Exception:
+            pass
+
+    test_eps = int(req.test_episodes or _loop_state.get("test_episodes_per_cycle", 5000))
     if restarted_from_scratch:
-        test_eps = max(300, test_eps)
+        test_eps = max(500, test_eps)
+    base_ep = 0 if (restarted_from_scratch and active_config.get("arch_config", {}).get("weight_transfer_mode") == "scratch_restart") else pre_snap["cumulative_episode"]
     _loop_state["active_config"] = active_config
     _loop_state["phase"] = "testing_solution"
+    _loop_state["last_cycle_episode"] = base_ep
+    _loop_state["next_cycle_target_episode"] = base_ep + test_eps
+    _loop_state["episodes_until_next_cycle"] = test_eps
     _loop_state["active_hypothesis"] = {
         "cycle_id": cycle_num,
         "solution": composite_sol,
-        "baseline_episode": 0 if restarted_from_scratch else pre_snap["cumulative_episode"],
+        "baseline_episode": base_ep,
         "pre_restart_episode": pre_snap["cumulative_episode"],
         "restarted_from_scratch": restarted_from_scratch,
+        "weight_transfer_mode": (active_config.get("arch_config") or {}).get("weight_transfer_mode", "warm_start"),
         "target_episodes": test_eps,
         "baseline_metrics": pre_snap["baseline_metrics"],
     }
@@ -916,6 +1040,49 @@ def apply_specific_loop_solution(req: LoopApplySolutionRequest) -> Dict[str, Any
             _stop_and_restart_new_architecture_training(active_config, cycle_num, test_eps)
         elif not _training_state.get("is_training", False):
             _launch_verification_training(active_config, test_eps)
+
+    return _get_loop_status_payload()
+
+
+@app.post("/api/ai/loop/update-config")
+def update_active_loop_config_parameters(req: LoopUpdateConfigRequest) -> Dict[str, Any]:
+    """
+    Directly updates any parameters across `arch_config`, `reward_config`, and `hyperparams`
+    guided by the live telemetry data. If `arch_config` is modified, automatically starts the
+    `model-visualizer` agent (`agy --agent model-visualizer --model gemini-3.8-flash-medium`)
+    and refreshes the live architecture manifest so the Model Trainer immediately showcases
+    the updated model.
+    """
+    active_config = load_active_experiment_config()
+    patch = {
+        "arch_config": req.arch_config or {},
+        "reward_config": req.reward_config or {},
+        "hyperparams": req.hyperparams or {},
+    }
+    new_cfg, diffs = apply_config_patch(active_config, patch)
+    saved_cfg = save_active_experiment_config(new_cfg)
+    _loop_state["active_config"] = saved_cfg
+
+    arch_diffs = [d for d in diffs if d.get("section") == "arch_config"]
+    if arch_diffs or req.restart_or_morph_model:
+        _loop_state["last_model_visualizer_sync"] = trigger_model_visualizer_agent(
+            arch_config=saved_cfg.get("arch_config"),
+            reason="interactive_parameter_studio_arch_update",
+        )
+        try:
+            _get_fresh_architecture_manifest(force=True)
+        except Exception:
+            pass
+
+    save_recursive_loop_state(_loop_state)
+    sync_recursive_loop_to_vault(_loop_state)
+
+    test_eps = int(req.test_episodes or _loop_state.get("test_episodes_per_cycle", 5000))
+    if req.restart_or_morph_model:
+        cid = int(_loop_state.get("current_cycle_id", 0)) + 1
+        _stop_and_restart_new_architecture_training(saved_cfg, cid, test_eps)
+    elif req.auto_test and not _training_state.get("is_training", False):
+        _launch_verification_training(saved_cfg, test_eps)
 
     return _get_loop_status_payload()
 
@@ -946,6 +1113,15 @@ def verify_current_loop_solution() -> Dict[str, Any]:
     _loop_state["active_hypothesis"] = None
     _loop_state["active_config"] = next_cfg
     _loop_state["phase"] = "monitoring" if _loop_state.get("enabled") else "idle"
+    if next_cfg.get("arch_config") != active_cfg.get("arch_config"):
+        _loop_state["last_model_visualizer_sync"] = trigger_model_visualizer_agent(
+            arch_config=next_cfg.get("arch_config"),
+            reason="post_verification_arch_sync",
+        )
+        try:
+            _get_fresh_architecture_manifest(force=True)
+        except Exception:
+            pass
     sync_recursive_loop_to_vault(_loop_state)
     save_recursive_loop_state(_loop_state)
 
@@ -959,75 +1135,86 @@ def verify_current_loop_solution() -> Dict[str, Any]:
 @app.post("/api/ai/loop/reset")
 def reset_recursive_loop() -> Dict[str, Any]:
     """
-    Clears all recursive improvement loop cycles, cancels active hypotheses,
-    restores default experiment configuration, and resets the 10-minute diagnostic timer.
+    Clears all progressive evolution cycles, cancels active hypotheses,
+    restores the Stage 0 (`v4.0-Gen0-TinyCNN`) baseline experiment configuration,
+    and triggers `model-visualizer` so the Model Trainer reflects Gen 0.
     """
+    horizon = max(12, int(_loop_state.get("test_episodes_per_cycle", 5000)))
     _loop_state["cycles"] = []
     _loop_state["current_cycle_id"] = 0
     _loop_state["active_hypothesis"] = None
+    _loop_state["last_cycle_episode"] = 0
+    _loop_state["next_cycle_target_episode"] = horizon
+    _loop_state["episodes_until_next_cycle"] = horizon
     _loop_state["phase"] = "monitoring" if _loop_state.get("enabled", False) else "idle"
     _loop_state["is_running_cycle"] = False
-    interval = max(60, int(_loop_state.get("interval_seconds", 600)))
-    now_ts = time.time()
-    _loop_state["remaining_training_seconds"] = float(interval)
-    _loop_state["next_check_ts"] = now_ts + float(interval)
-    _loop_state["next_check_at"] = time.strftime(
-        "%Y-%m-%d %H:%M:%S", time.localtime(now_ts + float(interval))
-    )
     default_cfg = get_default_experiment_config()
     save_active_experiment_config(default_cfg)
     _loop_state["active_config"] = default_cfg
+    _loop_state["last_model_visualizer_sync"] = trigger_model_visualizer_agent(
+        arch_config=default_cfg.get("arch_config"),
+        reason="reset_loop_to_gen0_baseline",
+    )
+    try:
+        _get_fresh_architecture_manifest(force=True)
+    except Exception:
+        pass
     save_recursive_loop_state(_loop_state)
     sync_recursive_loop_to_vault(_loop_state)
     return _get_loop_status_payload()
 
 
 def _init_and_start_recursive_loop_daemon() -> None:
-    interval = max(60, int(_loop_state.get("interval_seconds", 600)))
-    if "remaining_training_seconds" not in _loop_state or _loop_state["remaining_training_seconds"] <= 0:
-        _loop_state["remaining_training_seconds"] = float(interval)
-        now_ts = time.time()
-        _loop_state["next_check_ts"] = now_ts + float(interval)
-        _loop_state["next_check_at"] = time.strftime(
-            "%Y-%m-%d %H:%M:%S", time.localtime(now_ts + float(interval))
-        )
+    """
+    Background Episode-Horizon Progressive Evolution Daemon (replaces the legacy 10m timer loop).
+    Monitors cumulative training episodes while `enabled=True` and `is_training=True`; whenever
+    the episode horizon (`test_episodes_per_cycle`, default 5,000 episodes) is reached, automatically
+    runs AGY CoC strategy research, plateau diagnosis, parameter tuning or OpenCode Argon 4 progressive
+    architecture morphing, and `model-visualizer` synchronization.
+    """
+    horizon = max(12, int(_loop_state.get("test_episodes_per_cycle", 5000)))
+    if "next_cycle_target_episode" not in _loop_state or int(_loop_state.get("next_cycle_target_episode", 0)) <= 0:
+        _loop_state["last_cycle_episode"] = 0
+        _loop_state["next_cycle_target_episode"] = horizon
+        _loop_state["episodes_until_next_cycle"] = horizon
 
     def _daemon() -> None:
-        last_tick = time.time()
         while True:
             time.sleep(2.0)
-            now_ts = time.time()
-            dt = max(0.0, min(10.0, now_ts - last_tick))
-            last_tick = now_ts
             try:
                 if not _loop_state.get("enabled", False):
                     continue
                 if _loop_state.get("is_running_cycle", False):
                     continue
-                # Only count down the 10-minute timer while training is actively running!
                 if not _training_state.get("is_training", False):
                     continue
 
-                interval = max(60, int(_loop_state.get("interval_seconds", 600)))
-                rem = float(_loop_state.get("remaining_training_seconds", interval)) - dt
-                _loop_state["remaining_training_seconds"] = max(0.0, rem)
-                _loop_state["next_check_ts"] = now_ts + _loop_state["remaining_training_seconds"]
+                cum_ep = int(_training_state.get("cumulative_episode", 0) or _training_state.get("current_episode", 0))
+                if cum_ep <= 0 and len(_training_state.get("history", [])) == 0:
+                    continue
 
-                if rem <= 0.0:
-                    _loop_state["remaining_training_seconds"] = float(interval)
-                    now_ts = time.time()
-                    _loop_state["next_check_ts"] = now_ts + float(interval)
-                    _loop_state["next_check_at"] = time.strftime(
-                        "%Y-%m-%d %H:%M:%S", time.localtime(now_ts + float(interval))
-                    )
-                    # Safeguard: do not run if training has no recorded episodes
-                    if len(_training_state.get("history", [])) == 0 and int(_training_state.get("current_episode", 0)) == 0:
-                        continue
+                horizon_eps = max(12, int(_loop_state.get("test_episodes_per_cycle", 5000)))
+                active_hyp = _loop_state.get("active_hypothesis")
+                if isinstance(active_hyp, dict):
+                    base_ep = int(active_hyp.get("baseline_episode", 0))
+                    target_ep = base_ep + int(active_hyp.get("target_episodes", horizon_eps))
+                else:
+                    base_ep = int(_loop_state.get("last_cycle_episode", 0))
+                    target_ep = base_ep + horizon_eps
+
+                rem_eps = max(0, target_ep - cum_ep)
+                _loop_state["episodes_until_next_cycle"] = rem_eps
+                _loop_state["next_cycle_target_episode"] = target_ep
+
+                if cum_ep >= target_ep and cum_ep > base_ep:
+                    _loop_state["last_cycle_episode"] = cum_ep
+                    _loop_state["next_cycle_target_episode"] = cum_ep + horizon_eps
+                    _loop_state["episodes_until_next_cycle"] = horizon_eps
                     run_recursive_improvement_cycle(
                         loop_state=_loop_state,
                         training_state=_training_state,
                         device=DEVICE,
-                        trigger="scheduled_10m",
+                        trigger=f"episode_horizon_{horizon_eps}",
                         use_llm=True,
                         start_training_callback=(
                             (lambda cfg: _launch_verification_training(cfg))
@@ -1040,9 +1227,8 @@ def _init_and_start_recursive_loop_daemon() -> None:
                             else None
                         ),
                     )
-                    _loop_state["remaining_training_seconds"] = float(interval)
             except Exception as exc:
-                print(f"[recursive_loop] Daemon tick error: {exc}")
+                print(f"[progressive_evolution_loop] Daemon tick error: {exc}")
 
     threading.Thread(target=_daemon, daemon=True).start()
 

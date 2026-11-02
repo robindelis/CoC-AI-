@@ -5,6 +5,7 @@ import {
   resetRecursiveLoop,
   restartRecursiveLoopNewArchitecture,
   runRecursiveLoopCycle,
+  updateRecursiveLoopConfigParameters,
   verifyRecursiveLoopSolution,
 } from './aiClient';
 import {
@@ -64,19 +65,12 @@ const CATEGORY_COLORS: Record<
 };
 
 const PIPELINE_STAGES = [
-  { id: 'monitoring', num: 1, label: '10m Telemetry Audit' },
-  { id: 'analyzing', num: 2, label: 'Plateau Root-Cause Diagnosis' },
+  { id: 'monitoring', num: 1, label: 'Episode-Horizon Telemetry Audit' },
+  { id: 'analyzing', num: 2, label: 'Plateau & Strategy Diagnosis' },
   { id: 'documenting_baseline', num: 3, label: 'Pre-Change Snapshot' },
-  { id: 'testing_solution', num: 4, label: 'Apply & Test Solution' },
-  { id: 'verifying_solution', num: 5, label: 'Verify & Vault Memory' },
+  { id: 'testing_solution', num: 4, label: 'Morph / Tune + Sync Visualizer' },
+  { id: 'verifying_solution', num: 5, label: 'Verify & Vault Ledger' },
 ] as const;
-
-function formatCountdown(seconds: number): string {
-  const s = Math.max(0, Math.floor(seconds));
-  const m = Math.floor(s / 60);
-  const rem = s % 60;
-  return `${String(m).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
-}
 
 export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
   loopState,
@@ -88,6 +82,14 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
   const [snapshotTab, setSnapshotTab] = useState<
     'arch' | 'reward' | 'hyperparams' | 'telemetry'
   >('arch');
+  const [paramEditorTab, setParamEditorTab] = useState<
+    'arch' | 'reward' | 'hyperparams'
+  >('arch');
+  const [showParamEditor, setShowParamEditor] = useState<boolean>(true);
+  const [editArch, setEditArch] = useState<Record<string, number | string | boolean>>({});
+  const [editReward, setEditReward] = useState<Record<string, number>>({});
+  const [editHyper, setEditHyper] = useState<Record<string, number>>({});
+  const [paramSaveMsg, setParamSaveMsg] = useState<string | null>(null);
   const [checkedSolutionIds, setCheckedSolutionIds] = useState<string[]>([]);
   const [allowCodeAgent, setAllowCodeAgent] = useState<boolean>(true);
   const [isBusy, setIsBusy] = useState<boolean>(false);
@@ -99,6 +101,14 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
       setSelectedCycleId(cycles[cycles.length - 1].cycle_id);
     }
   }, [cycles, selectedCycleId]);
+
+  useEffect(() => {
+    if (loopState?.active_config) {
+      setEditArch({ ...(loopState.active_config.arch_config ?? {}) });
+      setEditReward({ ...(loopState.active_config.reward_config ?? {}) });
+      setEditHyper({ ...(loopState.active_config.hyperparams ?? {}) });
+    }
+  }, [loopState?.active_config]);
 
   const activeCycle: AIRecursiveLoopCycle | null = useMemo(() => {
     if (cycles.length === 0) return null;
@@ -132,9 +142,15 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
   }, [activeCycle]);
 
   const enabled = Boolean(loopState?.enabled);
-  const intervalSec = loopState?.interval_seconds ?? 600;
-  const countdownSec = loopState?.seconds_until_next_check ?? intervalSec;
   const testEps = loopState?.test_episodes_per_cycle ?? 5000;
+  const epsUntilNext =
+    loopState?.episodes_until_next_cycle ??
+    Math.max(
+      0,
+      (loopState?.next_cycle_target_episode ?? testEps) - currentCumulativeEp
+    );
+  const nextTargetEp =
+    loopState?.next_cycle_target_episode ?? currentCumulativeEp + epsUntilNext;
   const provider: AIFeedbackProviderId =
     loopState?.provider ?? 'opencode_argon';
   const phase = loopState?.phase ?? 'idle';
@@ -150,6 +166,11 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
   );
   const latestStrategy =
     activeCycle?.strategy_research ?? loopState?.latest_strategy_research ?? null;
+  const lastVizSync = loopState?.last_model_visualizer_sync ?? null;
+  const liveTelemetry =
+    loopState?.live_telemetry_compact ??
+    activeCycle?.pre_change_snapshot?.baseline_metrics ??
+    null;
 
   const activeStageIndex = useMemo(() => {
     if (phase === 'analyzing') return 1;
@@ -170,16 +191,6 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
     }
   };
 
-  const handleIntervalChange = async (nextSec: number) => {
-    setIsBusy(true);
-    try {
-      await configureRecursiveLoop({ interval_seconds: nextSec });
-      await onRefreshStatus();
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
   const handleTestEpsChange = async (nextEps: number) => {
     const clamped = Math.max(12, Math.min(20000, nextEps));
     await configureRecursiveLoop({ test_episodes_per_cycle: clamped });
@@ -191,13 +202,32 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
     await onRefreshStatus();
   };
 
-  const handleRunCycleNow = async (autoTest: boolean) => {
-    if (currentCumulativeEp === 0 && !isTraining) {
-      alert(
-        'Cannot run diagnostic: No training episodes completed yet. Please start training and allow it to run for at least 10 minutes to gather telemetry.'
+  const handleSaveEditedParameters = async (runCodeAgent: boolean) => {
+    setIsBusy(true);
+    setParamSaveMsg(null);
+    try {
+      await updateRecursiveLoopConfigParameters({
+        arch_config: editArch,
+        reward_config: editReward,
+        hyperparams: editHyper,
+        run_code_agent: runCodeAgent,
+        reason: runCodeAgent
+          ? 'manual_parameter_and_argon4_morph'
+          : 'manual_parameter_studio_update',
+      });
+      setParamSaveMsg(
+        runCodeAgent
+          ? '✅ Applied parameters, triggered OpenCode Argon 4 morph, and started model-visualizer agent!'
+          : '✅ Applied parameters & automatically synced model-visualizer in Model Trainer!'
       );
-      return;
+      setTimeout(() => setParamSaveMsg(null), 5000);
+      await onRefreshStatus();
+    } finally {
+      setIsBusy(false);
     }
+  };
+
+  const handleRunCycleNow = async (autoTest: boolean) => {
     setIsBusy(true);
     try {
       const res = await runRecursiveLoopCycle({
@@ -331,14 +361,14 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
             >
               {enabled
                 ? isTraining
-                  ? `🟢 10m Loop Active (${formatCountdown(countdownSec)})`
-                  : `⏸ 10m Loop Armed (Paused — Start Training • ${formatCountdown(countdownSec)})`
-                : '▶️ Enable 10m Auto-Loop'}
+                  ? `🟢 Auto-Evolution Active (${epsUntilNext.toLocaleString()} eps to Ep ${nextTargetEp.toLocaleString()})`
+                  : `⏸ Auto-Evolution Armed (Next at Ep ${nextTargetEp.toLocaleString()} • ${epsUntilNext.toLocaleString()} eps left)`
+                : '▶️ Enable Episode-Horizon Auto-Evolution'}
             </button>
 
             <div className="rl-loop-pill-group">
               <span className="rl-loop-meta-chip">
-                <span>Arch Gen</span>
+                <span>Active Model</span>
                 <code>
                   Gen {activeGen} • {activeArchVersion} ({activeBackbone})
                 </code>
@@ -354,22 +384,6 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
               </span>
 
               <span className="rl-loop-meta-chip">
-                <span>Cadence</span>
-                <select
-                  className="rl-inline-select"
-                  value={intervalSec}
-                  onChange={(e) =>
-                    void handleIntervalChange(Number(e.target.value))
-                  }
-                >
-                  <option value={300}>Every 5m</option>
-                  <option value={600}>Every 10m</option>
-                  <option value={900}>Every 15m</option>
-                  <option value={1800}>Every 30m</option>
-                </select>
-              </span>
-
-              <span className="rl-loop-meta-chip">
                 <span>Evolution Horizon</span>
                 <select
                   className="rl-inline-select"
@@ -378,12 +392,26 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
                     void handleTestEpsChange(Number(e.target.value))
                   }
                 >
-                  <option value={300}>300 Eps</option>
-                  <option value={1000}>1,000 Eps</option>
-                  <option value={2500}>2,500 Eps</option>
-                  <option value={5000}>5,000 Eps (Gen Horizon)</option>
-                  <option value={10000}>10,000 Eps</option>
+                  <option value={300}>Every 300 Eps</option>
+                  <option value={1000}>Every 1,000 Eps</option>
+                  <option value={2500}>Every 2,500 Eps</option>
+                  <option value={5000}>Every 5,000 Eps (Gen Horizon)</option>
+                  <option value={10000}>Every 10,000 Eps</option>
                 </select>
+              </span>
+
+              <span
+                className="rl-loop-meta-chip"
+                title={
+                  lastVizSync
+                    ? `Triggered model-visualizer (${lastVizSync.agent} • ${lastVizSync.model}) at ${lastVizSync.synced_at} (${lastVizSync.reason})`
+                    : 'Automatically starts model-visualizer agent on every model or arch_config change'
+                }
+              >
+                <span>Model Visualizer</span>
+                <code style={{ color: '#e9d5ff' }}>
+                  🎨 {lastVizSync ? `Synced ${lastVizSync.synced_at} (${lastVizSync.total_params.toLocaleString()}p)` : 'Auto-Sync Active'}
+                </code>
               </span>
 
               <span className="rl-loop-meta-chip">
@@ -420,6 +448,15 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
             <button
               type="button"
               className="clash-btn"
+              onClick={() => setShowParamEditor((v) => !v)}
+              title="Toggle Live Parameter & Architecture Studio with Telemetry Data"
+            >
+              {showParamEditor ? '🎛️ Hide Parameter Studio' : '🎛️ Parameter & Arch Studio'}
+            </button>
+
+            <button
+              type="button"
+              className="clash-btn"
               disabled={isBusy || Boolean(loopState?.is_running_cycle)}
               onClick={() => void handleRunCycleNow(false)}
             >
@@ -447,7 +484,7 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
               }}
               disabled={isBusy || Boolean(loopState?.is_running_cycle)}
               onClick={() => void handleRestartWithNewArchitecture()}
-              title="Morph model to the next SOTA Vision Generation via AGY CoC Strategy Research + OpenCode Argon 4"
+              title="Morph model to the next SOTA Vision Generation via AGY CoC Strategy Research + OpenCode Argon 4 and update model-visualizer"
             >
               🧬 Morph Next Arch Gen (Argon 4 + AGY)
             </button>
@@ -462,7 +499,7 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
               }}
               disabled={isBusy || Boolean(loopState?.is_running_cycle)}
               onClick={() => void handleResetLoop()}
-              title="Reset diagnostic history and restore default baseline parameters"
+              title="Reset diagnostic history and restore default Gen 0 TinyCNN baseline parameters"
             >
               🧹 Reset History
             </button>
@@ -554,6 +591,364 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
           </div>
         )}
       </section>
+
+      {/* 1B. LIVE TELEMETRY & INTERACTIVE PARAMETER / ARCHITECTURE STUDIO */}
+      {showParamEditor && (
+        <section className="ai-card" style={{ marginBottom: 12 }}>
+          <div className="ai-card-header" style={{ flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <h3>
+                🎛️ Live Telemetry &amp; Parameter Tuning Studio (Arch • Reward • Hyperparams)
+              </h3>
+              <span
+                style={{
+                  fontSize: '0.72rem',
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  background: 'rgba(168, 85, 247, 0.16)',
+                  border: '1px solid #a855f7',
+                  color: '#e9d5ff',
+                  fontWeight: 700,
+                }}
+              >
+                🎨 Auto-Starts model-visualizer on Model Change
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              {paramSaveMsg && (
+                <span style={{ fontSize: '0.76rem', color: '#4ade80', fontWeight: 700 }}>
+                  {paramSaveMsg}
+                </span>
+              )}
+              <button
+                type="button"
+                className="clash-btn green"
+                disabled={isBusy}
+                onClick={() => void handleSaveEditedParameters(false)}
+                title="Save all edited Architecture, Reward, and PPO Hyperparameters and start model-visualizer to update Model Trainer"
+              >
+                💾 Apply Parameters (+ Sync Model Visualizer)
+              </button>
+              <button
+                type="button"
+                className="clash-btn gold"
+                disabled={isBusy}
+                onClick={() => void handleSaveEditedParameters(true)}
+                title="Save parameters, invoke OpenCode Argon 4 on networks.py, and start model-visualizer"
+              >
+                🧬 Apply + Run Argon 4 Morph (+ Sync Visualizer)
+              </button>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1.85fr',
+              gap: 12,
+              alignItems: 'start',
+            }}
+          >
+            {/* LEFT: LIVE TELEMETRY DATA SUMMARY */}
+            <div
+              style={{
+                background: 'rgba(15, 23, 42, 0.7)',
+                border: '1px solid #1e293b',
+                borderRadius: 8,
+                padding: 10,
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 8,
+                }}
+              >
+                <strong style={{ fontSize: '0.8rem', color: '#38bdf8' }}>
+                  📊 Live Telemetry Data (Ep {currentCumulativeEp.toLocaleString()})
+                </strong>
+                <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                  Next Auto-Cycle: Ep {nextTargetEp.toLocaleString()}
+                </span>
+              </div>
+              {liveTelemetry ? (
+                <div className="rl-kv-grid">
+                  <div className="rl-kv-item">
+                    <span>Mean Destr (300-Ep)</span>
+                    <strong style={{ color: '#fde047' }}>
+                      {liveTelemetry.mean_pct_50.toFixed(1)}%
+                      {liveTelemetry.sem_pct_300 !== undefined
+                        ? ` ± ${liveTelemetry.sem_pct_300.toFixed(2)}%`
+                        : ''}
+                    </strong>
+                  </div>
+                  <div className="rl-kv-item">
+                    <span>Destr Slope / 100ep</span>
+                    <strong
+                      style={{
+                        color:
+                          liveTelemetry.pct_slope_per_100ep >= 0.35
+                            ? '#4ade80'
+                            : '#f97316',
+                      }}
+                    >
+                      {liveTelemetry.pct_slope_per_100ep >= 0 ? '+' : ''}
+                      {liveTelemetry.pct_slope_per_100ep}%
+                    </strong>
+                  </div>
+                  <div className="rl-kv-item">
+                    <span>2★ TH18 / 3★ Triple</span>
+                    <strong>
+                      {liveTelemetry.two_star_th_rate_50.toFixed(1)}% /{' '}
+                      {liveTelemetry.three_star_triple_rate_50.toFixed(1)}%
+                    </strong>
+                  </div>
+                  <div className="rl-kv-item">
+                    <span>Explained Var / KL</span>
+                    <strong>
+                      {liveTelemetry.explained_var_50.toFixed(1)}% /{' '}
+                      {liveTelemetry.approx_kl_50.toFixed(4)}
+                    </strong>
+                  </div>
+                  <div className="rl-kv-item">
+                    <span>Joint / Tile Entropy</span>
+                    <strong>
+                      {liveTelemetry.entropy_50.toFixed(2)} /{' '}
+                      {liveTelemetry.h_tile_50.toFixed(2)} nats
+                    </strong>
+                  </div>
+                  <div className="rl-kv-item">
+                    <span>NoOp % / Worst Base</span>
+                    <strong>
+                      {liveTelemetry.noop_pct_50.toFixed(1)}% •{' '}
+                      {liveTelemetry.worst_village?.name ?? '—'} (
+                      {liveTelemetry.worst_village?.recent_avg_pct ?? 0}%)
+                    </strong>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: '0.78rem', color: '#94a3b8', padding: '8px 0' }}>
+                  Start training or select a checkpoint to populate live rolling telemetry metrics alongside parameter controls.
+                </div>
+              )}
+            </div>
+
+            {/* RIGHT: INTERACTIVE PARAMETER TABS (ARCH / REWARD / HYPERPARAMS) */}
+            <div
+              style={{
+                background: 'rgba(15, 23, 42, 0.7)',
+                border: '1px solid #1e293b',
+                borderRadius: 8,
+                padding: 10,
+              }}
+            >
+              <div className="rl-subtab-bar" style={{ marginBottom: 8 }}>
+                {(
+                  [
+                    ['arch', '🧬 Architecture (Gen 0..5 & Heads)'],
+                    ['reward', '🏆 Reward Shaping Weights'],
+                    ['hyperparams', '⚡ PPO Hyperparameters'],
+                  ] as const
+                ).map(([tid, lbl]) => (
+                  <button
+                    key={tid}
+                    type="button"
+                    className={`tb-mini-btn ${paramEditorTab === tid ? 'active' : ''}`}
+                    onClick={() => setParamEditorTab(tid)}
+                  >
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+
+              {paramEditorTab === 'arch' && (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(185px, 1fr))',
+                    gap: 8,
+                  }}
+                >
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 11 }}>
+                    <span style={{ color: '#94a3b8' }}>generation (0..5)</span>
+                    <select
+                      className="clash-select"
+                      value={Number(editArch.generation ?? 0)}
+                      onChange={(e) => {
+                        const g = Number(e.target.value);
+                        const presetBackbones: Record<number, { ver: string; bb: string; sDim: number; eDim: number; blocks: number }> = {
+                          0: { ver: 'v4.0-Gen0-TinyCNN', bb: 'tiny_cnn', sDim: 32, eDim: 128, blocks: 0 },
+                          1: { ver: 'v4.1-Gen1-CoordDilatedCNN', bb: 'coord_dilated_cnn', sDim: 48, eDim: 160, blocks: 2 },
+                          2: { ver: 'v4.2-Gen2-ConvNeXtV2-GRN', bb: 'convnext_v2_grn', sDim: 64, eDim: 192, blocks: 3 },
+                          3: { ver: 'v4.3-Gen3-SegNeXt-MSCA-UNet', bb: 'segnext_msca_unet', sDim: 96, eDim: 256, blocks: 3 },
+                          4: { ver: 'v4.4-Gen4-UniRepLKNet-HRNet', bb: 'unireplk_hrnet', sDim: 128, eDim: 256, blocks: 4 },
+                          5: { ver: 'v4.5-Gen5-HybridSwinV2-Pointer', bb: 'swin_v2_pointer', sDim: 128, eDim: 256, blocks: 4 },
+                        };
+                        const p = presetBackbones[g] ?? presetBackbones[0];
+                        setEditArch((prev) => ({
+                          ...prev,
+                          generation: g,
+                          arch_version: p.ver,
+                          backbone_type: p.bb,
+                          spatial_dim: p.sDim,
+                          embed_dim: p.eDim,
+                          num_res_blocks: p.blocks,
+                          use_coord_conv: g >= 1,
+                          use_convnext_grn: g >= 2,
+                          use_msca_strip_attn: g >= 3,
+                          use_large_kernel_9x9: g >= 4,
+                        }));
+                      }}
+                    >
+                      <option value={0}>Gen 0 • TinyCNN (~50K)</option>
+                      <option value={1}>Gen 1 • CoordDilatedCNN (~140K)</option>
+                      <option value={2}>Gen 2 • ConvNeXtV2-GRN (~380K)</option>
+                      <option value={3}>Gen 3 • SegNeXt-MSCA-UNet (~850K)</option>
+                      <option value={4}>Gen 4 • UniRepLKNet-HRNet (~1.6M)</option>
+                      <option value={5}>Gen 5 • SwinV2-Pointer (~2.4M)</option>
+                    </select>
+                  </label>
+
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 11 }}>
+                    <span style={{ color: '#94a3b8' }}>backbone_type</span>
+                    <select
+                      className="clash-select"
+                      value={String(editArch.backbone_type ?? 'tiny_cnn')}
+                      onChange={(e) =>
+                        setEditArch((prev) => ({ ...prev, backbone_type: e.target.value }))
+                      }
+                    >
+                      <option value="tiny_cnn">tiny_cnn</option>
+                      <option value="coord_dilated_cnn">coord_dilated_cnn</option>
+                      <option value="convnext_v2_grn">convnext_v2_grn</option>
+                      <option value="segnext_msca_unet">segnext_msca_unet</option>
+                      <option value="unireplk_hrnet">unireplk_hrnet</option>
+                      <option value="swin_v2_pointer">swin_v2_pointer</option>
+                    </select>
+                  </label>
+
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 11 }}>
+                    <span style={{ color: '#94a3b8' }}>weight_transfer_mode</span>
+                    <select
+                      className="clash-select"
+                      value={String(editArch.weight_transfer_mode ?? 'scratch_restart')}
+                      onChange={(e) =>
+                        setEditArch((prev) => ({
+                          ...prev,
+                          weight_transfer_mode: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="scratch_restart">scratch_restart</option>
+                      <option value="warm_start">warm_start (Net2Net slice)</option>
+                    </select>
+                  </label>
+
+                  {(
+                    [
+                      ['spatial_dim', 16, 256, 8],
+                      ['embed_dim', 64, 512, 32],
+                      ['num_res_blocks', 0, 8, 1],
+                      ['logit_cap_type', 0.5, 5.0, 0.1],
+                      ['logit_cap_idx', 0.5, 5.0, 0.1],
+                      ['logit_cap_frac', 0.5, 5.0, 0.1],
+                      ['logit_cap_tile', 0.5, 6.0, 0.1],
+                      ['spatial_prior_scale', 0.0, 2.0, 0.05],
+                      ['spell_edge_suppress_Penalty', -6.0, 0.0, 0.25],
+                    ] as const
+                  ).map(([key, minV, maxV, stepV]) => (
+                    <label
+                      key={key}
+                      style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 11 }}
+                    >
+                      <span style={{ color: '#94a3b8' }}>{key}</span>
+                      <input
+                        type="number"
+                        className="clash-select"
+                        min={minV}
+                        max={maxV}
+                        step={stepV}
+                        value={Number(editArch[key] ?? 0)}
+                        onChange={(e) =>
+                          setEditArch((prev) => ({
+                            ...prev,
+                            [key]: Number(e.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {paramEditorTab === 'reward' && (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(185px, 1fr))',
+                    gap: 8,
+                  }}
+                >
+                  {Object.entries(editReward).map(([k, v]) => (
+                    <label
+                      key={k}
+                      style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 11 }}
+                    >
+                      <span style={{ color: '#94a3b8' }}>{k}</span>
+                      <input
+                        type="number"
+                        step="any"
+                        className="clash-select"
+                        value={Number(v)}
+                        onChange={(e) =>
+                          setEditReward((prev) => ({
+                            ...prev,
+                            [k]: Number(e.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {paramEditorTab === 'hyperparams' && (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(185px, 1fr))',
+                    gap: 8,
+                  }}
+                >
+                  {Object.entries(editHyper).map(([k, v]) => (
+                    <label
+                      key={k}
+                      style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 11 }}
+                    >
+                      <span style={{ color: '#94a3b8' }}>{k}</span>
+                      <input
+                        type="number"
+                        step="any"
+                        className="clash-select"
+                        value={Number(v)}
+                        onChange={(e) =>
+                          setEditHyper((prev) => ({
+                            ...prev,
+                            [k]: Number(e.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* 2. CYCLE SELECTOR STRIP */}
       {cycles.length > 0 && (
@@ -979,7 +1374,7 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
           className="ai-card rl-col-card"
           style={{ padding: '36px 24px', textAlign: 'center' }}
         >
-          <div style={{ fontSize: '38px', marginBottom: '12px' }}>⏳</div>
+          <div style={{ fontSize: '38px', marginBottom: '12px' }}>🧬</div>
           <h3
             style={{
               fontSize: '18px',
@@ -989,40 +1384,39 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
             }}
           >
             {isTraining
-              ? 'Training in Progress — Awaiting First 10-Minute Diagnostic'
-              : 'Awaiting Active Training Telemetry'}
+              ? `Training Gen ${activeGen} (${activeArchVersion}) — Next Auto-Evolution at Ep ${nextTargetEp.toLocaleString()}`
+              : `Gen ${activeGen} (${activeArchVersion}) Ready — Episode-Horizon Progressive Evolution`}
           </h3>
           <p
             style={{
               color: '#94a3b8',
-              maxWidth: '640px',
+              maxWidth: '680px',
               margin: '0 auto 16px',
               lineHeight: 1.6,
               fontSize: '13px',
             }}
           >
             {isTraining
-              ? `The first diagnostic and plateau analysis will automatically begin after the first 10 minutes of training (in ${formatCountdown(
-                  countdownSec
-                )}). Telemetry must accumulate across completed episodes before meaningful bottlenecks can be diagnosed.`
-              : 'The recursive self-improvement loop inspects training telemetry every 10 minutes of active training. Start training to begin the 10-minute cadence and gather episode data.'}
+              ? `The Progressive Model Evolution system evaluates training telemetry every ${testEps.toLocaleString()} episodes (${epsUntilNext.toLocaleString()} episodes remaining until Ep ${nextTargetEp.toLocaleString()}). You can also tune any Architecture, Reward, or PPO Hyperparameter in the studio above or trigger a diagnostic cycle at any time.`
+              : `Start training on Gen ${activeGen} (${activeArchVersion}) to gather episode telemetry over the ${testEps.toLocaleString()}-episode horizon, or use the Live Parameter Studio above to adjust architecture, reward weights, and PPO hyperparameters (automatically syncing model-visualizer).`}
           </p>
           <div
             className="rl-loop-pill-group"
             style={{ justifyContent: 'center' }}
           >
             <span className="rl-loop-meta-chip">
-              <span>First Diagnostic In</span>
+              <span>Episodes Until Next Cycle</span>
               <strong
                 style={{
                   color: enabled && isTraining ? '#4ade80' : '#facc15',
                 }}
               >
-                {formatCountdown(countdownSec)}
+                {epsUntilNext.toLocaleString()} Eps (Target Ep{' '}
+                {nextTargetEp.toLocaleString()})
               </strong>
             </span>
             <span className="rl-loop-meta-chip">
-              <span>Loop Status</span>
+              <span>Evolution Status</span>
               <strong
                 style={{
                   color: enabled
@@ -1034,8 +1428,8 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
               >
                 {enabled
                   ? isTraining
-                    ? 'Active (Counting Down)'
-                    : 'Armed (Paused)'
+                    ? 'Active (Episode Horizon)'
+                    : 'Armed (Awaiting Training)'
                   : 'Manual / On-Demand'}
               </strong>
             </span>

@@ -383,6 +383,27 @@ export async function restartRecursiveLoopNewArchitecture(params?: {
   }
 }
 
+export async function updateRecursiveLoopConfigParameters(params: {
+  arch_config?: Record<string, number | string | boolean>;
+  reward_config?: Record<string, number>;
+  hyperparams?: Record<string, number | string>;
+  restart_or_morph_model?: boolean;
+  auto_test?: boolean;
+  test_episodes?: number;
+}): Promise<AIRecursiveLoopState | null> {
+  try {
+    const res = await fetch(`${AI_API_BASE}/loop/update-config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as AIRecursiveLoopState;
+  } catch {
+    return null;
+  }
+}
+
 export async function resetRecursiveLoop(): Promise<AIRecursiveLoopState | null> {
   try {
     const res = await fetch(`${AI_API_BASE}/loop/reset`, {

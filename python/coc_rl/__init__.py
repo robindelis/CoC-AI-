@@ -26,6 +26,7 @@ from .recursive_loop import (
     capture_pre_change_snapshot,
     diagnose_and_propose_solutions,
     execute_opencode_argon_code_edit,
+    extract_compact_metrics_from_telemetry,
     get_default_experiment_config,
     load_active_experiment_config,
     load_recursive_loop_state,
@@ -35,6 +36,7 @@ from .recursive_loop import (
     save_active_experiment_config,
     save_recursive_loop_state,
     sync_recursive_loop_to_vault,
+    trigger_model_visualizer_agent,
     verify_solution_outcome,
 )
 from .training_feedback import (

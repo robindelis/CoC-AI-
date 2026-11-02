@@ -74,11 +74,11 @@ When analyzing, modifying, or reflecting neural architectures in visualization a
 
 ## 📐 Invariants & Responsibilities of `model-visualizer`
 
-Whenever any change is made to `python/coc_rl/networks.py` (or any other model definition), or when working on `python/coc_rl/visualize.py` and `python/visualize_model.py`:
+Whenever any change is made to `python/coc_rl/networks.py`, `trained_models/loop/active_experiment_config.json`, or any model architecture parameter (via progressive generation morphing `Gen 0 -> Gen 5`, OpenCode Argon 4 edits, or user parameter updates):
 
-1. **Keep `extract_live_layer_specs()` Perfectly Aligned**:
-   - Ensure layer stages (`spatial`, `global`, `heads`), shapes (`inputShape`, `outputShape`), parameter counts (`params`), MAC calculations (`macs`), receptive fields (`receptiveField`), descriptions (`desc`), and colors accurately reflect the real PyTorch layers.
-   - Guard against missing attributes or hardcoded shape mismatches when channel numbers or layer structures change.
+1. **Showcase the Currently Active Model in the Model Trainer (`NetworkBuilderPanel`)**:
+   - Inspect `trained_models/loop/active_experiment_config.json` (`arch_config`) and `python/coc_rl/networks.py` (`DEFAULT_ARCH_CONFIG`, `CoCActorCritic`, `CoCSpatialEncoder`, `TacticalFeatureSynthesizer`, `TinySingleConvBlock`, `TinySkipUpBlock`, `ConvNeXtV2Block`, `SegNeXtMSCABlock`, `UNetConvBlock`, `UNetUpBlock`, `DilatedResBlock`).
+   - Ensure `extract_live_layer_specs()` in `python/coc_rl/visualize.py` accurately reports layer stages (`spatial`, `global`, `heads`), shapes (`inputShape`, `outputShape`), parameter counts (`params`), MAC calculations (`macs`), receptive fields (`receptiveField`), descriptions (`desc`), and colors for the currently active model generation (`Gen 0` TinyCNN ~50K params up to `Gen 5` Full SOTA U-Net).
 2. **Ensure Computation Graph Generation Succeeds**:
    - `_render_torchview_variant()` uses `torchview.draw_graph` with cpu tracing. Verify that model forward passes with sample inputs `(1, 59, 50, 50)` and `(1, 64)` execute cleanly without tensor dimension mismatch or missing keyword arguments.
    - Verify that overview (depth=2) and detailed (depth=3) SVG/PNG diagrams render properly into `docs/architecture/`.

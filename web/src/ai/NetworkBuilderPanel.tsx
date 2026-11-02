@@ -327,12 +327,16 @@ interface NetworkBuilderPanelProps {
   serverOnline: boolean;
   architectureSpec?: AIArchitectureSpec;
   architectureHash?: string;
+  activeArchConfig?: Record<string, number | string | boolean>;
+  lastVisualizerSync?: AIModelVisualizerSync | null;
 }
 
 export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
   serverOnline,
   architectureSpec,
   architectureHash,
+  activeArchConfig,
+  lastVisualizerSync,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
   const [vizMode, setVizMode] = useState<'schematic' | 'torchview'>('schematic');
@@ -374,15 +378,39 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
     if (architectureHash) setLiveHash(architectureHash);
   }, [architectureSpec, architectureHash]);
 
+  // Automatically re-sync the visual representation whenever the active model or model-visualizer sync changes
+  const activeCfg = liveSpec?.arch_config ?? activeArchConfig ?? {};
+  const activeGen = Number(activeCfg.generation ?? lastVisualizerSync?.generation ?? 0);
+  const activeArchVer = String(
+    activeCfg.arch_version ?? lastVisualizerSync?.arch_version ?? 'v4.0-Gen0-TinyCNN'
+  );
+  const activeBackbone = String(
+    activeCfg.backbone_type ?? lastVisualizerSync?.backbone_type ?? 'tiny_cnn'
+  );
+
+  useEffect(() => {
+    if (!serverOnline) return;
+    void syncArchitectureFromServer(true);
+  }, [
+    serverOnline,
+    activeArchConfig?.generation,
+    activeArchConfig?.arch_version,
+    activeArchConfig?.backbone_type,
+    activeArchConfig?.spatial_dim,
+    activeArchConfig?.embed_dim,
+    lastVisualizerSync?.synced_at,
+    syncArchitectureFromServer,
+  ]);
+
   const activeLayers =
-    liveSpec?.layers && liveSpec.layers.length >= 15
+    liveSpec?.layers && liveSpec.layers.length >= 6
       ? liveSpec.layers
       : DEFAULT_LAYERS;
   const inChannels = liveSpec?.in_channels ?? 59;
   const armyContextDim = liveSpec?.army_context_dim ?? 64;
-  const spatialDim = liveSpec?.spatial_dim ?? 128;
-  const embedDim = liveSpec?.embed_dim ?? 256;
-  const numFracBins = liveSpec?.num_fraction_bins ?? 5;
+  const spatialDim = liveSpec?.spatial_dim ?? Number(activeCfg.spatial_dim ?? 32);
+  const embedDim = liveSpec?.embed_dim ?? Number(activeCfg.embed_dim ?? 128);
+  const numFracBins = liveSpec?.num_fraction_bins ?? Number(activeCfg.num_fraction_bins ?? 5);
   const totalParams =
     liveSpec?.total_params ?? activeLayers.reduce((acc, l) => acc + l.params, 0);
   const totalMacs =
@@ -2034,22 +2062,52 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
   return (
     <section className="ai-arch-studio-card">
       <div className="ai-arch-header">
-        <div className="ai-arch-title-row">
-          <h3>🧬 CoCActorCritic Neural Architecture (`python/coc_rl/networks.py`)</h3>
+        <div className="ai-arch-title-row" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <h3>
+            🧬 Active Model Architecture: Gen {activeGen} • {activeArchVer} (
+            <code>{activeBackbone}</code>)
+          </h3>
+          <span
+            style={{
+              fontSize: '0.72rem',
+              padding: '2px 8px',
+              borderRadius: 999,
+              background: 'rgba(168, 85, 247, 0.16)',
+              border: '1px solid #a855f7',
+              color: '#e9d5ff',
+              fontWeight: 700,
+            }}
+            title={
+              lastVisualizerSync
+                ? `Updated by model-visualizer agent (${lastVisualizerSync.agent} • ${lastVisualizerSync.model}) at ${lastVisualizerSync.synced_at} (${lastVisualizerSync.reason})`
+                : 'Auto-synced with active model via model-visualizer agent'
+            }
+          >
+            🎨 model-visualizer Synced
+            {lastVisualizerSync?.synced_at ? ` • ${lastVisualizerSync.synced_at}` : ''}
+          </span>
         </div>
 
         <div className="ai-arch-kpi-pills">
+          <div className="arch-pill" style={{ borderColor: '#a855f7' }}>
+            <span>Active Gen</span>
+            <strong style={{ color: '#e9d5ff' }}>
+              Gen {activeGen} ({activeBackbone})
+            </strong>
+          </div>
           <div className="arch-pill">
             <span>Input 1 (obs)</span>
             <strong>{inChannels}×50×50</strong>
           </div>
           <div className="arch-pill" style={{ borderColor: '#0891b2' }}>
             <span>Input 2 (army_context)</span>
-            <strong style={{ color: '#38bdf8' }}>{armyContextDim}D → 256D ⊕</strong>
+            <strong style={{ color: '#38bdf8' }}>
+              {armyContextDim}D → {embedDim}D ⊕
+            </strong>
           </div>
           <div className="arch-pill">
             <span>Spatial Map</span>
-            <strong>{spatialDim}×50×50 (RF 15×15)</strong>
+            <strong>{spatialDim}×50×50</strong>
           </div>
           <div className="arch-pill">
             <span>Fused State</span>
@@ -2074,9 +2132,9 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
             type="button"
             className="speed-pill-btn"
             onClick={() => void syncArchitectureFromServer(true)}
-            title="Re-inspect python/coc_rl/networks.py and regenerate architecture diagrams"
+            title="Re-inspect python/coc_rl/networks.py and regenerate architecture diagrams via model-visualizer"
           >
-            {isRefreshing ? '⟳ Syncing...' : '↻ Sync Model'}
+            {isRefreshing ? '⟳ Syncing...' : '↻ Sync Model Visualizer'}
           </button>
           <button
             type="button"

@@ -157,26 +157,27 @@ The project registers a specialized agent for neural network visualization, laye
 - **Agent Definitions**:
   - Global CLI runtime: `~/.gemini/config/agents/model-visualizer/agent.md`
   - Version-controlled repo source: [`.agents/agents/model-visualizer/agent.md`](file:///home/robin/Projects/CoC/.agents/agents/model-visualizer/agent.md)
-- **Role**: Maintains `python/coc_rl/visualize.py`, `python/visualize_model.py`, live layer telemetry, `torchview` computation graphs (`docs/architecture/`), and web visualizer contracts in sync with model definitions.
+- **Role**: Maintains `python/coc_rl/visualize.py`, `python/visualize_model.py`, live layer telemetry, `torchview` computation graphs (`docs/architecture/`), and web visualizer contracts in sync with model definitions and `trained_models/loop/active_experiment_config.json`.
 
-### ⚠️ MANDATORY RULE: Model Visualization Exclusively via `model-visualizer`
-Everything related to the visualize files (`python/coc_rl/visualize.py`, `python/visualize_model.py`) and showing the model representation (live layer specifications, MACs/parameter computations, receptive field telemetry, `torchview` computation graphs, and web visualizer payloads) **MUST BE DONE VIA THIS SPECIALIZED AGENT**.
+### ⚠️ MANDATORY RULE: Model Visualization Exclusively via `model-visualizer` & Auto-Trigger on Every Model Change
+1. **Exclusivity**: Everything related to the visualize files (`python/coc_rl/visualize.py`, `python/visualize_model.py`) and showing the model representation (live layer specifications, MACs/parameter computations, receptive field telemetry, `torchview` computation graphs, and web visualizer payloads) **MUST BE DONE VIA THIS SPECIALIZED AGENT**.
+2. **Mandatory Trigger on Every Model Change**: **Every time the model is changed**—whether via progressive SOTA architecture morphing (`Gen 0 -> Gen 5` by `opencode-model-evolver`), applying an architecture candidate solution, or modifying `arch_config` parameters in the interactive Telemetry & Parameter Studio—the **`model-visualizer` agent MUST be started automatically** (`trigger_model_visualizer_agent()`) to update the live layer specs and `torchview` computation graphs shown in the **Model Trainer (`NetworkBuilderPanel`)** so it always showcases the exact model currently being used.
 
 The agent is aware of where neural network architectures and model implementations are defined across the entire codebase:
-1. **Primary Production RL Models (`python/coc_rl/networks.py`)**:
-   - `CoCActorCritic`: Main factorized actor-critic model (59×50×50 observation + 64-D army context -> 4 autoregressive actor heads: `slot_type`, `slot_idx`, `deploy_fraction`, `tile_xy` + scalar `critic_head`).
-   - `CoCSpatialEncoder`: Dual-pathway 50×50 spatial CNN / U-Net backbone (`enc1`, `enc2`, `enc3`, `bottleneck`, `up3`, `up2`, `up1`, `global_tower`).
-   - `UNetConvBlock` & `UNetUpBlock`: Convolutional downsampling/upsampling blocks with GroupNorm and SiLU.
-   - `DilatedResBlock`: Residual context block preserving exact 50×50 spatial resolution.
+1. **Primary Production RL Models (`python/coc_rl/networks.py` & `trained_models/loop/active_experiment_config.json`)**:
+   - `CoCActorCritic`: Main factorized actor-critic model (59×50×50 observation + 64-D army context -> 4 autoregressive actor heads: `slot_type`, `slot_idx`, `deploy_fraction`, `tile_xy` + scalar `critic_head`), supporting progressive morphing from `Gen 0 (v4.0-Gen0-TinyCNN, ~50K params)` through `Gen 5`.
+   - `CoCSpatialEncoder`: Configurable spatial backbone (`tiny_cnn`, `tiny_coord_se_cnn`, `convnext_dilated_hybrid`, `segnext_msca_dual_head`, `full_sota_unet`) with `enc1`, `enc2`, `enc3`, `bottleneck`, `up3`, `up2`, `up1`, and `global_tower`.
+   - `TacticalFeatureSynthesizer`, `TinySingleConvBlock`, `TinySkipUpBlock`, `ConvNeXtV2Block` (`GlobalResponseNorm`), `SegNeXtMSCABlock`, `UNetConvBlock`, `UNetUpBlock`, and `DilatedResBlock`.
 2. **Downstream Visualization Consumers**:
-   - `python/ai_server.py`: Serves `/api/ai/model-architecture` powered by `extract_live_layer_specs()`.
+   - `python/ai_server.py`: Serves `/api/ai/status` and `/api/ai/architecture/spec` powered by `extract_live_layer_specs()` and `ensure_architecture_diagrams()`.
+   - `python/coc_rl/recursive_loop.py`: Calls `trigger_model_visualizer_agent()` whenever the model architecture or `arch_config` changes.
    - `python/coc_rl/vault_generator.py`: Embeds model architecture diagrams into Obsidian canvas.
-   - `web/src/ai/AIStudioView.tsx` & `RLAcademyView.tsx`: Consumes live layer specs to render the interactive 3D layer visualizer, receptive field inspector, and live PyTorch code.
+   - `web/src/ai/NetworkBuilderPanel.tsx` & `AIStudioView.tsx`: Consumes live layer specs in the **Model Trainer & Network Setup** tab to render the interactive 3D layer visualizer, receptive field inspector, head sub-network cards, and live PyTorch code for the currently active model generation.
    - `docs/architecture/`: Publication-grade SVG/PNG diagrams (`coc_actor_critic_overview.svg`, `coc_actor_critic_detailed.svg`) and `manifest.json`.
 
 ```bash
 # Run model-visualizer non-interactively using agy with Gemini 3.8 Flash Medium:
-agy --agent model-visualizer --model gemini-3.8-flash-medium -p "Update model visualization to reflect latest networks.py architecture"
+agy --agent model-visualizer --model gemini-3.8-flash-medium -p "Update model visualization to reflect latest networks.py architecture and active_experiment_config.json"
 
 # Run model-visualizer interactively:
 agy --agent model-visualizer --model gemini-3.8-flash-medium
@@ -184,6 +185,16 @@ agy --agent model-visualizer --model gemini-3.8-flash-medium
 # Direct CLI command for regenerating static computation graphs:
 .venv/bin/python python/visualize_model.py --force
 ```
+
+---
+
+## Progressive Model Evolution & Telemetry Parameter Tuning System (Replaces Legacy 10m Timer Loop)
+
+The legacy 10-minute wall-clock loop has been replaced by the **Episode-Driven Progressive Model Evolution & Telemetry Parameter Tuning System** (`python/coc_rl/recursive_loop.py`, `python/ai_server.py`, `web/src/ai/RecursiveLoopPanel.tsx`):
+- **Episode-Horizon Evolution Cycles (Default `5,000` Episodes)**: Instead of a 10-minute timer, the system audits training telemetry over a 300-episode evaluation window every `5,000` episodes (configurable: `300`, `1,000`, `2,500`, `5,000`, `10,000` episodes) or on demand.
+- **Full Parameter Tuning with Live Telemetry**: Retains and expands the ability to modify all parameters across **Architecture (`arch_config`)**, **Reward Shaping (`reward_config`)**, and **PPO Hyperparameters (`hyperparams`)**—both via AI-diagnosed candidate solutions and directly through the interactive **Live Telemetry & Parameter Studio** in the UI.
+- **Multi-Agent Architecture Morphing (`Gen 0 -> Gen 5`)**: Combines `coc-strategy-researcher` (`agy` • `gemini-3.8-flash-medium`) for Clash of Clans tactical input/output research with `opencode-model-evolver` (`opencode` • `google-vertex/gemini-4-argon#medium`) to progressively morph `python/coc_rl/networks.py` with adaptive `warm_start` weight transfer or `scratch_restart`.
+- **Automatic Model Trainer Visualization Sync**: Every time a model morph or `arch_config` change is applied, `trigger_model_visualizer_agent()` automatically invokes `model-visualizer` (`agy --agent model-visualizer --model gemini-3.8-flash-medium`) and refreshes `NetworkBuilderPanel` so the Model Trainer immediately showcases the active architecture.
 
 ---
 

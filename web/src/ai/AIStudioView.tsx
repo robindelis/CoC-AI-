@@ -1367,7 +1367,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
             }`}
             onClick={() => setTrainerTab('recursive_loop')}
           >
-            ♾️ Recursive AI Loop (10m Self-Improver)
+            🧬 Progressive Evolution &amp; Parameter Studio
             {serverStatus?.recursive_loop?.active_hypothesis && isTraining ? (
               <span
                 className="ai-live-pulse-badge"
@@ -1377,12 +1377,18 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
               </span>
             ) : serverStatus?.recursive_loop?.enabled && isTraining ? (
               <span className="ai-live-pulse-badge">
-                ● AUTO (
-                {Math.floor(
-                  (serverStatus.recursive_loop.seconds_until_next_check ?? 600) /
-                    60
-                )}
-                m)
+                ● Gen{' '}
+                {Number(
+                  serverStatus?.recursive_loop?.active_config?.arch_config
+                    ?.generation ?? 0
+                )}{' '}
+                (
+                {(
+                  serverStatus.recursive_loop.episodes_until_next_cycle ??
+                  serverStatus.recursive_loop.test_episodes_per_cycle ??
+                  5000
+                ).toLocaleString()}{' '}
+                eps)
               </span>
             ) : serverStatus?.recursive_loop?.enabled ? (
               <span
@@ -1392,7 +1398,16 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   color: '#7dd3fc',
                 }}
               >
-                ⏸ STANDBY (Start Training)
+                Gen{' '}
+                {Number(
+                  serverStatus?.recursive_loop?.active_config?.arch_config
+                    ?.generation ?? 0
+                )}{' '}
+                • Horizon{' '}
+                {(
+                  serverStatus?.recursive_loop?.test_episodes_per_cycle ?? 5000
+                ).toLocaleString()}{' '}
+                eps
               </span>
             ) : (
               <span
@@ -1402,7 +1417,12 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   color: '#fde047',
                 }}
               >
-                Cycle #{serverStatus?.recursive_loop?.current_cycle_id ?? 1}
+                Gen{' '}
+                {Number(
+                  serverStatus?.recursive_loop?.active_config?.arch_config
+                    ?.generation ?? 0
+                )}{' '}
+                • Cycle #{serverStatus?.recursive_loop?.current_cycle_id ?? 1}
               </span>
             )}
           </button>
@@ -2039,6 +2059,12 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
               serverOnline={Boolean(serverStatus?.online)}
               architectureSpec={serverStatus?.architecture_spec}
               architectureHash={serverStatus?.architecture_hash}
+              activeArchConfig={
+                serverStatus?.recursive_loop?.active_config?.arch_config
+              }
+              lastVisualizerSync={
+                serverStatus?.recursive_loop?.last_model_visualizer_sync
+              }
             />
           </>
         )}
