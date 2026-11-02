@@ -12,6 +12,7 @@ import contextlib
 import hashlib
 import json
 import os
+import shutil
 from typing import Any, Dict, Iterator, List, Optional
 
 import torch
@@ -744,6 +745,26 @@ def render_model_architecture(
     return res
 
 
+def _sync_vault_assets() -> None:
+    """Mirrors the generated SVG/PNG computation graphs and manifest to obsidian_vault/assets/architectures."""
+    vault_arch_dir = os.path.join(REPO_ROOT, "obsidian_vault", "assets", "architectures")
+    if not os.path.exists(vault_arch_dir):
+        return
+    for fname in (
+        "coc_actor_critic_overview.svg",
+        "coc_actor_critic_overview.png",
+        "coc_actor_critic_detailed.svg",
+        "coc_actor_critic_detailed.png",
+        "manifest.json",
+    ):
+        src_f = os.path.join(ARCH_DIR, fname)
+        if os.path.exists(src_f):
+            try:
+                shutil.copy2(src_f, os.path.join(vault_arch_dir, fname))
+            except Exception:
+                pass
+
+
 def ensure_architecture_diagrams(
     model: Optional[nn.Module] = None,
     force: bool = False,
@@ -753,6 +774,7 @@ def ensure_architecture_diagrams(
     Returns the architecture diagram manifest in `docs/architecture/manifest.json`,
     automatically regenerating the SVG/PNG files via `torchview` whenever `networks.py`
     or the live model architecture changes, when files are missing, or when `force=True`.
+    Also mirrors the resulting diagrams into `obsidian_vault/assets/architectures/`.
     """
     os.makedirs(ARCH_DIR, exist_ok=True)
     active_arch_cfg = load_active_arch_config()
@@ -788,6 +810,7 @@ def ensure_architecture_diagrams(
                 and cached.get("architecture_hash") == current_hash
                 and cached.get("input_shape") == list(input_size)
             ):
+                _sync_vault_assets()
                 return {**cached, "live_spec": live_spec, "regenerated": False}
         except Exception:
             pass
@@ -826,6 +849,7 @@ def ensure_architecture_diagrams(
     }
     with open(MANIFEST_PATH, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
+    _sync_vault_assets()
     return {**manifest, "regenerated": True}
 
 

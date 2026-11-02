@@ -546,7 +546,7 @@ Defined in `CoCActorCritic` (`python/coc_rl/networks.py`), the policy parameteri
        $$\text{surgical\_funnel} = \text{frac\_onehot}_{0} \cdot \left(\sum_{c=56}^{58} \text{obs}_{c}\right)$$
        $$\text{threat\_field} = 0.6 \cdot \text{obs}_{0} + \text{cleanup\_focus} + 0.8 \cdot \text{surgical\_funnel} + w_{\text{def}} \cdot \text{obs}_{1} + w_{\text{th}} \cdot \text{obs}_{2}$$
   3. **Transition to Generation 1 (`v4.1-Gen1-CoordSE-ResCNN`)**:
-     - Upgraded default active architecture to `Gen 1`: `base_ch=24`, `spatial_dim=24`, `embed_dim=96`, `head_hidden_dim=64`, `use_coord_features=True` (`TacticalFeatureSynthesizer` 6-channel polar/LoS injection), `use_se_attention=True` (`SEChannelAttention`), and `weight_transfer_mode="warm_start"` (`129,852` parameters).
+     - Upgraded default active architecture to `Gen 1`: `base_ch=24`, `spatial_dim=24`, `embed_dim=96`, `head_hidden_dim=64`, `use_coord_features=True` (`TacticalFeatureSynthesizer` 6-channel polar/LoS injection), `use_se_attention=True` (`SEChannelAttention`), and `weight_transfer_mode="warm_start"` (`130,268` parameters).
      - Adjusted PPO rewards: `funnel_weight=0.10`, `high_pct_milestone_75=2.5`, `high_pct_milestone_90=5.0`, `triple_wipe_bonus=8.0`, `pacing_wait_bonus=0.03`.
   4. **Mandatory Visualizer Auto-Trigger**:
      - Added `trigger_model_visualizer_agent()` in `python/coc_rl/recursive_loop.py` and `python/ai_server.py`.

@@ -922,16 +922,24 @@ def generate_stacked_cnn_svg(
 
 
 def ensure_all_architecture_diagrams() -> Dict[str, str]:
-    """Ensures the 31-channel 3D stacked CNN image exists in the vault."""
+    """Ensures the 3D stacked CNN image and computation graphs exist in the vault."""
     ensure_dirs()
     v3_svg = os.path.join(ARCH_ASSETS_DIR, "v3_architecture.svg")
     v3_png = os.path.join(ARCH_ASSETS_DIR, "v3_architecture.png")
 
     generate_stacked_cnn_svg(in_channels=59, out_svg_path=v3_svg, out_png_path=v3_png)
 
+    try:
+        from .visualize import ensure_architecture_diagrams
+        ensure_architecture_diagrams(force=False)
+    except Exception as e:
+        print(f"[warning] ensure_architecture_diagrams sync failed in vault_generator: {e}")
+
     return {
         "v3_png": os.path.relpath(v3_png, VAULT_DIR),
         "v3_svg": os.path.relpath(v3_svg, VAULT_DIR),
+        "overview_png": "assets/architectures/coc_actor_critic_overview.png",
+        "detailed_png": "assets/architectures/coc_actor_critic_detailed.png",
     }
 
 

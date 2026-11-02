@@ -9,7 +9,7 @@ tags:
   - benchmark-ledger
 updated: "2026-11-02"
 current_generation: "Gen 1 (v4.1-Gen1-CoordSE-ResCNN)"
-current_params: 129852
+current_params: 130268
 episode_step_budget: 5000
 ---
 
@@ -81,11 +81,11 @@ Instead of stepping through an arbitrary predetermined 1-to-5 sequence, `python/
 ### 🔄 Cycle #1 — Generation 1 (`v4.1-Gen1-CoordSE-ResCNN`)
 
 - **Timestamp**: `2026-11-01 20:39:17` • **Episode**: `6,240`
-- **Transition**: `v4.0-Gen0-TinyCNN` (`55,104` params) → **`v4.1-Gen1-CoordSE-ResCNN`** (**`129,852` params**)
+- **Transition**: `v4.0-Gen0-TinyCNN` (`55,104` params) → **`v4.1-Gen1-CoordSE-ResCNN`** (**`130,268` params**)
 - **Weight Handling Mode**: **`WARM_START`**
 - **Pre-Morph Telemetry**: Mean Destr `81.42%`, 2★+ TH18 `85.3%`, 3★ Triple `27.3%`, Combat Score `65.96/100`
 - **AGY CoC Strategy & I/O Research (`gemini-3.8-flash-medium`)**: [Rule-of-3 Funneling & TH18 Line-of-Sight Coordinate Geometry] At 81.4% mean destruction (85.3% 2★ TH18, 27.3% 3★), tactical bottleneck requires Enable `TacticalFeatureSynthesizer` (`use_coord_features=True`) to inject 6 explicit CoC spatial strategy planes `(X, Y, TH18_Radial_Dist, TH18_LoS_Angle, Exterior_Funnel_Trash, Active_Frontline_Zone)` plus `SEChannelAttention` (`use_se_attention=True`) to dynamically weight the 59 unit/defense channels.
-- **Architectural Morph Rationale**: Triggered after plateauing on Gen 0 (`v4.0-Gen0-TinyCNN` at 81.4% mean destr, 27.3% 3★, worst village `Offset Diamond (Hot Candle)` at 76.9%). Guided by the Obsidian SOTA Vision Catalog and AGY CoC Strategy Research, OpenCode Argon 4 (`google-vertex/gemini-4-argon#medium`) morphs Stage 0 TinyCNN into Gen 1 `CoordSE-ResCNN` by enabling `TacticalFeatureSynthesizer` (6 explicit CoC strategy planes: X/Y coords, TH18 radial distance & Siege LoS angle, exterior funnel trash density, and active frontline zone), double 3x3 residual blocks, and `SEChannelAttention` (`base_ch=24, embed_dim=96`) (`129,852` params, weight mode: `warm_start`).
+- **Architectural Morph Rationale**: Triggered after plateauing on Gen 0 (`v4.0-Gen0-TinyCNN` at 81.4% mean destr, 27.3% 3★, worst village `Offset Diamond (Hot Candle)` at 76.9%). Guided by the Obsidian SOTA Vision Catalog and AGY CoC Strategy Research, OpenCode Argon 4 (`google-vertex/gemini-4-argon#medium`) morphs Stage 0 TinyCNN into Gen 1 `CoordSE-ResCNN` by enabling `TacticalFeatureSynthesizer` (6 explicit CoC strategy planes: X/Y coords, TH18 radial distance & Siege LoS angle, exterior funnel trash density, and active frontline zone), double 3x3 residual blocks, and `SEChannelAttention` (`base_ch=24, embed_dim=96`) (`130,268` params, weight mode: `warm_start`).
 
 ---
 
