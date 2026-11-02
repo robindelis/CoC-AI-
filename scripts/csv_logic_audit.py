@@ -14,7 +14,6 @@ Name forward-fill: a block's Name appears only on its first row.
 from __future__ import annotations
 import csv
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -87,7 +86,7 @@ def load_blocks(table: str, name_col: int = 0):
         raw = list(csv.reader(f))
     hdr = raw[0]
     out, cur = [], None
-    skip_offsets = {col for col in range(len(hdr))}  # placeholder
+    set(range(len(hdr)))  # placeholder
     for row in raw[2:]:
         if not any(row and c for c in row):
             continue
@@ -198,8 +197,8 @@ def main():
                     print(f"{b['name']:24}{field:10}{round(ours_v, nd):>12}{round(ref_v, nd):>12}  {d:5.1f}%")
             print(f"{'':24}{'proj':10}{'':>12}{'CandleFlame (matches modules)':>12}")
             continue
-        cname = ALIASES.get(b["name"], b["name"])
-        r = ref.get(cname) or next((ref[n] for n in ref if n.lower() == cname.lower()), None)
+        cname = str(ALIASES.get(b["name"], b["name"]) or "")
+        r = ref.get(cname) or next((ref[n] for n in ref if n and n.lower() == cname.lower()), None)
         if r is None:
             print(f"{b['name']:24}{'--':10}{'':>12}{'ABSENT(custom)':>12}")
             continue
@@ -239,8 +238,8 @@ def main():
     print(f"{'ours name':24}{'field':10}{'ours':>12}{'csv':>12}  {'Δ%':>6}")
     matched = 0
     for t in ours["troops"]:
-        cname = ALIASES.get(t["name"], t["name"])
-        r = rtroops.get(cname) or next((rtroops[n] for n in rtroops if n.lower() == cname.lower()), None)
+        cname = str(ALIASES.get(t["name"], t["name"]) or "")
+        r = rtroops.get(cname) or next((rtroops[n] for n in rtroops if n and n.lower() == cname.lower()), None)
         if r is None:
             # summon/derived units (spell spawns, pets, hero bodyguards) live in other tables
             continue
@@ -393,9 +392,9 @@ def main():
     print("=" * 24, "HERO EQUIPMENT (max level per blacksmith<=10 / TH18 gates)", "=" * 24)
     print(f"{'ours name':24}{'field':24}{'ours':>12}{'csv':>12}  {'Δ%':>6}")
     for e in ours["equipment"]:
-        cname = EQUIP_ALIASES.get(e["name"], e["name"])
+        cname = str(EQUIP_ALIASES.get(e["name"], e["name"]) or "")
         r = ref_eq.get(cname) or next(
-            (ref_eq[n] for n in ref_eq if n.lower() == cname.lower()), None)
+            (ref_eq[n] for n in ref_eq if n and n.lower() == cname.lower()), None)
         if r is None:
             bad += 1
             print(f"{e['name']:24}{'--':24}{'':>12}{'ABSENT (csv)':>12}")
@@ -421,7 +420,7 @@ def main():
                 print(f"{e['name']:24}{of:24}{round(ov, 1):>12}{round(rv, 1):>12}  {d:5.1f}%")
 
     # ---------------- SPELLS / TRAPS / PETS ----------------
-    for section, table, lvlkey, extra in [
+    for section, table, lvlkey, _extra in [
         ("SPELLS", "spells.csv", "Level", []),
         ("TRAPS", "traps.csv", "Level", []),
         ("PETS", "pets.csv", "TroopLevel", []),
@@ -440,8 +439,8 @@ def main():
         print("=" * 24, section, "=" * 24)
         cat_key = {"SPELLS": "spells", "TRAPS": "traps", "PETS": "pets"}[section]
         for o in ours[cat_key]:
-            cname = ALIASES.get(o["name"], o["name"])
-            r = ref2.get(cname) or next((ref2[n] for n in ref2 if n.lower() == cname.lower()), None)
+            cname = str(ALIASES.get(o["name"], o["name"]) or "")
+            r = ref2.get(cname) or next((ref2[n] for n in ref2 if n and n.lower() == cname.lower()), None)
             if r is None:
                 print(f"{o['name']:24}{'--':10}{'':>12}{'ABSENT':>12}")
                 continue

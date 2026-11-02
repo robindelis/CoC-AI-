@@ -11,8 +11,10 @@ import json
 import math
 import os
 import re
+import signal
 import shutil
 import subprocess
+import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -39,6 +41,80 @@ AI_PROVIDERS: Dict[str, Dict[str, str]] = {
         "cli": "agy",
     },
 }
+
+_subproc_lock = threading.Lock()
+_active_subprocs: List[subprocess.Popen[str]] = []
+
+
+def register_active_subprocess(proc: subprocess.Popen[str]) -> None:
+    with _subproc_lock:
+        _active_subprocs.append(proc)
+
+
+def unregister_active_subprocess(proc: subprocess.Popen[str]) -> None:
+    with _subproc_lock:
+        if proc in _active_subprocs:
+            _active_subprocs.remove(proc)
+
+
+def terminate_all_active_subprocesses() -> int:
+    """Terminates all tracked child process groups (opencode, agy, etc.)."""
+    with _subproc_lock:
+        procs = list(_active_subprocs)
+        _active_subprocs.clear()
+    killed = 0
+    for p in procs:
+        if p.poll() is None:
+            try:
+                os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+                killed += 1
+            except Exception:
+                try:
+                    p.terminate()
+                except Exception:
+                    pass
+    for p in procs:
+        if p.poll() is None:
+            try:
+                p.wait(timeout=0.5)
+            except Exception:
+                try:
+                    os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+                except Exception:
+                    try:
+                        p.kill()
+                    except Exception:
+                        pass
+    return killed
+
+
+def run_managed_subprocess(
+    cmd: List[str],
+    cwd: str,
+    timeout_sec: int = 90,
+) -> Tuple[int, str, str]:
+    """Runs a subprocess in its own process group (`start_new_session=True`) so it can be cleanly killed on timeout or stop."""
+    proc = subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    register_active_subprocess(proc)
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout_sec)
+        return proc.returncode or 0, stdout or "", stderr or ""
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except Exception:
+            proc.kill()
+        stdout, stderr = proc.communicate()
+        raise
+    finally:
+        unregister_active_subprocess(proc)
 
 
 def _linear_slope_per_100(values: List[float]) -> float:
@@ -423,10 +499,10 @@ def gather_training_telemetry(
     trends: Dict[str, Any] = {}
     if n >= 5:
         all_pcts = [float(r.get("destruction_pct", 0.0)) for r in history]
-        all_rews = [float(r.get("reward", 0.0)) for r in history]
-        all_ents = [float(r.get("entropy", 0.0)) for r in history]
-        all_vloss = [float(r.get("value_loss", 0.0)) for r in history]
-        all_noops = [float(r.get("noop_pct", 0.0)) for r in history]
+        [float(r.get("reward", 0.0)) for r in history]
+        [float(r.get("entropy", 0.0)) for r in history]
+        [float(r.get("value_loss", 0.0)) for r in history]
+        [float(r.get("noop_pct", 0.0)) for r in history]
 
         rec_window_len = min(300, n)
         rec_slice = history[-rec_window_len:]
@@ -672,7 +748,7 @@ def gather_training_telemetry(
 
     if rec50 and rec50.get("mean_noop_pct", 50.0) < 3.0 and rec50.get("mean_steps", 100.0) < 48.0:
         ab_span = tact.get("hero_ability_tick_span", [0, 0])
-        sp_span = tact.get("spell_cast_tick_span", [0, 0])
+        tact.get("spell_cast_tick_span", [0, 0])
         signals.append({
             "id": "action_dump_zero_noop",
             "severity": "critical",
@@ -878,20 +954,18 @@ def _call_opencode_argon(prompt: str, timeout_sec: int = 90) -> Tuple[str, str]:
         "json",
         prompt,
     ]
-    proc = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
+    returncode, stdout, stderr = run_managed_subprocess(
+        cmd=cmd,
         cwd=work_dir,
-        timeout=timeout_sec,
+        timeout_sec=timeout_sec,
     )
-    if proc.returncode != 0 and not proc.stdout.strip():
+    if returncode != 0 and not stdout.strip():
         raise RuntimeError(
-            f"opencode exited with code {proc.returncode}: {(proc.stderr or '').strip()[:400]}"
+            f"opencode exited with code {returncode}: {stderr.strip()[:400]}"
         )
 
     text_parts: List[str] = []
-    for line in proc.stdout.splitlines():
+    for line in stdout.splitlines():
         line = line.strip()
         if not line or not line.startswith("{"):
             continue
@@ -906,7 +980,7 @@ def _call_opencode_argon(prompt: str, timeout_sec: int = 90) -> Tuple[str, str]:
 
     combined = "".join(text_parts).strip()
     if not combined:
-        combined = proc.stdout.strip()
+        combined = stdout.strip()
     return combined, "google-vertex/gemini-4-argon#medium"
 
 
@@ -923,18 +997,16 @@ def _call_agy_flash(prompt: str, timeout_sec: int = 90) -> Tuple[str, str]:
         "--disable-slash-commands",
         f"-p={prompt}",
     ]
-    proc = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
+    returncode, stdout, stderr = run_managed_subprocess(
+        cmd=cmd,
         cwd=work_dir,
-        timeout=timeout_sec,
+        timeout_sec=timeout_sec,
     )
-    if proc.returncode != 0 and not proc.stdout.strip():
+    if returncode != 0 and not stdout.strip():
         raise RuntimeError(
-            f"agy exited with code {proc.returncode}: {(proc.stderr or '').strip()[:400]}"
+            f"agy exited with code {returncode}: {stderr.strip()[:400]}"
         )
-    return proc.stdout.strip(), "gemini-3.8-flash-medium"
+    return stdout.strip(), "gemini-3.8-flash-medium"
 
 
 def generate_ai_training_feedback(

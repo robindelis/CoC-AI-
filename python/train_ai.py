@@ -21,14 +21,12 @@ from coc_rl import (
     CoCVecAttackerEnv,
     compress_training_history,
     compute_custom_reward,
-    compute_custom_reward_components,
     compute_gae,
     decompress_training_history,
     ensure_architecture_diagrams,
     get_compressed_history_meta,
     load_active_experiment_config,
     ppo_minibatch_update,
-    ppo_update_step,
     transfer_compatible_weights,
 )
 
@@ -135,6 +133,7 @@ def _get_cached_catalog() -> Dict[str, Any]:
     global _CATALOG_CACHE
     if _CATALOG_CACHE is None:
         _CATALOG_CACHE = json.loads(coc_py.get_catalog_json())
+    assert _CATALOG_CACHE is not None
     return _CATALOG_CACHE
 
 
@@ -375,12 +374,12 @@ def _infer_structural_arch_from_state_dict(sd: Dict[str, Any]) -> Dict[str, Any]
     si_w = sd.get("slot_idx_head.0.weight")
     if si_w is not None and hasattr(si_w, "shape") and len(si_w.shape) >= 1:
         inferred["head_hidden_dim"] = int(si_w.shape[0])
-    inferred["use_unet_decoder"] = any(k.startswith("encoder.enc3.") or k.startswith("encoder.up3.") for k in sd)
+    inferred["use_unet_decoder"] = any(k.startswith(("encoder.enc3.", "encoder.up3.")) for k in sd)
     inferred["use_dilated_context"] = any(k.startswith("encoder.dilated_context.") for k in sd)
     inferred["use_convnext_grn"] = any(k.startswith("encoder.convnext_block.") for k in sd)
     inferred["use_segnext_msca"] = any(k.startswith("encoder.msca_block.") for k in sd)
     inferred["use_se_attention"] = any(
-        k.startswith("encoder.bottleneck_se.") or k.startswith("encoder.spatial_se.") for k in sd
+        k.startswith(("encoder.bottleneck_se.", "encoder.spatial_se.")) for k in sd
     )
     inferred["use_dual_spatial_head"] = any(k.startswith("spell_tile_conv_head.") for k in sd)
     inferred["use_gated_heads"] = any(k.startswith("head_gate.") for k in sd)
@@ -419,7 +418,8 @@ def load_attacker_model(
     has_sd = "model_state_dict" in attacker_ckpt_meta and isinstance(attacker_ckpt_meta["model_state_dict"], dict)
     if has_sd:
         sd = attacker_ckpt_meta["model_state_dict"]
-        ckpt_arch = attacker_ckpt_meta.get("arch_config") if isinstance(attacker_ckpt_meta.get("arch_config"), dict) else {}
+        raw_ckpt_arch = attacker_ckpt_meta.get("arch_config")
+        ckpt_arch: Dict[str, Any] = raw_ckpt_arch if isinstance(raw_ckpt_arch, dict) else {}
         inferred_struct = _infer_structural_arch_from_state_dict(sd)
         ckpt_gen = int(ckpt_arch.get("generation", 0))
         target_gen = int(active_arch_cfg.get("generation", 0))
@@ -823,6 +823,8 @@ def train_pytorch_ppo(
     armies_json: Optional[Any] = None,
     villages_json: Optional[Any] = None,
     on_episode_callback: Optional[Callable[[Dict[str, Any]], bool]] = None,
+    should_stop_callback: Optional[Callable[[], bool]] = None,
+    async_vault_sync: bool = True,
 ) -> Dict[str, Any]:
     """
     Trains the TH18 Attacker AI (`CoCActorCritic`) for a single dedicated army composition
@@ -1182,6 +1184,9 @@ def train_pytorch_ppo(
         for step_i in range(max_steps_per_ep):
             if not active:
                 break
+            if should_stop_callback is not None and should_stop_callback():
+                stop_training = True
+                break
 
             obs_t = torch.as_tensor(
                 obs_all[active], dtype=torch.float32, device=device
@@ -1224,7 +1229,7 @@ def train_pytorch_ppo(
                 obs_all,
                 ctx_all,
                 masks_all,
-                (crews, rds, rss, rdms, dones, pcts, stars_out, ticks_out),
+                (_crews, rds, rss, rdms, dones, pcts, stars_out, ticks_out),
             ) = vec_env.step_active(
                 active,
                 actions_np,
@@ -1298,6 +1303,9 @@ def train_pytorch_ppo(
                     next_active.append(w)
 
             active = next_active
+
+        if stop_training:
+            break
 
         # ---------------------------------------------------------------------
         # Batched Next-Value Estimation, GAE, and Shuffled Minibatch PPO Update
@@ -1425,7 +1433,7 @@ def train_pytorch_ppo(
             recent_pcts_50 = [h["destruction_pct"] for h in history[-49:]] + [pct]
             avg_pct_50 = float(np.mean(recent_pcts_50))
             recent_pcts_300 = [h["destruction_pct"] for h in history[-299:]] + [pct]
-            avg_pct_300 = float(np.mean(recent_pcts_300))
+            float(np.mean(recent_pcts_300))
             noop_pct = round(100.0 * noop_steps[w] / max(1, steps_run[w]), 1)
 
             with torch.no_grad():
@@ -1508,22 +1516,29 @@ def train_pytorch_ppo(
     named_file = os.path.basename(named_path)
 
     # Automatically update the Obsidian Vault & Canvas with the new training results
-    if not named_file.startswith("_"):
-        try:
-            from coc_rl.vault_generator import update_or_register_training_run
-            update_or_register_training_run(
-                checkpoint_path=named_path,
-                resumed_from=resume_from,
-                base_episodes=base_trained_episodes,
-                new_episodes=len(history),
-                history=history,
-                hyperparams=hyperparams_meta,
-                best_pct=best_pct,
-                best_stars=best_stars,
-                best_reward=best_reward,
-            )
-        except Exception as e:
-            print(f"[vault_generator] Note: could not update obsidian vault: {e}")
+    if not named_file.startswith("_") and len(history) > 0:
+        def _sync_vault_after_train() -> None:
+            try:
+                from coc_rl.vault_generator import update_or_register_training_run
+                update_or_register_training_run(
+                    checkpoint_path=named_path,
+                    resumed_from=resume_from,
+                    base_episodes=base_trained_episodes,
+                    new_episodes=len(history),
+                    history=history,
+                    hyperparams=hyperparams_meta,
+                    best_pct=best_pct,
+                    best_stars=best_stars,
+                    best_reward=best_reward,
+                )
+            except Exception as e:
+                print(f"[vault_generator] Note: could not update obsidian vault: {e}")
+
+        if async_vault_sync:
+            import threading
+            threading.Thread(target=_sync_vault_after_train, daemon=True).start()
+        else:
+            _sync_vault_after_train()
 
     matchup_stats = compute_matchup_stats(
         history=history, layouts=layouts, armies=armies

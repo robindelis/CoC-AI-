@@ -612,38 +612,46 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
       : army;
   const selectedArmySlug = armyNameToSlug(selectedTrainingArmy.name);
 
+  const [isStartingOrStopping, setIsStartingOrStopping] = useState<boolean>(false);
+
   const handleStartTraining = async () => {
-    const targetVillages =
-      isLockedToResume &&
-      currentResumeModel?.villages &&
-      currentResumeModel.villages.length > 0
-        ? currentResumeModel.villages
-        : catalog.preset_layouts.filter((v) =>
-            selectedVillageNames.includes(v.name)
-          );
+    if (isStartingOrStopping || isTraining) return;
+    setIsStartingOrStopping(true);
+    try {
+      const targetVillages =
+        isLockedToResume &&
+        currentResumeModel?.villages &&
+        currentResumeModel.villages.length > 0
+          ? currentResumeModel.villages
+          : catalog.preset_layouts.filter((v) =>
+              selectedVillageNames.includes(v.name)
+            );
 
-    const finalVillages =
-      targetVillages.length > 0 ? targetVillages : catalog.preset_layouts.slice(0, 5);
+      const finalVillages =
+        targetVillages.length > 0 ? targetVillages : catalog.preset_layouts.slice(0, 5);
 
-    setInspectedModelFile('__live__');
-    await startAIPpoTraining({
-      episodes,
-      batchEpisodes,
-      minibatchSize,
-      ppoEpochs,
-      lr,
-      ticks_per_step: 8,
-      matchupMode,
-      resumeFrom,
-      saveName: saveName.trim() || undefined,
-      layoutJson: JSON.stringify(finalVillages[0] ?? layout),
-      armyJson: JSON.stringify(selectedTrainingArmy),
-      armiesJson: JSON.stringify([selectedTrainingArmy]),
-      villagesJson: JSON.stringify(finalVillages),
-    });
-    const st = await fetchAIServerStatus();
-    if (st) setServerStatus(st);
-    setTrainerTab('stats');
+      setInspectedModelFile('__live__');
+      await startAIPpoTraining({
+        episodes,
+        batchEpisodes,
+        minibatchSize,
+        ppoEpochs,
+        lr,
+        ticks_per_step: 8,
+        matchupMode,
+        resumeFrom,
+        saveName: saveName.trim() || undefined,
+        layoutJson: JSON.stringify(finalVillages[0] ?? layout),
+        armyJson: JSON.stringify(selectedTrainingArmy),
+        armiesJson: JSON.stringify([selectedTrainingArmy]),
+        villagesJson: JSON.stringify(finalVillages),
+      });
+      const st = await fetchAIServerStatus();
+      if (st) setServerStatus(st);
+      setTrainerTab('stats');
+    } finally {
+      setIsStartingOrStopping(false);
+    }
   };
 
   const handleRenameModel = async (oldFilename: string) => {
@@ -673,10 +681,16 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   };
 
   const handleStopTraining = async () => {
-    await stopAIPpoTraining();
-    const st = await fetchAIServerStatus();
-    if (st) setServerStatus(st);
-    setTrainerTab('stats');
+    if (isStartingOrStopping) return;
+    setIsStartingOrStopping(true);
+    try {
+      await stopAIPpoTraining();
+      const st = await fetchAIServerStatus();
+      if (st) setServerStatus(st);
+      setTrainerTab('stats');
+    } finally {
+      setIsStartingOrStopping(false);
+    }
   };
 
   const handleRunTrainedModelTest = async () => {
@@ -1229,15 +1243,24 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   // WINDOW 1: AI TRAINER & TENSORBOARD TELEMETRY WORKBENCH
   // =========================================================================
   if (studioMode === 'trainer') {
+    const isFreshLiveSession =
+      inspectedModelFile === '__live__' &&
+      (resumeFrom === 'scratch' ||
+        serverStatus?.training?.resume_from === 'scratch') &&
+      (serverStatus?.training?.cumulative_episode ?? 0) === 0;
     const cumEp =
       inspectedModelFile !== '__live__' && inspectedModelData
         ? inspectedModelData.episode
+        : isFreshLiveSession
+        ? activeHistory.length
         : serverStatus?.training?.cumulative_episode ||
           serverStatus?.checkpoint?.episode ||
           activeHistory.length;
     const bestPct =
       inspectedModelFile !== '__live__' && inspectedModelData
         ? inspectedModelData.best_pct
+        : isFreshLiveSession
+        ? serverStatus?.training?.best_pct ?? 0
         : Math.max(
             serverStatus?.training?.best_pct ?? 0,
             serverStatus?.checkpoint?.best_pct ?? 0
@@ -1245,6 +1268,8 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
     const bestStars =
       inspectedModelFile !== '__live__' && inspectedModelData
         ? inspectedModelData.best_stars
+        : isFreshLiveSession
+        ? serverStatus?.training?.best_stars ?? 0
         : Math.max(
             serverStatus?.training?.best_stars ?? 0,
             serverStatus?.checkpoint?.best_stars ?? 0
@@ -1587,14 +1612,18 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                 {!isTraining ? (
                   <button
                     className="clash-btn gold"
-                    disabled={!serverStatus?.online}
+                    disabled={!serverStatus?.online || isStartingOrStopping}
                     onClick={handleStartTraining}
                   >
                     🚀 {resumeFrom === 'scratch' ? 'Train Fresh' : 'Resume & Train'}
                   </button>
                 ) : (
-                  <button className="clash-btn danger" onClick={handleStopTraining}>
-                    ⏹ Stop &amp; Save
+                  <button
+                    className="clash-btn danger"
+                    disabled={isStartingOrStopping}
+                    onClick={handleStopTraining}
+                  >
+                    {isStartingOrStopping ? '⏳ Stopping...' : '⏹ Stop & Save'}
                   </button>
                 )}
                 {resumeFrom !== 'scratch' && (
@@ -2271,14 +2300,18 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                 {!isTraining ? (
                   <button
                     className="clash-btn gold"
-                    disabled={!serverStatus?.online}
+                    disabled={!serverStatus?.online || isStartingOrStopping}
                     onClick={handleStartTraining}
                   >
-                    ▶️ Train ({episodes} Ep)
+                    ▶️ {resumeFrom === 'scratch' ? 'Train Fresh' : 'Resume'} ({episodes} Ep)
                   </button>
                 ) : (
-                  <button className="clash-btn danger" onClick={handleStopTraining}>
-                    ⏹ Stop
+                  <button
+                    className="clash-btn danger"
+                    disabled={isStartingOrStopping}
+                    onClick={handleStopTraining}
+                  >
+                    {isStartingOrStopping ? '⏳ Stopping...' : '⏹ Stop'}
                   </button>
                 )}
                 <button

@@ -43,7 +43,8 @@ A Clash of Clans Town Hall 18 combat simulator, village layout editor, and reinf
 │   ├── vault-updater/agent.md        # Specialist Obsidian vault sync agent (agy, gemini-3.8-flash-medium)
 │   ├── model-visualizer/agent.md     # Specialist neural model visualizer agent (agy, gemini-3.8-flash-medium)
 │   ├── coc-strategy-researcher/agent.md # CoC strategy & I/O research agent (agy, gemini-3.8-flash-medium)
-│   └── opencode-model-evolver/agent.md  # Progressive SOTA vision model evolver (opencode, gemini-4-argon#medium)
+│   ├── opencode-model-evolver/agent.md  # Progressive SOTA vision model evolver (opencode, gemini-4-argon#medium)
+│   └── codebase-maintainer/agent.md  # Polyglot static analysis & codebase maintenance agent (agy, gemini-3.8-flash-high)
 ├── obsidian_vault/                   # Central Long-Term Memory & Source of Truth
 │   ├── 00_Index_MOC.md               # Central Map of Content index & sync banner
 │   ├── 01_Model_Architecture_and_Training_Tracker.canvas # Visual interactive 2D whiteboard
@@ -257,6 +258,9 @@ agy --agent vault-updater --model gemini-3.8-flash-medium -p "Update the vault w
 agy --agent model-visualizer --model gemini-3.8-flash-medium -p "Update model visualization to reflect latest networks.py architecture"
 # Or directly run the CLI entrypoint:
 .venv/bin/python python/visualize_model.py --force
+
+# 8. Run Polyglot Static Analysis & Codebase Maintenance via codebase-maintainer (Gemini 3.8 Flash High)
+agy --agent codebase-maintainer --model gemini-3.8-flash-high -p "Perform a full codebase review using ruff, pyright, vulture, bandit, radon, cargo clippy, and tsc, and apply necessary fixes"
 ```
 
 ## Git Workflow

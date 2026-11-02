@@ -1,3 +1,4 @@
+#![allow(clippy::type_complexity, clippy::needless_range_loop)]
 use crate::grid::{compute_no_deploy_mask, find_path_to_building};
 use coc_data::*;
 use serde::{Deserialize, Serialize};
@@ -1740,13 +1741,12 @@ impl BattleEngine {
                                     }
                                 }
                             }
-                            UnitKind::Hero(hid) => {
-                                if u.housing_space <= budget {
+                            UnitKind::Hero(hid)
+                                if u.housing_space <= budget => {
                                     budget -= u.housing_space;
                                     u.alive = false;
                                     recalled_heroes.push((hid, PetId::Lassi));
                                 }
-                            }
                             _ => {}
                         }
                     }
@@ -2275,21 +2275,20 @@ impl BattleEngine {
                             if !matches!(
                                 u.preferred_target,
                                 PreferredTarget::AlliedGround | PreferredTarget::AlliedAny
-                            ) {
-                                if u.preferred_target != PreferredTarget::Defenses {
+                            )
+                                && u.preferred_target != PreferredTarget::Defenses {
                                     u.preferred_target = PreferredTarget::Defenses;
                                     u.target = TargetRef::None;
                                     u.waypoints.clear();
                                     u.repath_timer = 0.0;
                                 }
-                            }
                         }
                     }
                 }
                 SpellEffect::CloneUnits {
                     clone_lifetime_sec, ..
-                } => {
-                    if zone.clone_budget_remaining > 0 {
+                }
+                    if zone.clone_budget_remaining > 0 => {
                         for u in &self.units {
                             if u.alive
                                 && u.team == Team::Attacker
@@ -2316,7 +2315,6 @@ impl BattleEngine {
                             }
                         }
                     }
-                }
                 _ => {}
             }
 
@@ -3687,12 +3685,11 @@ impl BattleEngine {
                             pending_spawns.push((TroopId::Frostmite, team, ux + 0.6, uy + 0.6));
                         }
                     }
-                    PetId::Sneezy => {
-                        if self.units[u_idx].special_timer >= 8.0 {
+                    PetId::Sneezy
+                        if self.units[u_idx].special_timer >= 8.0 => {
                             self.units[u_idx].special_timer = 0.0;
                             pending_spawns.push((TroopId::Booger, team, ux + 0.6, uy + 0.6));
                         }
-                    }
                     _ => {}
                 }
             }
@@ -3725,7 +3722,7 @@ impl BattleEngine {
                         }
                     }
                     TroopSpecial::DruidEvolution { .. } => {
-                        if self.units[u_idx].lifetime_remaining.map_or(false, |lt| lt <= 0.0) {
+                        if self.units[u_idx].lifetime_remaining.is_some_and(|lt| lt <= 0.0) {
                             self.units[u_idx].alive = false;
                             pending_spawns.push((TroopId::DruidBear, team, ux, uy));
                             continue;
@@ -3772,8 +3769,8 @@ impl BattleEngine {
                     }
                     TroopSpecial::SiegeWallMultiplier {
                         hp_decay_per_sec, ..
-                    } => {
-                        if hp_decay_per_sec > 0.0 {
+                    }
+                        if hp_decay_per_sec > 0.0 => {
                             self.units[u_idx].hp -= hp_decay_per_sec * DT;
                             if self.units[u_idx].hp <= 0.0 {
                                 let dead_id = self.units[u_idx].id;
@@ -3786,7 +3783,6 @@ impl BattleEngine {
                                 continue;
                             }
                         }
-                    }
                     _ => {}
                 }
             }
@@ -4183,11 +4179,11 @@ impl BattleEngine {
                 }
                 let d = dist(ux, uy, o.x, o.y);
                 if o.hp < o.max_hp
-                    && best_injured.map_or(true, |(_, bd)| d < bd)
+                    && best_injured.is_none_or(|(_, bd)| d < bd)
                 {
                     best_injured = Some((o.id, d));
                 }
-                if best_group.map_or(true, |(_, bd)| d < bd) {
+                if best_group.is_none_or(|(_, bd)| d < bd) {
                     best_group = Some((o.id, d));
                 }
             }
@@ -4222,7 +4218,7 @@ impl BattleEngine {
                         }
                     }
                     let d = dist(ux, uy, o.x, o.y);
-                    if best_enemy.map_or(true, |(_, bd)| d < bd) {
+                    if best_enemy.is_none_or(|(_, bd)| d < bd) {
                         best_enemy = Some((o.id, d));
                     }
                 }
@@ -4256,7 +4252,7 @@ impl BattleEngine {
                         && matches!(o.kind, UnitKind::Hero(_))
                     {
                         let d = dist(ux, uy, o.x, o.y);
-                        if nearest_hero.map_or(true, |(_, bd)| d < bd) {
+                        if nearest_hero.is_none_or(|(_, bd)| d < bd) {
                             nearest_hero = Some((o.id, d));
                         }
                     }
@@ -4277,7 +4273,7 @@ impl BattleEngine {
                     && domain.can_hit(o.is_air)
                 {
                     let d = dist(ux, uy, o.x, o.y);
-                    if d <= 7.0 && nearest_def_unit.map_or(true, |(_, bd)| d < bd) {
+                    if d <= 7.0 && nearest_def_unit.is_none_or(|(_, bd)| d < bd) {
                         nearest_def_unit = Some((o.id, d));
                     }
                 }
@@ -4341,7 +4337,7 @@ impl BattleEngine {
                     .map(|m| m.housing_space as u32)
                     .sum();
                 if cluster_weight >= 10
-                    && best_group_target.map_or(true, |(_, bw)| cluster_weight > bw)
+                    && best_group_target.is_none_or(|(_, bw)| cluster_weight > bw)
                 {
                     best_group_target = Some((ally.target, cluster_weight));
                 }
@@ -4365,7 +4361,7 @@ impl BattleEngine {
                     continue;
                 }
                 let d = building_edge_dist(b, ux, uy);
-                if building_anchor.map_or(true, |(_, _, bd)| d < bd) {
+                if building_anchor.is_none_or(|(_, _, bd)| d < bd) {
                     building_anchor = Some((b.center_x, b.center_y, d));
                 }
             }
@@ -4382,7 +4378,7 @@ impl BattleEngine {
                 let wy = w.tile_y as f32 + 0.5;
                 // Distance from the unit plus how well the wall shields the target
                 let score = dist(ux, uy, wx, wy) + 0.6 * dist(gx, gy, wx, wy);
-                if best_wall.map_or(true, |(_, bs)| score < bs) {
+                if best_wall.is_none_or(|(_, bs)| score < bs) {
                     best_wall = Some((wi, score));
                 }
             }
@@ -4457,7 +4453,7 @@ impl BattleEngine {
         let eff_range = if can_attack_over_walls {
             (u_range - 0.05).max(0.35)
         } else {
-            u_range.min(0.95).max(0.35)
+            u_range.clamp(0.35, 0.95)
         };
 
         let mut best_choice: Option<(TargetRef, Vec<(f32, f32)>, f32)> = None;
@@ -4502,7 +4498,7 @@ impl BattleEngine {
             };
             if best_choice
                 .as_ref()
-                .map_or(true, |(_, _, best_c)| eval_cost < *best_c)
+                .is_none_or(|(_, _, best_c)| eval_cost < *best_c)
             {
                 best_choice = Some((target_ref, path.waypoints, eval_cost));
             }
@@ -4735,7 +4731,7 @@ impl BattleEngine {
                         1
                     };
                     let stack_mult = match healer_count {
-                        0 | 1 | 2 => 1.0,
+                        0..=2 => 1.0,
                         3 => 0.90,
                         4 => 0.85,
                         5 => 0.70,
@@ -4884,7 +4880,7 @@ impl BattleEngine {
                         && dist(cur_x, cur_y, b.center_x, b.center_y) <= 3.5
                     {
                         let d = dist(cur_x, cur_y, b.center_x, b.center_y);
-                        if next_b.map_or(true, |(_, bd)| d < bd) {
+                        if next_b.is_none_or(|(_, bd)| d < bd) {
                             next_b = Some((bi, d));
                         }
                     }
@@ -6868,18 +6864,18 @@ pub fn is_within_cone(
 /// (`DoesNotOpenCC` in `characters.csv` and `SKELETON_OPEN_CC = FALSE` in `globals.csv`).
 #[inline]
 pub fn does_unit_open_cc(kind: UnitKind) -> bool {
-    match kind {
-        UnitKind::Totem => false,
-        UnitKind::Troop(
-            TroopId::Skeleton
-            | TroopId::ArmoredSkeleton
-            | TroopId::Bat
-            | TroopId::Yetimite
-            | TroopId::Firemite
-            | TroopId::Frostmite
-            | TroopId::Booger
-            | TroopId::Snake,
-        ) => false,
-        _ => true,
-    }
+    !matches!(
+        kind,
+        UnitKind::Totem
+            | UnitKind::Troop(
+                TroopId::Skeleton
+                    | TroopId::ArmoredSkeleton
+                    | TroopId::Bat
+                    | TroopId::Yetimite
+                    | TroopId::Firemite
+                    | TroopId::Frostmite
+                    | TroopId::Booger
+                    | TroopId::Snake,
+            )
+    )
 }

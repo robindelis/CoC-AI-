@@ -21,7 +21,7 @@ import os
 import re
 import subprocess
 import sys
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 VAULT_DIR = os.path.join(REPO_ROOT, "obsidian_vault")
@@ -254,11 +254,11 @@ def filter_relevant_files(file_list: List[str]) -> List[str]:
 
 def categorize_file(path: str) -> str:
     """Categorize modified source files into domain sections."""
-    if path.startswith("crates/coc-engine") or path.startswith("crates/coc-data"):
+    if path.startswith(("crates/coc-engine", "crates/coc-data")):
         return "Simulation Core & Observation Channels"
-    elif path.startswith("crates/coc-py") or path.startswith("python/coc_rl") or path.startswith("python/train_ai") or path.startswith("python/ai_server"):
+    elif path.startswith(("crates/coc-py", "python/coc_rl", "python/train_ai", "python/ai_server")):
         return "Python Deep RL & PyO3 Bindings"
-    elif path.startswith("crates/coc-wasm") or path.startswith("web/"):
+    elif path.startswith(("crates/coc-wasm", "web/")):
         return "Web Sandbox & Visualizer"
     elif path.startswith("scripts/"):
         return "Development & Audit Tooling"
@@ -308,7 +308,7 @@ def analyze_codebase_drift(
     relevant_files = filter_relevant_files(all_changed_files)
 
     # Combine unique relevant files
-    combined_files = sorted(list(set(relevant_files + relevant_uncommitted)))
+    combined_files = sorted(set(relevant_files + relevant_uncommitted))
 
     # Only treat as drift if actual relevant code files were modified
     has_drift = len(combined_files) > 0

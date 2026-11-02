@@ -1,3 +1,4 @@
+#![allow(clippy::type_complexity, clippy::too_many_arguments, clippy::needless_range_loop)]
 use coc_data::{get_full_catalog, get_preset_armies, get_preset_layouts, ArmyLoadout, HeroId, VillageLayout};
 use coc_engine::{validate_layout, BattleAction, BattleEngine};
 use pyo3::prelude::*;
@@ -245,7 +246,7 @@ impl TacticalEnvState {
             && self
                 .engine
                 .active_siege_unit_id
-                .map_or(false, |uid| self.engine.units.iter().any(|u| u.id == uid && u.alive));
+                .is_some_and(|uid| self.engine.units.iter().any(|u| u.id == uid && u.alive));
 
         let slot_type_mask = [
             true,
@@ -292,25 +293,23 @@ impl TacticalEnvState {
         }
 
         // Phase 2 (Mid-Battle Tactical Timing)
-        if st_mask[3] != 0 {
-            if self.current_tick < 64
+        if st_mask[3] != 0
+            && (self.current_tick < 64
                 || self.deployed_troop_actions < 3
-                || (self.current_tick as i32 - self.last_ability_tick) < 16
+                || (self.current_tick as i32 - self.last_ability_tick) < 16)
             {
                 st_mask[3] = 0;
             }
-        }
         if st_mask[5] != 0 && self.current_tick < 112 {
             st_mask[5] = 0;
         }
-        if st_mask[6] != 0 {
-            if self.deployed_troop_actions < 3
+        if st_mask[6] != 0
+            && (self.deployed_troop_actions < 3
                 || self.current_tick < 40
-                || (self.current_tick as i32 - self.last_spell_tick) < 8
+                || (self.current_tick as i32 - self.last_spell_tick) < 8)
             {
                 st_mask[6] = 0;
             }
-        }
 
         let mut tile_mask = self.base_perimeter_mask;
         if !self.deploy_coords.is_empty() {

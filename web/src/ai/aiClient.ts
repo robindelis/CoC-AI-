@@ -387,6 +387,8 @@ export async function updateRecursiveLoopConfigParameters(params: {
   arch_config?: Record<string, number | string | boolean>;
   reward_config?: Record<string, number>;
   hyperparams?: Record<string, number | string>;
+  run_code_agent?: boolean;
+  reason?: string;
   restart_or_morph_model?: boolean;
   auto_test?: boolean;
   test_episodes?: number;

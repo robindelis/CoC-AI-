@@ -20,8 +20,6 @@ import numpy as np
 import torch
 
 from .history_compression import compress_training_history, decompress_training_history
-from .networks import CoCActorCritic
-from .visualize import render_model_architecture
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 VAULT_DIR = os.path.join(REPO_ROOT, "obsidian_vault")
@@ -243,7 +241,7 @@ def evaluate_model_matchups(
     Evaluates a single-army specialist model on its exported Army Composition
     across all 5 Reference Villages.
     """
-    from train_ai import get_meta_presets, load_attacker_model, resolve_model_path, simulate_model_rollout
+    from train_ai import get_meta_presets, load_attacker_model, resolve_model_path
 
     resolved_p = resolve_model_path(model_file)
     model_path = resolved_p or os.path.join(CHECKPOINTS_DIR, os.path.basename(model_file))
@@ -402,7 +400,7 @@ def format_matrix_markdown(eval_data: Dict[str, Any]) -> str:
     """Formats the 3 Comps x 5 Villages matrix into a high-readability Markdown table."""
     matrix = eval_data["matrix"]
     armies = eval_data["armies"]
-    villages = eval_data["villages"]
+    eval_data["villages"]
     comp_stats = eval_data["comp_stats"]
     village_stats = eval_data["village_stats"]
 
@@ -460,7 +458,7 @@ def generate_training_curves_chart(
         ep_axis = np.array([p["episode"] for p in history_points])
         pct_axis = np.array([p["destruction_pct"] for p in history_points])
         rew_axis = np.array([p["reward"] for p in history_points])
-        pol_loss = np.array([p.get("policy_loss", 0.0) for p in history_points])
+        np.array([p.get("policy_loss", 0.0) for p in history_points])
         val_loss = np.array([p.get("value_loss", 0.0) for p in history_points])
         entropy = np.array([p.get("entropy", 1.0) for p in history_points])
     else:
@@ -487,7 +485,6 @@ def generate_training_curves_chart(
         # Reward correlates with destruction
         rew_axis = (pct_axis * 0.50) + (np.clip((pct_axis - 50) / 25, 0, 3) * 16.6667) + np.random.normal(0, 1.5, n_pts)
         val_loss = 0.5 * np.exp(-ep_axis / (eff_eps * 0.35)) + np.random.normal(0.05, 0.01, n_pts)
-        pol_loss = -0.02 + 0.015 * np.sin(ep_axis / 20) + np.random.normal(0, 0.005, n_pts)
         entropy = 1.8 * np.exp(-ep_axis / (eff_eps * 0.55)) + 0.15
 
     # Rolling averages
@@ -530,7 +527,7 @@ def generate_training_curves_chart(
                     color="#fda4af",
                     fontsize=8,
                     fontweight="bold",
-                    bbox=dict(boxstyle="round,pad=0.2", facecolor="#18181b", edgecolor="#f43f5e", alpha=0.85)
+                    bbox={"boxstyle": "round,pad=0.2", "facecolor": "#18181b", "edgecolor": "#f43f5e", "alpha": 0.85}
                 )
 
     # Panel 2: Episode Reward / Return
@@ -685,7 +682,7 @@ def generate_ai_diagnostics_chart(out_png_path: str) -> str:
         ("Spell Casts", s_span[0], max(8, s_span[1] - s_span[0]), "#c084fc"),
         ("Hero Abilities", a_span[0], max(8, a_span[1] - a_span[0]), "#4ade80"),
     ]
-    for idx_s, (lbl, st_t, dur_t, col) in enumerate(spans):
+    for idx_s, (_lbl, st_t, dur_t, col) in enumerate(spans):
         ax.barh(idx_s, dur_t, left=st_t, height=0.45, color=col, alpha=0.88)
         ax.text(st_t + dur_t / 2, idx_s, f"t={st_t}..{st_t+dur_t} ({st_t/10:.1f}s–{(st_t+dur_t)/10:.1f}s)", va="center", ha="center", color="#0f172a", fontsize=8, fontweight="bold")
     ax.set_yticks([0, 1, 2])
@@ -1244,7 +1241,7 @@ This canvas dynamically tracks our **v3.0** neural network architecture, `59 × 
     model_keys = ["v3_per_defense_31ch"]
 
     # Also include any newly registered models
-    for k in models.keys():
+    for k in models:
         if k not in model_keys:
             model_keys.append(k)
 
@@ -1352,13 +1349,13 @@ This canvas dynamically tracks our **v3.0** neural network architecture, `59 × 
             "width": 700,
             "height": 420,
             "color": "6",
-            "text": f"""### 📤 Output Policy & Critic Heads
+            "text": """### 📤 Output Policy & Critic Heads
 Factorized Multi-Discrete Action Space:
-""" + "\n".join([f"- **Head {i+1}**: `{h}`" for i, h in enumerate(heads)]) + f"""
-- **Critic Head**: `Linear(256 -> 128 -> 1)` scalar state-value estimate $V(s) \\in \\mathbb{{R}}$.
+""" + "\n".join([f"- **Head {i+1}**: `{h}`" for i, h in enumerate(heads)]) + """
+- **Critic Head**: `Linear(256 -> 128 -> 1)` scalar state-value estimate $V(s) \\in \\mathbb{R}$.
 
 #### Deployment Dynamics:
-- Multi-unit wave drop via `deploy_fraction_head` ($\\alpha \\in \\{{0.0, 0.25, 0.50, 0.75, 1.00\\}}$), dropping full squads in a single $0.8\\text{{s}}$ step!""",
+- Multi-unit wave drop via `deploy_fraction_head` ($\\alpha \\in \\{0.0, 0.25, 0.50, 0.75, 1.00\\}$), dropping full squads in a single $0.8\\text{s}$ step!""",
         })
 
         # 5. Reward Function Card

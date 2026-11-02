@@ -17,6 +17,8 @@ PyTorch Neural Network Architectures for Clash of Clans TH18 Deep RL (Progressiv
   3. `transfer_compatible_weights`: Shape-aware partial & exact weight transfer across architecture morphs.
 """
 
+import json
+import os
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
@@ -47,6 +49,9 @@ class TacticalFeatureSynthesizer(nn.Module):
       4. Exterior Funnel Trash Density (Ch 56..58 Collectors/Storages/Utility outside walls)
       5. Active Frontline Combat Engagement Zone (Allied Units Ch 5..20 overlapping Defenses Ch 1)
     """
+
+    grid_x: torch.Tensor
+    grid_y: torch.Tensor
 
     def __init__(self, grid_size: int = 50):
         super().__init__()
@@ -605,18 +610,53 @@ GEN0_BASELINE_ARCH_CONFIG: Dict[str, Any] = {
     "logit_temp_idx": 1.6,
     "logit_temp_frac": 1.4,
     "tile_logit_scale": 2.2,
-    "th_threat_weight": 7.5,
+    "th_threat_weight": 9.5,
     "defense_threat_weight": 1.8,
-    "breach_prior_weight": 9.0,
+    "breach_prior_weight": 11.0,
     "spell_combat_prior_weight": 7.5,
-    "film_cond_scale": 0.65,
+    "film_cond_scale": 0.8,
     "reg_ent_type_weight": 2.0,
     "reg_ent_idx_weight": 2.0,
     "reg_ent_frac_weight": 2.0,
     "reg_ent_tile_weight": 0.14,
 }
 
-DEFAULT_ARCH_CONFIG: Dict[str, Any] = dict(GEN0_BASELINE_ARCH_CONFIG)
+GEN1_COORDSE_ARCH_CONFIG: Dict[str, Any] = {
+    "arch_version": "v4.1-Gen1-CoordSE-ResCNN",
+    "generation": 1,
+    "backbone_type": "coord_se_res",
+    "weight_transfer_mode": "warm_start",
+    "in_channels": 59,
+    "base_ch": 24,
+    "spatial_dim": 24,
+    "embed_dim": 96,
+    "head_hidden_dim": 64,
+    "use_coord_features": True,
+    "use_dilated_context": False,
+    "use_se_attention": True,
+    "use_convnext_grn": False,
+    "use_segnext_msca": False,
+    "use_unet_decoder": False,
+    "use_dual_spatial_head": False,
+    "use_gated_heads": False,
+    "critic_depth": 2,
+    "logit_temp_type": 1.4,
+    "logit_temp_idx": 1.6,
+    "logit_temp_frac": 1.4,
+    "tile_logit_scale": 2.8,
+    "th_threat_weight": 9.5,
+    "defense_threat_weight": 2.2,
+    "breach_prior_weight": 11.5,
+    "spell_combat_prior_weight": 10.1,
+    "film_cond_scale": 0.85,
+    "reg_ent_type_weight": 2.4,
+    "reg_ent_idx_weight": 2.0,
+    "reg_ent_frac_weight": 2.0,
+    "reg_ent_tile_weight": 0.1,
+    "total_params": 130268,
+}
+
+DEFAULT_ARCH_CONFIG: Dict[str, Any] = dict(GEN1_COORDSE_ARCH_CONFIG)
 
 
 def fraction_bin_to_value(bin_idx: int) -> float:
@@ -671,7 +711,7 @@ def transfer_compatible_weights(
             merged = new_tensor.clone()
             slices = tuple(
                 slice(0, min(int(s_old), int(s_new)))
-                for s_old, s_new in zip(old_tensor.shape, new_tensor.shape)
+                for s_old, s_new in zip(old_tensor.shape, new_tensor.shape, strict=False)
             )
             merged[slices] = old_tensor[slices]
             updated_sd[key] = merged
@@ -718,7 +758,19 @@ class CoCActorCritic(nn.Module):
     ):
         super().__init__()
         cfg = dict(DEFAULT_ARCH_CONFIG)
-        if isinstance(arch_config, dict):
+        if arch_config is None:
+            try:
+                active_cfg_path = os.path.join(
+                    os.path.dirname(__file__), "..", "..", "trained_models", "loop", "active_experiment_config.json"
+                )
+                if os.path.exists(active_cfg_path):
+                    with open(active_cfg_path, "r", encoding="utf-8") as f:
+                        disk_data = json.load(f)
+                        if isinstance(disk_data.get("arch_config"), dict):
+                            cfg.update({k: v for k, v in disk_data["arch_config"].items() if v is not None})
+            except Exception:
+                pass
+        elif isinstance(arch_config, dict):
             cfg.update({k: v for k, v in arch_config.items() if v is not None})
         self.in_channels = in_channels
         self.army_context_dim = army_context_dim
@@ -851,6 +903,7 @@ class CoCActorCritic(nn.Module):
                 nn.SiLU(),
                 nn.Linear(head_hidden_dim, 1),
             )
+        self._frac_bins_tensor: torch.Tensor
         self.register_buffer(
             "_frac_bins_tensor",
             torch.tensor(DEPLOY_FRACTION_BINS, dtype=torch.float32),

@@ -190,7 +190,7 @@ impl WasmBattleSession {
                     });
                 }
             }
-        } else if t % 35 == 0 {
+        } else if t.is_multiple_of(35) {
             let mut sum_x = 0.0f32;
             let mut sum_y = 0.0f32;
             let mut n = 0usize;

@@ -3,10 +3,10 @@ title: "v3.0 — 59-Channel Dedicated Multi-Block Dilated CNN & Single-Army Spec
 model_id: "v3_per_defense_31ch"
 arch_version: "3.0"
 status: "active"
-total_episodes: 4
+total_episodes: 9000
 best_pct: 100
 best_stars: 3
-updated_at: "2026-11-02 12:10:30"
+updated_at: "2026-11-02 12:32:57"
 tags:
   - coc-rl
   - ppo
@@ -26,9 +26,9 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 - **Architecture Version**: `v3.0` (`1,375,288` Trainable Parameters)
 - **Dedicated Army Composition**: **`TH18 Thrower + Healer + Totem Smash (Meta)`** (Exported in `.pt` checkpoint metadata for testing)
 - **Active Status**: **ACTIVE**
-- **Total Episodes Trained**: **`4`** (Cumulative across **4** training sessions)
-- **Peak Combat Performance**: **`100%` (3★)** (Best dense return: `+117.14270520210266`)
-- **Latest Checkpoint**: `trained_models/thrower_healer_totem_smash_ep4_64pct_2star.pt`
+- **Total Episodes Trained**: **`9,000`** (Cumulative across **6** training sessions)
+- **Peak Combat Performance**: **`100%` (3★)** (Best dense return: `+141.43679366509116`)
+- **Latest Checkpoint**: `trained_models/thrower_healer_totem_smash_ep9000_100pct_3star.pt`
 
 ### 🔄 Resumed Training Sessions History
 | Session # | Start Ep | End Ep | Episodes Added | Checkpoint File | Peak % | Stars | Notes |
@@ -37,6 +37,8 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 | **#2** | `0` | `300` | `+300` | `thrower_healer_totem_smash_ep300_100pct_3star.pt` | `100%` | `3★` | Initial training (300 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
 | **#3** | `0` | `2` | `+2` | `thrower_healer_totem_smash_ep2_65pct_2star.pt` | `65%` | `2★` | Initial training (2 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
 | **#4** | `0` | `4` | `+4` | `thrower_healer_totem_smash_ep4_64pct_2star.pt` | `64%` | `2★` | Initial training (4 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
+| **#5** | `0` | `8,544` | `+8,544` | `thrower_healer_totem_smash_ep8544_100pct_3star.pt` | `100%` | `3★` | Initial training (8,544 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
+| **#6** | `8,544` | `9,000` | `+456` | `thrower_healer_totem_smash_ep9000_100pct_3star.pt` | `100%` | `3★` | Resumed training (+456 ep from thrower_healer_totem_smash_ep8544_100pct_3star.pt) on TH18 Thrower + Healer + Totem Smash (Meta) |
 
 ---
 
@@ -145,8 +147,8 @@ $$R_t = 0.35 \cdot \Delta \%_{\text{destr}} + 15.0 \cdot \Delta \text{HP}_{\text
 
 | Attack Composition | **Central Box** | **Offset Diamond** | **Anti-Hydra Ring** | **Anti-Fireball** | **Compact Teaser** | **Avg Destruction** | **3★ Rate** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **TH18 Thrower + Healer + Totem Smash** | `100% (3★)` | `82% (2★)` | `100% (3★)` | `77% (2★)` | `76% (2★)` | **87.0%** | **40.0%** |
-| **Base Defense Rate (Avg)** | **100.0% (3.0★)** | **82.0% (2.0★)** | **100.0% (3.0★)** | **77.0% (2.0★)** | **76.0% (2.0★)** | **Overall: 87.0%** | — |
+| **TH18 Thrower + Healer + Totem Smash** | `100% (3★)` | `68% (2★)` | `100% (3★)` | `100% (3★)` | `72% (2★)` | **88.0%** | **60.0%** |
+| **Base Defense Rate (Avg)** | **100.0% (3.0★)** | **68.0% (2.0★)** | **100.0% (3.0★)** | **100.0% (3.0★)** | **72.0% (2.0★)** | **Overall: 88.0%** | — |
 
 ---
 
@@ -168,13 +170,13 @@ See [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Tel
 | :--- | :--- | :--- |
 | **Trained Army Composition** | `TH18 Thrower + Healer + Totem Smash (Meta)` | Single dedicated army composition per model |
 | **Default Checkpoint Pattern** | `thrower_healer_totem_smash_ep{N}_{pct}pct_{stars}star.pt` | Army-prefixed checkpoint naming convention |
-| **Learning Rate (`lr`)** | `0.0003` | Adam optimizer learning rate (Critic `2.5x`) |
-| **Batch Episodes** | `2` | Trajectories collected per PPO update |
+| **Learning Rate (`lr`)** | `0.00032` | Adam optimizer learning rate (Critic `2.5x`) |
+| **Batch Episodes** | `12` | Trajectories collected per PPO update |
 | **Minibatch Size** | `128` | SGD transition batch size |
-| **PPO Epochs** | `2` | Optimization passes over collected rollout |
+| **PPO Epochs** | `4` | Optimization passes over collected rollout |
 | **Simulation Ticks / Step** | `8` | Simulated combat duration per RL decision ($0.8\text{s}$) |
 | **Discount ($\gamma$)** | `0.99` | Reward discount factor |
 | **GAE ($\lambda$)** | `0.95` | Generalized Advantage Estimation smoothing |
 | **Clip Coefficient** | `0.2` | PPO surrogate objective clipping range |
 | **Entropy Coefficient** | `0.015` | Normalized per-head exploration policy entropy bonus |
-| **Total Training Episodes** | **`4`** | **Cumulative episodes across all resumed sessions** |
+| **Total Training Episodes** | **`9,000`** | **Cumulative episodes across all resumed sessions** |

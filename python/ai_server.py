@@ -12,6 +12,7 @@ import sys
 import threading
 import time
 import traceback
+from contextlib import suppress
 from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -23,19 +24,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-import coc_py
 from coc_rl import (
     AI_PROVIDERS,
-    CoCActorCritic,
     CoCAttackerEnv,
     apply_config_patch,
     capture_pre_change_snapshot,
     compress_training_history,
     decompress_training_history,
-    diagnose_and_propose_solutions,
     ensure_architecture_diagrams,
     execute_opencode_argon_code_edit,
-    extract_compact_metrics_from_telemetry,
     format_reward_formula,
     gather_training_telemetry,
     generate_ai_training_feedback,
@@ -49,24 +46,20 @@ from coc_rl import (
     save_active_experiment_config,
     save_recursive_loop_state,
     sync_recursive_loop_to_vault,
-    transfer_compatible_weights,
+    terminate_all_active_subprocesses,
     trigger_model_visualizer_agent,
     verify_solution_outcome,
 )
 from train_ai import (
     ARCHIVES_DIR,
-    ARMY_SHORT_NAMES,
     CHECKPOINTS_DIR,
-    DEFAULT_CKPT_PATH,
     STATE_DIR,
-    VILLAGE_SHORT_NAMES,
     army_name_to_slug,
     compute_matchup_stats,
     delete_custom_army,
     ensure_trained_models_dir,
     get_all_army_presets,
     get_model_training_history,
-    list_custom_armies,
     list_trained_models,
     load_attacker_model,
     masks_np_to_torch,
@@ -120,10 +113,11 @@ def _reconcile_training_thread_liveness() -> None:
     thread is not alive.
     """
     global _train_worker_thread
-    if _training_state.get("is_training"):
-        if _train_worker_thread is None or not _train_worker_thread.is_alive():
-            _training_state["is_training"] = False
-            _training_state["stop_requested"] = False
+    if _training_state.get("is_training") and (
+        _train_worker_thread is None or not _train_worker_thread.is_alive()
+    ):
+        _training_state["is_training"] = False
+        _training_state["stop_requested"] = False
 
 if os.path.exists(_LAST_STATE_PATH):
     try:
@@ -314,7 +308,7 @@ def _compute_fast_telemetry_compact() -> Optional[Dict[str, Any]]:
             "p_1star_pct": s1,
             "p_2star_given_1star_pct": p2_given_1,
             "p_3star_given_2star_pct": p3_given_2,
-            "near_miss_85_to_99_pct_rate": round(sum(1 for p, s in zip(pcts, stars) if 85.0 <= p < 100.0 and s < 3) * 100.0 / n, 1),
+            "near_miss_85_to_99_pct_rate": round(sum(1 for p, s in zip(pcts, stars, strict=False) if 85.0 <= p < 100.0 and s < 3) * 100.0 / n, 1),
         },
     }
 
@@ -645,12 +639,30 @@ def start_ppo_training(req: TrainStartRequest) -> Dict[str, Any]:
         _loop_state["active_config"] = active_cfg
 
         if is_scratch and not preserve_loop:
+            terminate_all_active_subprocesses()
+            _loop_state["cycles"] = []
+            _loop_state["current_cycle_id"] = 0
             _loop_state["active_hypothesis"] = None
+            _loop_state["latest_strategy_research"] = None
+            _loop_state["latest_architecture_analysis"] = None
             _loop_state["last_cycle_episode"] = 0
             _loop_state["next_cycle_target_episode"] = horizon
             _loop_state["episodes_until_next_cycle"] = horizon
             _loop_state["phase"] = "monitoring" if _loop_state.get("enabled", False) else "idle"
         else:
+            if not is_scratch:
+                resumed_model_meta = next(
+                    (m for m in list_trained_models() if m.get("filename") == req.resume_from),
+                    None,
+                )
+                resumed_ep = int((resumed_model_meta or {}).get("episode", 0))
+                _training_state["cumulative_episode"] = resumed_ep
+                _training_state["best_pct"] = int((resumed_model_meta or {}).get("best_pct", 0))
+                _training_state["best_stars"] = int((resumed_model_meta or {}).get("best_stars", 0))
+                if not _loop_state.get("active_hypothesis"):
+                    _loop_state["last_cycle_episode"] = resumed_ep
+                    _loop_state["next_cycle_target_episode"] = resumed_ep + horizon
+                    _loop_state["episodes_until_next_cycle"] = horizon
             if _loop_state.get("phase") in ("analyzing", "documenting_baseline", "applying_solution"):
                 _loop_state["phase"] = (
                     "testing_solution"
@@ -659,7 +671,17 @@ def start_ppo_training(req: TrainStartRequest) -> Dict[str, Any]:
                 )
 
         def _worker() -> None:
+            user_stopped_run = False
+
+            def _should_stop() -> bool:
+                nonlocal user_stopped_run
+                if _training_state.get("stop_requested"):
+                    user_stopped_run = True
+                    return True
+                return False
+
             def _on_ep(rec: Dict[str, Any]) -> bool:
+                nonlocal user_stopped_run
                 ep_copy = dict(rec)
                 _training_state["current_episode"] = ep_copy["episode"]
                 _training_state["cumulative_episode"] = ep_copy.get(
@@ -671,14 +693,15 @@ def start_ppo_training(req: TrainStartRequest) -> Dict[str, Any]:
 
                 stats_stride = max(2, int(req.batch_episodes))
                 if ep_copy["episode"] % stats_stride == 0 or ep_copy["episode"] == ep_copy["total_episodes"]:
-                    try:
+                    with suppress(Exception):
                         _training_state["matchup_stats"] = compute_matchup_stats(
                             history=_training_state["history"]
                         )
-                    except Exception:
-                        pass
 
-                return not bool(_training_state["stop_requested"])
+                if _training_state.get("stop_requested"):
+                    user_stopped_run = True
+                    return False
+                return True
 
             try:
                 res = train_pytorch_ppo(
@@ -696,6 +719,8 @@ def start_ppo_training(req: TrainStartRequest) -> Dict[str, Any]:
                     armies_json=req.armies_json,
                     villages_json=req.villages_json,
                     on_episode_callback=_on_ep,
+                    should_stop_callback=_should_stop,
+                    async_vault_sync=True,
                 )
                 if "matchup_stats" in res:
                     _training_state["matchup_stats"] = res["matchup_stats"]
@@ -713,6 +738,11 @@ def start_ppo_training(req: TrainStartRequest) -> Dict[str, Any]:
                 traceback.print_exc()
                 _training_state["last_error"] = str(exc)
             finally:
+                suppress_verify = bool(
+                    user_stopped_run
+                    or _training_state.get("stop_requested")
+                    or _loop_state.get("suppress_post_stop_auto_verify")
+                )
                 with _train_lock:
                     _training_state["is_training"] = False
                     _training_state["stop_requested"] = False
@@ -729,15 +759,15 @@ def start_ppo_training(req: TrainStartRequest) -> Dict[str, Any]:
                     except Exception:
                         pass
 
-                # If a Progressive Evolution hypothesis was being tested, verify it automatically!
+                # If a Progressive Evolution hypothesis completed naturally (NOT user-stopped), verify it automatically!
                 if (
-                    _loop_state.get("active_hypothesis")
+                    not suppress_verify
+                    and _loop_state.get("active_hypothesis")
                     and not _loop_state.get("is_running_cycle")
-                    and not _loop_state.get("suppress_post_stop_auto_verify")
                     and len(_training_state.get("history", [])) > 0
                 ):
                     def _verify_after_train() -> None:
-                        try:
+                        with suppress(Exception):
                             run_recursive_improvement_cycle(
                                 loop_state=_loop_state,
                                 training_state=_training_state,
@@ -755,8 +785,6 @@ def start_ppo_training(req: TrainStartRequest) -> Dict[str, Any]:
                                     else None
                                 ),
                             )
-                        except Exception:
-                            pass
 
                     threading.Thread(target=_verify_after_train, daemon=True).start()
 
@@ -847,10 +875,8 @@ def _stop_and_restart_new_architecture_training(
                     continue
                 dst_name = f"cycle_{cycle_id:03d}_{fname}"
                 dst = os.path.join(ARCHIVES_DIR, dst_name)
-                try:
+                with suppress(Exception):
                     shutil.move(src, dst)
-                except Exception:
-                    pass
         resume_target = "scratch"
     else:
         # Warm-start compatible weights from latest_ckpt via transfer_compatible_weights()
@@ -873,10 +899,8 @@ def _stop_and_restart_new_architecture_training(
         arch_config=arch_cfg,
         reason=f"cycle_{cycle_id}_arch_morph_{arch_cfg.get('arch_version', 'v4.0')}",
     )
-    try:
+    with suppress(Exception):
         _get_fresh_architecture_manifest(force=True)
-    except Exception:
-        pass
 
     hp = active_cfg.get("hyperparams", {})
     eps_to_run = max(
@@ -904,10 +928,20 @@ def _stop_and_restart_new_architecture_training(
 
 @app.post("/api/ai/train/stop")
 def stop_ppo_training() -> Dict[str, Any]:
+    global _train_worker_thread
+    _loop_state["suppress_post_stop_auto_verify"] = True
+    _loop_state["is_running_cycle"] = False
+    terminate_all_active_subprocesses()
     with _train_lock:
         _training_state["stop_requested"] = True
+        worker = _train_worker_thread
+
+    if worker is not None and worker.is_alive():
+        worker.join(timeout=4.0)
+
+    with _train_lock:
         _reconcile_training_thread_liveness()
-    return {"stopping": True, "training": _training_state}
+    return {"stopping": True, "stopped": not _training_state.get("is_training", False), "training": _training_state}
 
 
 @app.get("/api/ai/loop/status")
@@ -1107,10 +1141,8 @@ def apply_specific_loop_solution(req: LoopApplySolutionRequest) -> Dict[str, Any
             arch_config=active_config.get("arch_config"),
             reason=f"apply_solution_cycle_{cycle_num}",
         )
-        try:
+        with suppress(Exception):
             _get_fresh_architecture_manifest(force=True)
-        except Exception:
-            pass
 
     test_eps = int(req.test_episodes or _loop_state.get("test_episodes_per_cycle", 5000))
     if restarted_from_scratch:
@@ -1186,10 +1218,8 @@ def update_active_loop_config_parameters(req: LoopUpdateConfigRequest) -> Dict[s
             arch_config=saved_cfg.get("arch_config"),
             reason=req.reason or "interactive_parameter_studio_arch_update",
         )
-        try:
+        with suppress(Exception):
             _get_fresh_architecture_manifest(force=True)
-        except Exception:
-            pass
 
     save_recursive_loop_state(_loop_state)
     sync_recursive_loop_to_vault(_loop_state)
@@ -1235,10 +1265,8 @@ def verify_current_loop_solution() -> Dict[str, Any]:
             arch_config=next_cfg.get("arch_config"),
             reason="post_verification_arch_sync",
         )
-        try:
+        with suppress(Exception):
             _get_fresh_architecture_manifest(force=True)
-        except Exception:
-            pass
     sync_recursive_loop_to_vault(_loop_state)
     save_recursive_loop_state(_loop_state)
 
@@ -1256,10 +1284,13 @@ def reset_recursive_loop() -> Dict[str, Any]:
     restores the Stage 0 (`v4.0-Gen0-TinyCNN`) baseline experiment configuration,
     and triggers `model-visualizer` so the Model Trainer reflects Gen 0.
     """
+    terminate_all_active_subprocesses()
     horizon = max(12, int(_loop_state.get("test_episodes_per_cycle", 5000)))
     _loop_state["cycles"] = []
     _loop_state["current_cycle_id"] = 0
     _loop_state["active_hypothesis"] = None
+    _loop_state["latest_strategy_research"] = None
+    _loop_state["latest_architecture_analysis"] = None
     _loop_state["last_cycle_episode"] = 0
     _loop_state["next_cycle_target_episode"] = horizon
     _loop_state["episodes_until_next_cycle"] = horizon
@@ -1272,10 +1303,8 @@ def reset_recursive_loop() -> Dict[str, Any]:
         arch_config=default_cfg.get("arch_config"),
         reason="reset_loop_to_gen0_baseline",
     )
-    try:
+    with suppress(Exception):
         _get_fresh_architecture_manifest(force=True)
-    except Exception:
-        pass
     save_recursive_loop_state(_loop_state)
     sync_recursive_loop_to_vault(_loop_state)
     return _get_loop_status_payload()

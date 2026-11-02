@@ -14,7 +14,7 @@ from .networks import CoCActorCritic
 DEFAULT_REWARD_CONFIG: Dict[str, float] = {
     "destr_weight": 0.35,
     "star_weight": 12.0,
-    "th_bonus": 20.0,  # Cycle 20 TH18 takedown milestone bonus
+    "th_bonus": 20.0,  # Cycle 1 TH18 takedown milestone bonus for Offset Diamond breach
     "damage_weight": 15.0,
     "funnel_weight": 0.10,
     "invalid_penalty": 0.05,

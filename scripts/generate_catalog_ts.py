@@ -33,7 +33,7 @@ def parse_rust_value(val_str: str):
         cleaned = re.sub(r"(u8|u16|u32|usize|f32)$", "", val_str)
         return float(cleaned) if "." in cleaned else int(cleaned)
     # Slice or array &[ ... ] or [ ... ]
-    if val_str.startswith("&[") or val_str.startswith("["):
+    if val_str.startswith(("&[", "[")):
         inner = val_str.lstrip("&")[1:-1].strip()
         if not inner:
             return []

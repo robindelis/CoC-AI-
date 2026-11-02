@@ -6,6 +6,7 @@ import {
 import {
   AIArchitectureLayerSpec,
   AIArchitectureSpec,
+  AIModelVisualizerSync,
 } from './aiTypes';
 
 export type HeadFilterId =

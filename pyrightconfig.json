@@ -1,0 +1,9 @@
+{
+  "include": ["python", "scripts"],
+  "exclude": ["**/__pycache__", ".venv", "node_modules", "target", "coc_dumps"],
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.11",
+  "extraPaths": ["python"],
+  "reportMissingModuleSource": "none"
+}

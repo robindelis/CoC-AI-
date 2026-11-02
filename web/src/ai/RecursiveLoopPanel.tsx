@@ -363,10 +363,18 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
   const cycles = useMemo(() => loopState?.cycles ?? [], [loopState?.cycles]);
 
   useEffect(() => {
-    if (cycles.length > 0 && selectedCycleId === null) {
+    if (cycles.length === 0) {
+      if (selectedCycleId !== null) setSelectedCycleId(null);
+      if (checkedSolutionIds.length > 0) setCheckedSolutionIds([]);
+      return;
+    }
+    if (
+      selectedCycleId === null ||
+      !cycles.some((c) => c.cycle_id === selectedCycleId)
+    ) {
       setSelectedCycleId(cycles[cycles.length - 1].cycle_id);
     }
-  }, [cycles, selectedCycleId]);
+  }, [cycles, selectedCycleId, checkedSolutionIds.length]);
 
   useEffect(() => {
     if (loopState?.active_config) {

@@ -7,7 +7,7 @@ tags:
   - ppo
   - architecture
   - reward-shaping
-updated: "2026-11-02 11:30:50"
+updated: "2026-11-02 15:44:47"
 total_cycles: 0
 loop_enabled: true
 interval_seconds: 600
@@ -25,9 +25,9 @@ The **Progressive Model Evolution & Parameter Tuning System** audits training te
 
 - **Loop Status**: **`ENABLED (EPISODE-HORIZON AUTO-EVOLUTION)`** • **Current Phase**: `MONITORING`
 - **Total Improvement Cycles Logged**: **`0`**
-- **Active Reward Formula**: `R_t = 0.35·Δ%destr + 15.0·ΔHPratio + 12.0·Δstars + 20.0·I(TH18) + 0.10·C_funnel + 2.5·I(%≥75) + 5.0·I(%≥90) + 8.0·I(3★) + 0.030·I(wait_core) - 0.05·I(invalid)`
-- **Active Architecture Config**: `th_threat=9.5`, `breach_prior=11.5`, `spell_prior=8.5`, `film_scale=1.0`, `tile_scale=2.4`
-- **Active Hyperparameters**: `lr=0.0003`, `critic_lr_mult=2.5`, `batch_episodes=12`, `ent_coef=0.015`, `vf_coef=0.5`, `matchup_mode=random`
+- **Active Reward Formula**: `R_t = 0.35·Δ%destr + 22.0·ΔHPratio + 12.0·Δstars + 22.0·I(TH18) + 0.16·C_funnel + 8.0·I(%≥75) + 10.0·I(%≥90) + 14.0·I(3★) + 0.030·I(wait_core) - 0.05·I(invalid)`
+- **Active Architecture Config**: `th_threat=9.5`, `breach_prior=11.5`, `spell_prior=10.1`, `film_scale=0.85`, `tile_scale=2.8`
+- **Active Hyperparameters**: `lr=0.000217`, `critic_lr_mult=3.4`, `batch_episodes=12`, `ent_coef=0.0135`, `vf_coef=0.7`, `matchup_mode=round_robin`
 
 ![Recursive AI Improvement Loop Progression](../assets/charts/recursive_improvement_loop_tracker.png)
 

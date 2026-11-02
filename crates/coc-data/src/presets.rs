@@ -149,7 +149,7 @@ impl LayoutBuilder {
                 let dx = x as f32 + size as f32 * 0.5 - target_x;
                 let dy = y as f32 + size as f32 * 0.5 - target_y;
                 let d2 = (dx * dx + dy * dy) as i32;
-                if best.map_or(true, |(_, _, b_d2)| d2 < b_d2) {
+                if best.is_none_or(|(_, _, b_d2)| d2 < b_d2) {
                     best = Some((x, y, d2));
                 }
             }
@@ -527,7 +527,7 @@ pub fn build_th18_meta_village(archetype: usize) -> VillageLayout {
                 let dx = x as f32 + size as f32 * 0.5 - core_cx;
                 let dy = y as f32 + size as f32 * 0.5 - core_cy;
                 let d2 = (dx * dx + dy * dy) as i32;
-                if best.map_or(true, |(_, _, bd)| d2 < bd) {
+                if best.is_none_or(|(_, _, bd)| d2 < bd) {
                     best = Some((x, y, d2));
                 }
             }
@@ -554,7 +554,7 @@ pub fn build_th18_meta_village(archetype: usize) -> VillageLayout {
     }
 
     // Ensure the 2 Air Sweepers and 2 Firespitters cover opposite hemispheres
-    let sweeper_dirs = if archetype % 2 == 0 {
+    let sweeper_dirs = if archetype.is_multiple_of(2) {
         [180.0f32, 0.0f32]
     } else {
         [90.0f32, 270.0f32]

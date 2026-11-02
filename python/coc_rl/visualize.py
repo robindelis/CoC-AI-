@@ -54,8 +54,9 @@ def compute_networks_hash(model: Optional[nn.Module] = None) -> str:
         h.update(repr(model).encode("utf-8"))
         for name, p in model.named_parameters():
             h.update(f"{name}:{tuple(p.shape)}".encode("utf-8"))
-        if hasattr(model, "get_arch_config"):
-            h.update(json.dumps(model.get_arch_config(), sort_keys=True).encode("utf-8"))
+        get_cfg_fn = getattr(model, "get_arch_config", None)
+        if callable(get_cfg_fn):
+            h.update(json.dumps(get_cfg_fn(), sort_keys=True).encode("utf-8"))
     return h.hexdigest()
 
 
@@ -63,21 +64,30 @@ def get_submodule_breakdown(model: nn.Module) -> List[Dict[str, Any]]:
     """Returns parameter counts and layer types for top-level logical blocks."""
     rows: List[Dict[str, Any]] = []
     for name, mod in model.named_modules():
-        if not name or ("." in name and not name.startswith("encoder.")):
+        if not name:
             continue
-        if name == "encoder" or name.split(".")[-1].isdigit():
-            continue
-        rows.append(
-            {
-                "name": name,
-                "type": type(mod).__name__,
-                "params": int(sum(p.numel() for p in mod.parameters())),
-            }
-        )
+        parts = name.split(".")
+        if len(parts) == 1:
+            if parts[0] != "encoder":
+                rows.append(
+                    {
+                        "name": name,
+                        "type": type(mod).__name__,
+                        "params": int(sum(p.numel() for p in mod.parameters())),
+                    }
+                )
+        elif len(parts) == 2 and parts[0] == "encoder":
+            rows.append(
+                {
+                    "name": name,
+                    "type": type(mod).__name__,
+                    "params": int(sum(p.numel() for p in mod.parameters())),
+                }
+            )
     return rows
 
 
-def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
+def extract_live_layer_specs(model: nn.Module) -> Dict[str, Any]:
     """
     Runs a live forward trace with shape & parameter hooks on `model` (`CoCActorCritic`)
     so the 3D U-Net Feature Map diagram, Layer-by-Layer table, KPI pills, and PyTorch code
@@ -101,7 +111,7 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
     use_convnext = bool(getattr(enc, "use_convnext_grn", False))
     use_segnext = bool(getattr(enc, "use_segnext_msca", False))
     use_dual_head = bool(getattr(model, "use_dual_spatial_head", False))
-    use_gated = bool(getattr(model, "use_gated_heads", False))
+    bool(getattr(model, "use_gated_heads", False))
     effective_in_ch = in_ch + (6 if use_coord else 0)
 
     c1 = base_ch
@@ -117,8 +127,8 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
     c3 = base_ch * 4
     c4 = base_ch * 8
 
-    def _mod_params(m: Optional[nn.Module]) -> int:
-        if m is None:
+    def _mod_params(m: Any) -> int:
+        if m is None or not hasattr(m, "parameters"):
             return 0
         return int(sum(p.numel() for p in m.parameters()))
 
@@ -282,7 +292,7 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
             "stage": "spatial",
             "type": "U-Net Bottleneck: MaxPool 2×2 + bottleneck" + (" + SEChannelAttention" if bottleneck_se is not None else ""),
             "short": "Bot 6×6",
-            "desc": f"MaxPool2d(2×2) + 2×(Conv 3×3 → GroupNorm(8) → SiLU)" + (" + SE-Attn" if bottleneck_se is not None else "") + f", {c3}→{c4} ch at 6×6",
+            "desc": "MaxPool2d(2×2) + 2×(Conv 3×3 → GroupNorm(8) → SiLU)" + (" + SE-Attn" if bottleneck_se is not None else "") + f", {c3}→{c4} ch at 6×6",
             "inputShape": [c3, 12, 12],
             "outputShape": [c4, 6, 6],
             "receptiveField": 50,
@@ -489,11 +499,15 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
             + gate_macs
         )
         tile_type = "U-Net Full 50×50 Upscale (up2 + up1) + Tile Head (Head 4)"
+        if spatial_se is not None:
+            tile_type += " + SE-Attn"
         if spell_tile_head is not None:
             tile_type += " + Dual Branch (Troop vs Spell)"
         tile_short = "UNet50×50"
         tile_desc = (
-            f"up2(12×12→25×25 + Skip2) → up1(25×25→50×50 + Skip1) → FiLM({embed_dim + 17}→{spatial_dim})"
+            "up2(12×12→25×25 + Skip2) → up1(25×25→50×50 + Skip1)"
+            + (" + SE-Attn" if spatial_se is not None else "")
+            + f" → FiLM({embed_dim + 17}→{spatial_dim})"
             + (" + Gated" if head_gate is not None else "")
             + " → Conv 3×3 + 1×1 (1×50×50)"
             + (" + Spell Branch" if spell_tile_head is not None else "")
@@ -517,12 +531,16 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
             + gate_macs
         )
         tile_type = "TinySkipUpBlock (25×25→50×50) + Skip1 + Tile Head (Head 4)"
+        if spatial_se is not None:
+            tile_type += " + SE-Attn"
         if spell_tile_head is not None:
             tile_type += " + Dual Branch (Troop vs Spell)"
         tile_short = "SkipUp50×50"
         tile_conv_desc = "Conv 1×1 (1×50×50)" if is_tiny_tile else "Conv 3×3 + 1×1 (1×50×50)"
         tile_desc = (
-            f"up1(Bilinear 25×25→50×50 + Skip1 {c2}+{c1}→{spatial_dim}) → FiLM({embed_dim + 17}→{spatial_dim})"
+            f"up1(Bilinear 25×25→50×50 + Skip1 {c2}+{c1}→{spatial_dim})"
+            + (" + SE-Attn" if spatial_se is not None else "")
+            + f" → FiLM({embed_dim + 17}→{spatial_dim})"
             + (" + Gated" if head_gate is not None else "")
             + f" → {tile_conv_desc}"
             + (" + Spell Branch" if spell_tile_head is not None else "")
@@ -575,7 +593,8 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
         except Exception:
             pass
 
-    arch_cfg = model.get_arch_config() if hasattr(model, "get_arch_config") else (load_active_arch_config() or {})
+    get_cfg_fn = getattr(model, "get_arch_config", None)
+    arch_cfg = get_cfg_fn() if callable(get_cfg_fn) else (load_active_arch_config() or {})
 
     return {
         "in_channels": in_ch,
@@ -599,7 +618,7 @@ def _named_module_classes(model: nn.Module) -> Iterator[None]:
         if not full_name or full_name.split(".")[-1].isdigit():
             continue
         leaf = full_name.split(".")[-1]
-        orig_cls = mod.__class__
+        orig_cls: Any = mod.__class__
         saved.append((mod, orig_cls))
         mod.__class__ = type(f"{leaf} ({orig_cls.__name__})", (orig_cls,), {})
     try:
@@ -632,8 +651,9 @@ class _TracedModelWrapper(nn.Module):
             out = self.model.forward(obs)
         if isinstance(out, dict):
             for k, v in out.items():
-                if hasattr(v, "tensor_nodes") and v.tensor_nodes:
-                    self.captured_outputs[k] = v.tensor_nodes
+                tnodes = getattr(v, "tensor_nodes", None)
+                if tnodes:
+                    self.captured_outputs[k] = tnodes
         return out
 
 
@@ -738,17 +758,18 @@ def ensure_architecture_diagrams(
     active_arch_cfg = load_active_arch_config()
     if model is None:
         in_ch = input_size[1] if input_size is not None else int((active_arch_cfg or {}).get("in_channels", 59))
-        model = CoCActorCritic(in_channels=in_ch, arch_config=active_arch_cfg)
+        target_model: nn.Module = CoCActorCritic(in_channels=in_ch, arch_config=active_arch_cfg)
     else:
-        in_ch = int(getattr(model, "in_channels", 59))
+        target_model = model
+        in_ch = int(getattr(target_model, "in_channels", 59))
 
     if input_size is None:
         input_size = (1, in_ch, 50, 50)
 
-    current_hash = compute_networks_hash(model)
+    current_hash = compute_networks_hash(target_model)
     live_spec = (
-        extract_live_layer_specs(model)
-        if (isinstance(model, CoCActorCritic) or hasattr(model, "encoder"))
+        extract_live_layer_specs(target_model)
+        if (isinstance(target_model, CoCActorCritic) or hasattr(target_model, "encoder"))
         else {}
     )
 
@@ -771,32 +792,32 @@ def ensure_architecture_diagrams(
         except Exception:
             pass
 
-    orig_device = next(model.parameters()).device if list(model.parameters()) else torch.device("cpu")
+    orig_device = next(target_model.parameters()).device if list(target_model.parameters()) else torch.device("cpu")
 
     overview_files = _render_torchview_variant(
-        model=model,
+        model=target_model,
         input_size=input_size,
         depth=2,
         stem_name="coc_actor_critic_overview",
         graph_name="CoCActorCritic_Overview",
     )
     detailed_files = _render_torchview_variant(
-        model=model,
+        model=target_model,
         input_size=input_size,
         depth=3,
         stem_name="coc_actor_critic_detailed",
         graph_name="CoCActorCritic_Detailed",
     )
-    model.to(orig_device)
+    target_model.to(orig_device)
 
-    total_params = sum(p.numel() for p in model.parameters())
+    total_params = sum(p.numel() for p in target_model.parameters())
     manifest: Dict[str, Any] = {
-        "model_class": type(model).__name__,
+        "model_class": type(target_model).__name__,
         "architecture_hash": current_hash,
         "input_shape": list(input_size),
         "total_params": int(total_params),
         "trainable_params": int(total_params),
-        "submodules": get_submodule_breakdown(model),
+        "submodules": get_submodule_breakdown(target_model),
         "files": {
             "overview": overview_files,
             "detailed": detailed_files,

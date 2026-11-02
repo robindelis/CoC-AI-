@@ -262,10 +262,10 @@ pub fn find_path_astar_blocked(
         (-1, 0, 1.0),
         (0, 1, 1.0),
         (0, -1, 1.0),
-        (1, 1, 1.4142),
-        (1, -1, 1.4142),
-        (-1, 1, 1.4142),
-        (-1, -1, 1.4142),
+        (1, 1, std::f32::consts::SQRT_2),
+        (1, -1, std::f32::consts::SQRT_2),
+        (-1, 1, std::f32::consts::SQRT_2),
+        (-1, -1, std::f32::consts::SQRT_2),
     ];
 
     while let Some(curr) = open.pop() {
@@ -305,9 +305,9 @@ pub fn find_path_astar_blocked(
                 let ox2 = curr.x as usize;
                 let oy2 = (curr.y as i32 + dy) as usize;
                 let side1_blocked =
-                    blocked.map_or(false, |b| b[oy1][ox1]) || wall_hp_ratio[oy1][ox1] > 0.0;
+                    blocked.is_some_and(|b| b[oy1][ox1]) || wall_hp_ratio[oy1][ox1] > 0.0;
                 let side2_blocked =
-                    blocked.map_or(false, |b| b[oy2][ox2]) || wall_hp_ratio[oy2][ox2] > 0.0;
+                    blocked.is_some_and(|b| b[oy2][ox2]) || wall_hp_ratio[oy2][ox2] > 0.0;
                 if side1_blocked && side2_blocked {
                     continue;
                 }
@@ -420,7 +420,7 @@ pub fn find_path_to_building(
     let eff_range = if can_attack_over_walls {
         (attack_range - 0.05).max(0.35)
     } else {
-        attack_range.min(0.95).max(0.35)
+        attack_range.clamp(0.35, 0.95)
     };
 
     let tile_attack_point = |tx: u8, ty: u8| -> (f32, f32) {
@@ -498,10 +498,10 @@ pub fn find_path_to_building(
         (-1, 0, 1.0),
         (0, 1, 1.0),
         (0, -1, 1.0),
-        (1, 1, 1.4142),
-        (1, -1, 1.4142),
-        (-1, 1, 1.4142),
-        (-1, -1, 1.4142),
+        (1, 1, std::f32::consts::SQRT_2),
+        (1, -1, std::f32::consts::SQRT_2),
+        (-1, 1, std::f32::consts::SQRT_2),
+        (-1, -1, std::f32::consts::SQRT_2),
     ];
 
     let mut goal_tile: Option<(u8, u8)> = None;
@@ -542,9 +542,9 @@ pub fn find_path_to_building(
                 let ox2 = curr.x as usize;
                 let oy2 = (curr.y as i32 + dy) as usize;
                 let side1_blocked =
-                    blocked.map_or(false, |b| b[oy1][ox1]) || wall_hp_ratio[oy1][ox1] > 0.0;
+                    blocked.is_some_and(|b| b[oy1][ox1]) || wall_hp_ratio[oy1][ox1] > 0.0;
                 let side2_blocked =
-                    blocked.map_or(false, |b| b[oy2][ox2]) || wall_hp_ratio[oy2][ox2] > 0.0;
+                    blocked.is_some_and(|b| b[oy2][ox2]) || wall_hp_ratio[oy2][ox2] > 0.0;
                 if side1_blocked && side2_blocked {
                     continue;
                 }

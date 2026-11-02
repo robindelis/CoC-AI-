@@ -12,7 +12,6 @@ Compresses per-episode reinforcement learning telemetry by ~35x–50x using:
 from __future__ import annotations
 
 import base64
-import json
 import math
 import zlib
 from typing import Any, Dict, List, Optional, Tuple
@@ -161,11 +160,14 @@ def enrich_sparse_history_records(records: List[Dict[str, Any]]) -> List[Dict[st
             else round(max(4.0, min(42.0, 18.0 + 6.0 * math.sin(i * 0.17))), 1)
         )
         active_steps = max(1, int(round(steps * (1.0 - noop_pct / 100.0))))
-        spell_steps = int(r.get("spell_steps") if r.get("spell_steps") is not None else min(12, max(4, active_steps // 3)))
-        ability_steps = int(r.get("ability_steps") if r.get("ability_steps") is not None else min(6, max(2, active_steps // 7)))
-        deploy_steps = int(
-            r.get("deploy_steps")
-            if r.get("deploy_steps") is not None
+        raw_spell_steps = r.get("spell_steps")
+        spell_steps = int(raw_spell_steps) if raw_spell_steps is not None else min(12, max(4, active_steps // 3))
+        raw_ability_steps = r.get("ability_steps")
+        ability_steps = int(raw_ability_steps) if raw_ability_steps is not None else min(6, max(2, active_steps // 7))
+        raw_deploy_steps = r.get("deploy_steps")
+        deploy_steps = (
+            int(raw_deploy_steps)
+            if raw_deploy_steps is not None
             else max(1, active_steps - spell_steps - ability_steps)
         )
 

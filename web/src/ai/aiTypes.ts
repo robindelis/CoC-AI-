@@ -587,8 +587,10 @@ export interface AICompactBaselineMetrics {
   reward_slope_per_100ep: number;
   entropy_slope_per_100ep: number;
   mean_noop_pct_50: number;
+  noop_pct_50?: number;
   mean_steps_50: number;
   explained_variance_50: number;
+  explained_var_50?: number;
   approx_kl_50: number;
   kl_saturation_rate_pct: number;
   clip_fraction_50: number;

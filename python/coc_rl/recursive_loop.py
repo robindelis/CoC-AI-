@@ -38,11 +38,11 @@ import torch
 from .networks import CoCActorCritic, DEFAULT_ARCH_CONFIG, GEN0_BASELINE_ARCH_CONFIG
 from .ppo import DEFAULT_HYPERPARAMS, DEFAULT_REWARD_CONFIG, format_reward_formula
 from .training_feedback import (
-    AI_PROVIDERS,
     _call_agy_flash,
     _call_opencode_argon,
     _extract_json_object,
     gather_training_telemetry,
+    run_managed_subprocess,
 )
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
@@ -346,9 +346,9 @@ def _smoke_test_rl_modules(arch_config: Optional[Dict[str, Any]] = None) -> Tupl
         with torch.no_grad():
             out = m(obs, ctx)
             assert "type_logits" in out and "tile_logits" in out and "value" in out
-            act, lp, ent, val, diag = m.get_action_and_value(obs, army_context=ctx)
+            act, _lp, _ent, _val, _diag = m.get_action_and_value(obs, army_context=ctx)
             assert act.shape == (1, 5)
-        tot, rd, rs, rdm = ppo_mod.compute_custom_reward_components(
+        tot, _rd, _rs, _rdm = ppo_mod.compute_custom_reward_components(
             {"delta_pct": 5, "delta_stars": 1, "delta_damage_ratio": 0.05, "th_just_destroyed": False, "funnel_cohesion": 1.0}
         )
         assert isinstance(tot, float)
@@ -443,7 +443,7 @@ def run_agy_strategy_research(
             "and spatial feature representation for the OpenCode Argon 4 model evolver in 2 concise sentences."
         )
         try:
-            proc = subprocess.run(
+            rc, out_str, _ = run_managed_subprocess(
                 [
                     agy_bin,
                     "--agent",
@@ -454,13 +454,11 @@ def run_agy_strategy_research(
                     "-p",
                     prompt,
                 ],
-                capture_output=True,
-                text=True,
                 cwd=REPO_ROOT,
-                timeout=timeout_sec,
+                timeout_sec=timeout_sec,
             )
-            if proc.returncode == 0 and (proc.stdout or "").strip():
-                raw_out = (proc.stdout or "").strip()
+            if rc == 0 and out_str.strip():
+                raw_out = out_str.strip()
                 cleaned_lines = [
                     ln.strip()
                     for ln in raw_out.splitlines()
@@ -602,7 +600,7 @@ def trigger_model_visualizer_agent(
                 "to showcase the exact model currently being used in the Model Trainer."
             )
             try:
-                subprocess.run(
+                run_managed_subprocess(
                     [
                         agy_bin,
                         "--agent",
@@ -614,9 +612,7 @@ def trigger_model_visualizer_agent(
                         prompt,
                     ],
                     cwd=REPO_ROOT,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    timeout=180,
+                    timeout_sec=180,
                 )
             except Exception:
                 pass
@@ -699,15 +695,13 @@ def execute_opencode_argon_code_edit(
     agent_summary = ""
     error_msg: Optional[str] = None
     try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
+        rc, out_str, err_str = run_managed_subprocess(
+            cmd=cmd,
             cwd=REPO_ROOT,
-            timeout=timeout_sec,
+            timeout_sec=timeout_sec,
         )
         text_parts: List[str] = []
-        for line in (proc.stdout or "").splitlines():
+        for line in out_str.splitlines():
             line = line.strip()
             if not line or not line.startswith("{"):
                 continue
@@ -720,8 +714,8 @@ def execute_opencode_argon_code_edit(
             except Exception:
                 continue
         agent_summary = "".join(text_parts).strip()
-        if proc.returncode != 0 and not agent_summary:
-            error_msg = f"opencode exited with {proc.returncode}: {(proc.stderr or '')[:300]}"
+        if rc != 0 and not agent_summary:
+            error_msg = f"opencode exited with {rc}: {err_str[:300]}"
     except Exception as exc:
         error_msg = str(exc)
 
@@ -1267,7 +1261,7 @@ def _build_deterministic_diagnosis_and_solutions(
     near_miss = metrics["star_funnel"]["near_miss_85_to_99_pct_rate"]
     v_gap = metrics["inter_village_gap_pct"]
     worst_v = metrics["worst_village"]
-    noop_pct = metrics["mean_noop_pct_50"]
+    metrics["mean_noop_pct_50"]
     ev_50 = metrics["explained_variance_50"]
     cal_gap = abs(metrics["calibration_gap"])
     tile_sat = metrics["head_saturation_pct"]["tile_xy"]
@@ -2477,7 +2471,7 @@ def sync_recursive_loop_to_vault(loop_state: Dict[str, Any]) -> str:
 - **Target Problem Solved**: **`{'YES ✅' if ver.get('problem_solved') else 'NO ❌'}`**
 - **Empirical Takeaway**: {ver.get('analysis_summary')}
 
-| Verification Metric (300-Ep Mean) | Pre-Change Baseline | Post-Test Result | Verified Delta ($\Delta$) |
+| Verification Metric (300-Ep Mean) | Pre-Change Baseline | Post-Test Result | Verified Delta ($\\Delta$) |
 | :--- | :---: | :---: | :---: |
 | **300-Ep Mean Destruction %** | `{s_m.get('mean_pct_50', 0):.2f}%` | **`{pm.get('mean_pct_50', 0):.2f}%`** | **`{d.get('delta_mean_pct_50', 0):+.2f}%`** |
 | **2★+ Town Hall 18 Takedown Rate** | `{s_m.get('two_star_th_rate_50', 0):.1f}%` | **`{pm.get('two_star_th_rate_50', 0):.1f}%`** | **`{d.get('delta_two_star_th_rate', 0):+.1f}%`** |
@@ -2700,8 +2694,8 @@ def run_recursive_improvement_cycle(
     selected_solution_ids: Optional[List[str]] = None,
     run_code_agent: bool = True,
     use_llm: bool = True,
-    start_training_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
-    restart_new_arch_callback: Optional[Callable[[Dict[str, Any], int], None]] = None,
+    start_training_callback: Optional[Callable[[Dict[str, Any]], Any]] = None,
+    restart_new_arch_callback: Optional[Callable[[Dict[str, Any], int], Any]] = None,
 ) -> Dict[str, Any]:
     """
     Executes one full cycle of the Recursive Improvement & Progressive Architecture Evolution Loop:
