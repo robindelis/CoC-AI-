@@ -35,7 +35,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from .networks import CoCActorCritic, DEFAULT_ARCH_CONFIG
+from .networks import CoCActorCritic, DEFAULT_ARCH_CONFIG, GEN0_BASELINE_ARCH_CONFIG
 from .ppo import DEFAULT_HYPERPARAMS, DEFAULT_REWARD_CONFIG, format_reward_formula
 from .training_feedback import (
     AI_PROVIDERS,
@@ -71,6 +71,7 @@ VAULT_EVOLUTION_LEDGER_PATH = os.path.join(ARCHITECTURES_DIR, "Model_Architectur
 
 _config_lock = threading.Lock()
 _loop_lock = threading.Lock()
+_chart_lock = threading.Lock()
 
 
 def _get_git_short_sha() -> str:
@@ -94,7 +95,7 @@ def _get_git_short_sha() -> str:
 def get_default_experiment_config() -> Dict[str, Any]:
     return {
         "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "arch_config": dict(DEFAULT_ARCH_CONFIG),
+        "arch_config": dict(GEN0_BASELINE_ARCH_CONFIG),
         "reward_config": dict(DEFAULT_REWARD_CONFIG),
         "hyperparams": dict(DEFAULT_HYPERPARAMS),
     }
@@ -443,8 +444,20 @@ def run_agy_strategy_research(
                 timeout=timeout_sec,
             )
             if proc.returncode == 0 and (proc.stdout or "").strip():
-                agy_summary = (proc.stdout or "").strip()[-800:]
-                agy_executed = True
+                raw_out = (proc.stdout or "").strip()
+                cleaned_lines = [
+                    ln.strip()
+                    for ln in raw_out.splitlines()
+                    if ln.strip()
+                    and not ln.strip().startswith("#")
+                    and not ln.strip().startswith("---")
+                ]
+                joined = " ".join(cleaned_lines)
+                if len(joined) > 650:
+                    idx = joined.rfind(". ", 0, 650)
+                    joined = joined[: idx + 1] if idx > 150 else joined[:650]
+                agy_summary = joined.strip()
+                agy_executed = bool(agy_summary)
         except Exception:
             pass
 
@@ -536,7 +549,7 @@ def trigger_model_visualizer_agent(
     total_params = 0
     try:
         import coc_rl.networks as net_mod
-        from .visualize import ensure_architecture_diagrams
+        from . import ensure_architecture_diagrams
 
         importlib.reload(net_mod)
         fresh_model = net_mod.CoCActorCritic(arch_config=eff_arch)
@@ -1190,7 +1203,7 @@ def _build_deterministic_diagnosis_and_solutions(
     type_sat = metrics["head_saturation_pct"]["slot_type"]
 
     # Early warmup / exploration check: cannot diagnose plateau before sufficient data
-    if metrics["history_length"] < 20 and metrics["cumulative_episode"] < 20:
+    if metrics["history_length"] < 20 and int(metrics.get("episode", 0)) < 20:
         is_plateaued = False
         status = "healthy_progressing"
         health_score = 75
@@ -1593,8 +1606,8 @@ def _build_recursive_loop_llm_prompt(
     }
     return f"""CRITICAL INSTRUCTION: Respond immediately in a single turn with ZERO tool calls. Output ONLY the raw JSON object (no markdown fences).
 
-You are the Autonomous Recursive Self-Improvement Architect for the Clash of Clans Town Hall 18 (TH18) Deep RL Attacker (`CoCActorCritic` + PPO + GAE).
-Every 10 minutes you analyze training telemetry over the **last 300 episodes** (to eliminate short-window episode variance), determine honestly whether training is progressing, plateaued, or degrading, identify quantitative root causes, and choose one of the 4 strategic decisions:
+You are the Autonomous Progressive Architecture & Parameter Evolution Architect for the Clash of Clans Town Hall 18 (TH18) Deep RL Attacker (`CoCActorCritic` + PPO + GAE).
+At each episode horizon check (default 5,000 episodes) you analyze training telemetry over the **last 300 episodes** (to eliminate short-window episode variance), determine honestly whether training is progressing, plateaued, or degrading, identify quantitative root causes, and choose one of the 4 strategic decisions:
   1. `"keep_monitoring"`: Training is genuinely progressing over the 300-episode window.
   2. `"apply_in_place_solution"`: Apply 1 or more in-place candidate solutions (`reward_function`, `architecture`, `hyperparameters`, `code_agent`) while continuing the current model.
   3. `"rollback_to_baseline"`: Revert a recent change that degraded 300-episode combat performance.
@@ -2009,7 +2022,7 @@ def verify_solution_outcome(
 
 def generate_recursive_loop_chart(loop_state: Dict[str, Any], out_png_path: str) -> str:
     """
-    Renders a 2x2 dark-mode publication-grade chart tracking the Recursive Improvement Loop's
+    Renders a 2x2 dark-mode publication-grade chart tracking the Progressive Model Evolution Loop's
     cycles, before/after destruction & star rates, health scores, and parameter interventions.
     """
     os.makedirs(os.path.dirname(out_png_path), exist_ok=True)
@@ -2018,7 +2031,7 @@ def generate_recursive_loop_chart(loop_state: Dict[str, Any], out_png_path: str)
     fig, axes = plt.subplots(2, 2, figsize=(14, 8.2), facecolor="#0b1324")
     plt.subplots_adjust(wspace=0.24, hspace=0.34)
     fig.suptitle(
-        "Recursive AI Self-Improvement Loop — 10-Minute Autonomous Diagnosis, Intervention & Verification Ledger",
+        "Progressive Model Evolution & Parameter Tuning Loop — Episode-Horizon Diagnosis, Intervention & Verification Ledger",
         color="#fde047",
         fontsize=12.5,
         fontweight="bold",
@@ -2154,7 +2167,11 @@ def sync_recursive_loop_to_vault(loop_state: Dict[str, Any]) -> str:
     for d in (VAULT_DIR, EXPERIMENTS_DIR, DECISIONS_DIR, CHARTS_DIR):
         os.makedirs(d, exist_ok=True)
 
-    generate_recursive_loop_chart(loop_state, VAULT_LOOP_CHART_PATH)
+    with _chart_lock:
+        try:
+            generate_recursive_loop_chart(loop_state, VAULT_LOOP_CHART_PATH)
+        except Exception:
+            pass
 
     active_cfg = loop_state.get("active_config") or load_active_experiment_config()
     arch_cfg = active_cfg.get("arch_config", DEFAULT_ARCH_CONFIG)
@@ -2264,14 +2281,14 @@ def sync_recursive_loop_to_vault(loop_state: Dict[str, Any]) -> str:
         else:
             ver_md = (
                 "#### D. Post-Test Verification Results\n"
-                "- **Status**: `TESTING IN PROGRESS` — Awaiting completion of verification episode window / next 10-minute cycle check."
+                "- **Status**: `TESTING IN PROGRESS` — Awaiting completion of verification episode horizon."
             )
 
         cycle_sections.append(f"""---
 
 ### 🔄 Cycle #{cid} — Episode `{c.get('episode_at_analysis', 0):,}` (`{c.get('started_at', '')}`)
 
-- **Trigger**: `{c.get('trigger', 'scheduled_10m')}` • **Diagnostic Engine**: `{hv.get('model_used', 'opencode_argon')}`
+- **Trigger**: `{c.get('trigger', 'episode_horizon')}` • **Diagnostic Engine**: `{hv.get('model_used', 'opencode_argon')}`
 - **Health Verdict**: **`{hv.get('status', 'plateaued').upper()}` (`{hv.get('health_score', 0)}/100`)** — {hv.get('headline', '')}
 - **Progression Summary**: {hv.get('progression_summary', '')}
 
@@ -2322,11 +2339,11 @@ Back to [[00_Index_MOC|Vault Index (MOC)]] • View [[01_Model_Architecture_and_
 
 ---
 
-## 1. Autonomous Loop Overview & Active Configuration
+## 1. Progressive Evolution Loop Overview & Active Configuration
 
-The **Recursive AI Self-Improvement Loop** inspects training telemetry every **`{int(loop_state.get('interval_seconds', 600)) // 60}` minutes** (`{int(loop_state.get('interval_seconds', 600))}s`), determines whether training is healthy or plateaued, diagnoses root causes across **Network Architecture**, **Reward Shaping**, and **PPO Hyperparameters**, **documents the complete pre-change baseline state before every modification**, tests the selected solution, verifies whether the targeted bottleneck was solved, and logs the empirical outcome here for long-term institutional memory.
+The **Progressive Model Evolution & Parameter Tuning System** audits training telemetry every **`{int(loop_state.get('test_episodes_per_cycle', 5000)):,}` episodes** over a 300-episode evaluation window, determines whether training is healthy or plateaued, diagnoses root causes across **Network Architecture (`Gen 0 → Gen 5`)**, **Reward Shaping**, and **PPO Hyperparameters**, **documents the complete pre-change baseline state before every modification**, tests the selected solution or architecture morph, verifies whether the targeted bottleneck was solved, and logs the empirical outcome here for long-term institutional memory.
 
-- **Loop Status**: **`{'ENABLED (AUTONOMOUS 10m TIMER)' if loop_state.get('enabled') else 'READY / ON-DEMAND'}`** • **Current Phase**: `{loop_state.get('phase', 'idle').upper()}`
+- **Loop Status**: **`{'ENABLED (EPISODE-HORIZON AUTO-EVOLUTION)' if loop_state.get('enabled') else 'READY / ON-DEMAND'}`** • **Current Phase**: `{loop_state.get('phase', 'idle').upper()}`
 - **Total Improvement Cycles Logged**: **`{len(cycles)}`**
 - **Active Reward Formula**: `{format_reward_formula(rew_cfg)}`
 - **Active Architecture Config**: `th_threat={arch_cfg.get('th_threat_weight', 6.0)}`, `breach_prior={arch_cfg.get('breach_prior_weight', 8.0)}`, `spell_prior={arch_cfg.get('spell_combat_prior_weight', 7.5)}`, `film_scale={arch_cfg.get('film_cond_scale', 0.5)}`, `tile_scale={arch_cfg.get('tile_logit_scale', 2.2)}`
@@ -2469,7 +2486,7 @@ def run_recursive_improvement_cycle(
     loop_state: Dict[str, Any],
     training_state: Dict[str, Any],
     device: torch.device,
-    trigger: str = "scheduled_10m",
+    trigger: str = "episode_horizon",
     selected_solution_id: Optional[str] = None,
     selected_solution_ids: Optional[List[str]] = None,
     run_code_agent: bool = True,
@@ -2544,7 +2561,7 @@ def run_recursive_improvement_cycle(
                 or (last_cycle.get("selected_solution") or {}).get("requires_restart_from_scratch")
             )
             has_progressed = (cur_ep > 0) if was_restart else (cur_ep > pre_ep)
-            if has_progressed or trigger in ("verify_now", "post_test_verification", "scheduled_10m"):
+            if has_progressed or trigger in ("verify_now", "post_test_verification", "episode_horizon"):
                 loop_state["phase"] = "verifying_solution"
                 ver_res, active_config = verify_solution_outcome(
                     cycle=last_cycle,

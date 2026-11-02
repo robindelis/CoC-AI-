@@ -1,3 +1,5 @@
+import threading
+
 from .envs import CoCAttackerEnv, CoCVecAttackerEnv
 from .history_compression import (
     compress_training_history,
@@ -6,6 +8,7 @@ from .history_compression import (
 )
 from .networks import (
     DEFAULT_ARCH_CONFIG,
+    GEN0_BASELINE_ARCH_CONFIG,
     CoCActorCritic,
     CoCSpatialEncoder,
     transfer_compatible_weights,
@@ -47,10 +50,14 @@ from .training_feedback import (
 )
 
 
+_DIAGRAM_RENDER_LOCK = threading.Lock()
+
+
 def ensure_architecture_diagrams(*args, **kwargs):
     from .visualize import ensure_architecture_diagrams as _impl
 
-    return _impl(*args, **kwargs)
+    with _DIAGRAM_RENDER_LOCK:
+        return _impl(*args, **kwargs)
 
 
 __all__ = [

@@ -5,11 +5,13 @@ Manages the Attacker AI (`CoCActorCritic`), `trained_models/` checkpoint library
 """
 
 import json
+import math
 import os
 import shutil
 import sys
 import threading
 import time
+import traceback
 from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -92,6 +94,7 @@ ensure_trained_models_dir()
 _LAST_STATE_PATH = os.path.join(STATE_DIR, "last_training_state.json")
 
 _train_lock = threading.Lock()
+_train_worker_thread: Optional[threading.Thread] = None
 _training_state: Dict[str, Any] = {
     "is_training": False,
     "stop_requested": False,
@@ -107,7 +110,20 @@ _training_state: Dict[str, Any] = {
     "best_stars": 0,
     "matchup_stats": None,
     "history": [],
+    "last_error": None,
 }
+
+
+def _reconcile_training_thread_liveness() -> None:
+    """
+    Ensures `_training_state['is_training']` never stays wedged at True if the worker
+    thread is not alive.
+    """
+    global _train_worker_thread
+    if _training_state.get("is_training"):
+        if _train_worker_thread is None or not _train_worker_thread.is_alive():
+            _training_state["is_training"] = False
+            _training_state["stop_requested"] = False
 
 if os.path.exists(_LAST_STATE_PATH):
     try:
@@ -198,6 +214,8 @@ class LoopUpdateConfigRequest(BaseModel):
     arch_config: Optional[Dict[str, Any]] = None
     reward_config: Optional[Dict[str, Any]] = None
     hyperparams: Optional[Dict[str, Any]] = None
+    run_code_agent: bool = False
+    reason: Optional[str] = None
     restart_or_morph_model: bool = False
     auto_test: bool = False
     test_episodes: Optional[int] = None
@@ -221,34 +239,77 @@ def _compute_fast_telemetry_compact() -> Optional[Dict[str, Any]]:
     stars = [int(r.get("stars", 0)) for r in w]
     rews = [float(r.get("reward", 0.0)) for r in w]
     mean_pct = round(sum(pcts) / n, 2)
+    variance = sum((p - mean_pct) ** 2 for p in pcts) / n
+    std_pct = round(math.sqrt(max(0.0, variance)), 2)
+    sem_pct = round(std_pct / max(1.0, math.sqrt(n)), 2)
+
+    # Linear slope per 100 episodes over window
+    if n >= 3:
+        x_mean = (n - 1) / 2.0
+        denom = sum((i - x_mean) ** 2 for i in range(n))
+        slope_100 = round((sum((i - x_mean) * (pcts[i] - mean_pct) for i in range(n)) / max(1e-9, denom)) * 100.0, 2)
+    else:
+        slope_100 = 0.0
+
     s1 = round(sum(1 for s in stars if s >= 1) * 100.0 / n, 1)
     s2 = round(sum(1 for s in stars if s >= 2) * 100.0 / n, 1)
     s3 = round(sum(1 for s in stars if s >= 3) * 100.0 / n, 1)
     p2_given_1 = round((s2 / max(1.0, s1)) * 100.0, 1) if s1 > 0 else 0.0
     p3_given_2 = round((s3 / max(1.0, s2)) * 100.0, 1) if s2 > 0 else 0.0
+    combat_score = round(0.50 * mean_pct + 0.20 * s2 + 0.30 * s3, 2)
+
     last50 = hist[-50:]
     n50 = max(1, len(last50))
     ev50 = round(sum(float(r.get("explained_variance", 0.0)) for r in last50) / n50, 4)
     kl50 = round(sum(float(r.get("approx_kl", 0.0)) for r in last50) / n50, 4)
     noop50 = round(sum(float(r.get("noop_pct", 0.0)) for r in last50) / n50, 1)
+    ent50 = round(sum(float(r.get("entropy", 0.0)) for r in last50) / n50, 2)
+    htile50 = round(sum(float(r.get("entropy_tile", 3.5)) for r in last50) / n50, 2)
     v0_50 = round(sum(float(r.get("v_s0", 0.0)) for r in last50) / n50, 2)
     rew50 = round(sum(float(r.get("reward", 0.0)) for r in last50) / n50, 2)
     cum_ep = int(_training_state.get("cumulative_episode", 0) or _training_state.get("current_episode", len(hist)))
+
+    v_stats = (_training_state.get("matchup_stats") or {}).get("village_stats") or []
+    valid_vs = [v for v in v_stats if isinstance(v, dict) and int(v.get("episodes", 0)) > 0]
+    if valid_vs:
+        worst_v = min(valid_vs, key=lambda v: float(v.get("recent_avg_pct", v.get("avg_pct", 0.0))))
+        best_v = max(valid_vs, key=lambda v: float(v.get("recent_avg_pct", v.get("avg_pct", 0.0))))
+        worst_village = {"name": worst_v.get("name", "V1"), "recent_avg_pct": float(worst_v.get("recent_avg_pct", worst_v.get("avg_pct", 0.0)))}
+        best_village = {"name": best_v.get("name", "V1"), "recent_avg_pct": float(best_v.get("recent_avg_pct", best_v.get("avg_pct", 0.0)))}
+    else:
+        worst_village = {"name": "—", "recent_avg_pct": mean_pct}
+        best_village = {"name": "—", "recent_avg_pct": mean_pct}
+
     return {
         "episode": cum_ep,
         "history_length": len(hist),
         "eval_window_episodes": n,
         "mean_pct_300": mean_pct,
+        "std_pct_300": std_pct,
+        "sem_pct_300": sem_pct,
         "mean_pct_50": mean_pct,
+        "std_pct_50": std_pct,
+        "pct_slope_per_100ep": slope_100,
+        "combat_score_300": combat_score,
+        "one_star_rate_300": s1,
+        "two_star_th_rate_300": s2,
+        "three_star_triple_rate_300": s3,
         "one_star_rate_50": s1,
         "two_star_th_rate_50": s2,
         "three_star_triple_rate_50": s3,
+        "mean_reward_300": round(sum(rews) / n, 2),
         "mean_reward_50": round(sum(rews) / n, 2),
         "explained_variance_50": ev50,
+        "explained_var_50": round(ev50 * 100.0, 1),
         "approx_kl_50": kl50,
+        "entropy_50": ent50,
+        "h_tile_50": htile50,
         "mean_noop_pct_50": noop50,
+        "noop_pct_50": noop50,
         "critic_v_s0": v0_50,
         "calibration_gap": round(v0_50 - rew50, 2),
+        "worst_village": worst_village,
+        "best_village": best_village,
         "star_funnel": {
             "p_1star_pct": s1,
             "p_2star_given_1star_pct": p2_given_1,
@@ -324,7 +385,24 @@ def _get_fresh_architecture_manifest(force: bool = False) -> Dict[str, Any]:
 
     importlib.reload(_net_mod)
     fresh_model = _net_mod.CoCActorCritic(arch_config=active_arch_cfg)
-    manifest = ensure_architecture_diagrams(fresh_model, force=force)
+    try:
+        manifest = ensure_architecture_diagrams(fresh_model, force=force)
+    except Exception:
+        from coc_rl.visualize import extract_live_layer_specs
+
+        total_p = int(sum(p.numel() for p in fresh_model.parameters()))
+        manifest = {
+            "model_class": "CoCActorCritic",
+            "architecture_hash": arch_sig,
+            "total_params": total_p,
+            "trainable_params": total_p,
+            "files": {
+                "overview": {"svg": "docs/architecture/coc_actor_critic_overview.svg", "png": "docs/architecture/coc_actor_critic_overview.png"},
+                "detailed": {"svg": "docs/architecture/coc_actor_critic_detailed.svg", "png": "docs/architecture/coc_actor_critic_detailed.png"},
+            },
+            "live_spec": extract_live_layer_specs(fresh_model),
+            "regenerated": False,
+        }
     if isinstance(manifest.get("live_spec"), dict):
         manifest["live_spec"]["arch_config"] = fresh_model.get_arch_config()
     _ARCH_MANIFEST_CACHE = (mtime, arch_sig, manifest)
@@ -333,6 +411,7 @@ def _get_fresh_architecture_manifest(force: bool = False) -> Dict[str, Any]:
 
 @app.get("/api/ai/status")
 def get_ai_status() -> Dict[str, Any]:
+    _reconcile_training_thread_liveness()
     arch_manifest = _get_fresh_architecture_manifest(force=False)
     live_params = int(arch_manifest.get("total_params") or 1360000)
     saved_models = list_trained_models()
@@ -532,150 +611,168 @@ def run_trained_model_rollout(req: RolloutRequest) -> Dict[str, Any]:
 
 @app.post("/api/ai/train/start")
 def start_ppo_training(req: TrainStartRequest) -> Dict[str, Any]:
+    global _train_worker_thread
     with _train_lock:
+        _reconcile_training_thread_liveness()
         if _training_state["is_training"]:
             return {
                 "started": False,
                 "reason": "Training already in progress",
                 "training": _training_state,
             }
+
+        is_scratch = not req.resume_from or str(req.resume_from).strip().lower() in ("scratch", "none", "")
+        preserve_loop = bool(_loop_state.pop("preserve_loop_on_scratch_start", False))
+
         _training_state["is_training"] = True
         _training_state["stop_requested"] = False
+        _training_state["last_error"] = None
         _training_state["matchup_mode"] = req.matchup_mode
         _training_state["resume_from"] = req.resume_from or "scratch"
         _training_state["current_episode"] = 0
         _training_state["total_episodes"] = req.episodes
         _training_state["history"] = []
+        if is_scratch:
+            _training_state["cumulative_episode"] = 0
+            _training_state["best_pct"] = 0
+            _training_state["best_stars"] = 0
+            _training_state["saved_filename"] = ""
 
-        # Reset episode horizon for this training session
+        # Reset episode horizon for this training session while keeping active_experiment_config intact
         horizon = max(12, int(_loop_state.get("test_episodes_per_cycle", 5000)))
         _loop_state["is_running_cycle"] = False
+        active_cfg = load_active_experiment_config()
+        _loop_state["active_config"] = active_cfg
 
-        # Only reset loop history if starting manually from scratch (not during a progressive arch morph)
-        is_scratch = not req.resume_from or str(req.resume_from).strip().lower() in ("scratch", "none", "")
-        preserve_loop = bool(_loop_state.pop("preserve_loop_on_scratch_start", False))
         if is_scratch and not preserve_loop:
-            _loop_state["cycles"] = []
-            _loop_state["current_cycle_id"] = 0
             _loop_state["active_hypothesis"] = None
             _loop_state["last_cycle_episode"] = 0
             _loop_state["next_cycle_target_episode"] = horizon
             _loop_state["episodes_until_next_cycle"] = horizon
             _loop_state["phase"] = "monitoring" if _loop_state.get("enabled", False) else "idle"
-            default_cfg = get_default_experiment_config()
-            save_active_experiment_config(default_cfg)
-            _loop_state["active_config"] = default_cfg
-            _loop_state["last_model_visualizer_sync"] = trigger_model_visualizer_agent(
-                arch_config=default_cfg.get("arch_config"),
-                reason="reset_to_gen0_baseline_on_scratch_start",
-            )
-            _get_fresh_architecture_manifest(force=True)
         else:
             if _loop_state.get("phase") in ("analyzing", "documenting_baseline", "applying_solution"):
-                _loop_state["phase"] = "testing_solution" if _loop_state.get("active_hypothesis") else ("monitoring" if _loop_state.get("enabled", False) else "idle")
+                _loop_state["phase"] = (
+                    "testing_solution"
+                    if _loop_state.get("active_hypothesis")
+                    else ("monitoring" if _loop_state.get("enabled", False) else "idle")
+                )
 
-        save_recursive_loop_state(_loop_state)
-        sync_recursive_loop_to_vault(_loop_state)
+        def _worker() -> None:
+            def _on_ep(rec: Dict[str, Any]) -> bool:
+                ep_copy = dict(rec)
+                _training_state["current_episode"] = ep_copy["episode"]
+                _training_state["cumulative_episode"] = ep_copy.get(
+                    "cumulative_episode", ep_copy["episode"]
+                )
+                _training_state["best_pct"] = ep_copy["best_pct"]
+                _training_state["best_stars"] = ep_copy["best_stars"]
+                _training_state["history"].append(ep_copy)
 
-    def _worker() -> None:
-        def _on_ep(rec: Dict[str, Any]) -> bool:
-            ep_copy = dict(rec)
-            _training_state["current_episode"] = ep_copy["episode"]
-            _training_state["cumulative_episode"] = ep_copy.get(
-                "cumulative_episode", ep_copy["episode"]
-            )
-            _training_state["best_pct"] = ep_copy["best_pct"]
-            _training_state["best_stars"] = ep_copy["best_stars"]
-            _training_state["history"].append(ep_copy)
-
-            stats_stride = max(2, int(req.batch_episodes))
-            if ep_copy["episode"] % stats_stride == 0 or ep_copy["episode"] == ep_copy["total_episodes"]:
-                try:
-                    _training_state["matchup_stats"] = compute_matchup_stats(
-                        history=_training_state["history"]
-                    )
-                except Exception:
-                    pass
-
-            return not bool(_training_state["stop_requested"])
-
-        try:
-            res = train_pytorch_ppo(
-                episodes=req.episodes,
-                batch_episodes=req.batch_episodes,
-                minibatch_size=req.minibatch_size,
-                ppo_epochs=req.ppo_epochs,
-                lr=req.lr,
-                ticks_per_step=req.ticks_per_step,
-                matchup_mode=req.matchup_mode,
-                resume_from=req.resume_from,
-                save_name=req.save_name,
-                layout_json=req.layout_json,
-                army_json=req.army_json,
-                armies_json=req.armies_json,
-                villages_json=req.villages_json,
-                on_episode_callback=_on_ep,
-            )
-            if "matchup_stats" in res:
-                _training_state["matchup_stats"] = res["matchup_stats"]
-            if "saved_filename" in res:
-                _training_state["saved_filename"] = res["saved_filename"]
-            if "army" in res:
-                _training_state["army"] = res["army"]
-            if "army_name" in res:
-                _training_state["army_name"] = res["army_name"]
-            if "armies" in res:
-                _training_state["armies"] = res["armies"]
-            if "villages" in res:
-                _training_state["villages"] = res["villages"]
-        finally:
-            with _train_lock:
-                _training_state["is_training"] = False
-                _training_state["stop_requested"] = False
-                try:
-                    os.makedirs(os.path.dirname(_LAST_STATE_PATH), exist_ok=True)
-                    compressed_blob = compress_training_history(_training_state.get("history", []))
-                    _training_state["compression"] = get_compressed_history_meta(compressed_blob)
-                    state_to_save = {
-                        k: v for k, v in _training_state.items() if k != "history"
-                    }
-                    state_to_save["history_compressed"] = compressed_blob
-                    with open(_LAST_STATE_PATH, "w", encoding="utf-8") as _f:
-                        json.dump(state_to_save, _f)
-                except Exception:
-                    pass
-
-            # If a Recursive Improvement Loop hypothesis was being tested, verify it automatically!
-            if (
-                _loop_state.get("active_hypothesis")
-                and not _loop_state.get("is_running_cycle")
-                and not _loop_state.get("suppress_post_stop_auto_verify")
-            ):
-                def _verify_after_train() -> None:
+                stats_stride = max(2, int(req.batch_episodes))
+                if ep_copy["episode"] % stats_stride == 0 or ep_copy["episode"] == ep_copy["total_episodes"]:
                     try:
-                        run_recursive_improvement_cycle(
-                            loop_state=_loop_state,
-                            training_state=_training_state,
-                            device=DEVICE,
-                            trigger="post_test_verification",
-                            use_llm=False,
-                            start_training_callback=(
-                                (lambda cfg: _launch_verification_training(cfg))
-                                if _loop_state.get("auto_apply_and_test", True)
-                                else None
-                            ),
-                            restart_new_arch_callback=(
-                                (lambda cfg, cid: _stop_and_restart_new_architecture_training(cfg, cid))
-                                if _loop_state.get("auto_apply_and_test", True)
-                                else None
-                            ),
+                        _training_state["matchup_stats"] = compute_matchup_stats(
+                            history=_training_state["history"]
                         )
                     except Exception:
                         pass
 
-                threading.Thread(target=_verify_after_train, daemon=True).start()
+                return not bool(_training_state["stop_requested"])
 
-    threading.Thread(target=_worker, daemon=True).start()
+            try:
+                res = train_pytorch_ppo(
+                    episodes=req.episodes,
+                    batch_episodes=req.batch_episodes,
+                    minibatch_size=req.minibatch_size,
+                    ppo_epochs=req.ppo_epochs,
+                    lr=req.lr,
+                    ticks_per_step=req.ticks_per_step,
+                    matchup_mode=req.matchup_mode,
+                    resume_from=req.resume_from,
+                    save_name=req.save_name,
+                    layout_json=req.layout_json,
+                    army_json=req.army_json,
+                    armies_json=req.armies_json,
+                    villages_json=req.villages_json,
+                    on_episode_callback=_on_ep,
+                )
+                if "matchup_stats" in res:
+                    _training_state["matchup_stats"] = res["matchup_stats"]
+                if "saved_filename" in res:
+                    _training_state["saved_filename"] = res["saved_filename"]
+                if "army" in res:
+                    _training_state["army"] = res["army"]
+                if "army_name" in res:
+                    _training_state["army_name"] = res["army_name"]
+                if "armies" in res:
+                    _training_state["armies"] = res["armies"]
+                if "villages" in res:
+                    _training_state["villages"] = res["villages"]
+            except Exception as exc:
+                traceback.print_exc()
+                _training_state["last_error"] = str(exc)
+            finally:
+                with _train_lock:
+                    _training_state["is_training"] = False
+                    _training_state["stop_requested"] = False
+                    try:
+                        os.makedirs(os.path.dirname(_LAST_STATE_PATH), exist_ok=True)
+                        compressed_blob = compress_training_history(_training_state.get("history", []))
+                        _training_state["compression"] = get_compressed_history_meta(compressed_blob)
+                        state_to_save = {
+                            k: v for k, v in _training_state.items() if k != "history"
+                        }
+                        state_to_save["history_compressed"] = compressed_blob
+                        with open(_LAST_STATE_PATH, "w", encoding="utf-8") as _f:
+                            json.dump(state_to_save, _f)
+                    except Exception:
+                        pass
+
+                # If a Progressive Evolution hypothesis was being tested, verify it automatically!
+                if (
+                    _loop_state.get("active_hypothesis")
+                    and not _loop_state.get("is_running_cycle")
+                    and not _loop_state.get("suppress_post_stop_auto_verify")
+                    and len(_training_state.get("history", [])) > 0
+                ):
+                    def _verify_after_train() -> None:
+                        try:
+                            run_recursive_improvement_cycle(
+                                loop_state=_loop_state,
+                                training_state=_training_state,
+                                device=DEVICE,
+                                trigger="post_test_verification",
+                                use_llm=False,
+                                start_training_callback=(
+                                    (lambda cfg: _launch_verification_training(cfg))
+                                    if _loop_state.get("auto_apply_and_test", True)
+                                    else None
+                                ),
+                                restart_new_arch_callback=(
+                                    (lambda cfg, cid: _stop_and_restart_new_architecture_training(cfg, cid))
+                                    if _loop_state.get("auto_apply_and_test", True)
+                                    else None
+                                ),
+                            )
+                        except Exception:
+                            pass
+
+                    threading.Thread(target=_verify_after_train, daemon=True).start()
+
+        worker_thread = threading.Thread(target=_worker, daemon=True)
+        _train_worker_thread = worker_thread
+        worker_thread.start()
+
+        def _bg_persist_loop() -> None:
+            try:
+                save_recursive_loop_state(_loop_state)
+                sync_recursive_loop_to_vault(_loop_state)
+            except Exception:
+                pass
+
+        threading.Thread(target=_bg_persist_loop, daemon=True).start()
+
     return {"started": True, "training": _training_state}
 
 
@@ -807,7 +904,9 @@ def _stop_and_restart_new_architecture_training(
 
 @app.post("/api/ai/train/stop")
 def stop_ppo_training() -> Dict[str, Any]:
-    _training_state["stop_requested"] = True
+    with _train_lock:
+        _training_state["stop_requested"] = True
+        _reconcile_training_thread_liveness()
     return {"stopping": True, "training": _training_state}
 
 
@@ -858,9 +957,9 @@ def configure_recursive_loop(req: LoopConfigureRequest) -> Dict[str, Any]:
 def trigger_recursive_loop_cycle(req: LoopRunCycleRequest) -> Dict[str, Any]:
     hist_len = len(_training_state.get("history", []))
     cum_ep = int(_training_state.get("cumulative_episode", 0) or _training_state.get("current_episode", 0))
-    if hist_len == 0 and cum_ep == 0:
+    if hist_len == 0 and cum_ep == 0 and not list_trained_models():
         return {
-            "error": "Cannot run diagnostic: No training episodes completed yet. Please allow training to run for at least 10 minutes to gather telemetry.",
+            "error": "Cannot run diagnostic: No training episodes or checkpoints available yet. Start training to gather episode telemetry first.",
             **_get_loop_status_payload(),
         }
     prev_auto = _loop_state.get("auto_apply_and_test", True)
@@ -1064,10 +1163,28 @@ def update_active_loop_config_parameters(req: LoopUpdateConfigRequest) -> Dict[s
     _loop_state["active_config"] = saved_cfg
 
     arch_diffs = [d for d in diffs if d.get("section") == "arch_config"]
-    if arch_diffs or req.restart_or_morph_model:
+    should_morph = bool(req.restart_or_morph_model or req.run_code_agent)
+    if req.run_code_agent and arch_diffs:
+        arch_c = saved_cfg.get("arch_config", {})
+        cid = int(_loop_state.get("current_cycle_id", 0)) + 1
+        instructions = (
+            f"Update `DEFAULT_ARCH_CONFIG` in `python/coc_rl/networks.py` to match the active studio architecture "
+            f"`{arch_c.get('arch_version', 'v4.0')}` (generation={arch_c.get('generation', 0)}, "
+            f"backbone_type='{arch_c.get('backbone_type', 'tiny_cnn')}', base_ch={arch_c.get('base_ch', 20)}, "
+            f"spatial_dim={arch_c.get('spatial_dim', 20)}, embed_dim={arch_c.get('embed_dim', 64)})."
+        )
+        execute_opencode_argon_code_edit(
+            instructions=instructions,
+            target_files=["python/coc_rl/networks.py"],
+            cycle_id=cid,
+            allow_architecture_redesign=True,
+            arch_config=arch_c,
+        )
+
+    if arch_diffs or should_morph:
         _loop_state["last_model_visualizer_sync"] = trigger_model_visualizer_agent(
             arch_config=saved_cfg.get("arch_config"),
-            reason="interactive_parameter_studio_arch_update",
+            reason=req.reason or "interactive_parameter_studio_arch_update",
         )
         try:
             _get_fresh_architecture_manifest(force=True)
@@ -1186,11 +1303,14 @@ def _init_and_start_recursive_loop_daemon() -> None:
                     continue
                 if _loop_state.get("is_running_cycle", False):
                     continue
+                _reconcile_training_thread_liveness()
                 if not _training_state.get("is_training", False):
                     continue
 
-                cum_ep = int(_training_state.get("cumulative_episode", 0) or _training_state.get("current_episode", 0))
-                if cum_ep <= 0 and len(_training_state.get("history", [])) == 0:
+                cur_ep = int(_training_state.get("current_episode", 0))
+                hist_len = len(_training_state.get("history", []))
+                cum_ep = int(_training_state.get("cumulative_episode", 0) or cur_ep)
+                if cur_ep < 12 or hist_len < 12 or cum_ep <= 0:
                     continue
 
                 horizon_eps = max(12, int(_loop_state.get("test_episodes_per_cycle", 5000)))

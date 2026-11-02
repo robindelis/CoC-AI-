@@ -29,6 +29,7 @@ from coc_rl import (
     load_active_experiment_config,
     ppo_minibatch_update,
     ppo_update_step,
+    transfer_compatible_weights,
 )
 
 if torch.cuda.is_available():
@@ -450,7 +451,9 @@ def load_attacker_model(
             arch_cfg.update(inferred_struct)
             in_channels = int(inferred_struct.get("in_channels", in_channels))
 
-    live_attacker = CoCActorCritic(
+    import coc_rl.networks as _net_mod
+
+    live_attacker = _net_mod.CoCActorCritic(
         in_channels=in_channels,
         army_context_dim=64,
         arch_config=arch_cfg,
@@ -886,7 +889,10 @@ def train_pytorch_ppo(
         device,
         attacker_model_file=resume_from if is_resuming else "scratch",
     )
-    ensure_architecture_diagrams(live_attacker)
+    try:
+        ensure_architecture_diagrams(live_attacker, force=False)
+    except Exception:
+        pass
 
     critic_param_ids = {id(p) for p in live_attacker.critic_head.parameters()}
     actor_params = [p for p in live_attacker.parameters() if id(p) not in critic_param_ids]

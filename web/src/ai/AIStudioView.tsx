@@ -336,7 +336,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
   const [matchupMode, setMatchupMode] = useState<MatchupMode>('random');
   const [resumeFrom, setResumeFrom] = useState<string>('scratch');
   const [saveName, setSaveName] = useState<string>('');
-  const [episodes, setEpisodes] = useState<number>(60);
+  const [episodes, setEpisodes] = useState<number>(5000);
   const [batchEpisodes, setBatchEpisodes] = useState<number>(12);
   const [minibatchSize, setMinibatchSize] = useState<number>(128);
   const [ppoEpochs, setPpoEpochs] = useState<number>(4);
@@ -1491,17 +1491,41 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
 
               <div
                 className="ai-form-grid"
-                style={{ gridTemplateColumns: '1fr 1fr' }}
+                style={{ gridTemplateColumns: '1.25fr 0.75fr' }}
               >
                 <label>
-                  <span>Episodes</span>
+                  <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Episodes</span>
+                    <span style={{ display: 'inline-flex', gap: 3 }}>
+                      {[300, 1000, 5000, 10000].map((epPreset) => (
+                        <button
+                          key={epPreset}
+                          type="button"
+                          disabled={isTraining}
+                          onClick={() => setEpisodes(epPreset)}
+                          style={{
+                            background: episodes === epPreset ? '#facc15' : '#131f36',
+                            color: episodes === epPreset ? '#0f172a' : '#94a3b8',
+                            border: '1px solid #334b73',
+                            borderRadius: 4,
+                            padding: '0 5px',
+                            fontSize: '0.64rem',
+                            fontWeight: 700,
+                            cursor: isTraining ? 'default' : 'pointer',
+                          }}
+                        >
+                          {epPreset >= 1000 ? `${epPreset / 1000}k` : epPreset}
+                        </button>
+                      ))}
+                    </span>
+                  </span>
                   <input
                     type="number"
                     min={1}
-                    max={5000}
+                    max={100000}
                     value={episodes}
                     disabled={isTraining}
-                    onChange={(e) => setEpisodes(Number(e.target.value))}
+                    onChange={(e) => setEpisodes(Math.max(1, Number(e.target.value)))}
                     className="clash-select"
                   />
                 </label>
@@ -1594,6 +1618,53 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   🧪 Test Models →
                 </button>
               </div>
+            </div>
+
+            {/* UNIFIED PROGRESSIVE EVOLUTION & ACTIVE ARCHITECTURE STRIP */}
+            <div className="ai-evolution-unified-strip">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span className="rl-loop-meta-chip">
+                  <span>Active Architecture</span>
+                  <code style={{ color: '#e9d5ff' }}>
+                    Gen {Number(serverStatus?.recursive_loop?.active_config?.arch_config?.generation ?? 0)} •{' '}
+                    {String(
+                      serverStatus?.recursive_loop?.active_config?.arch_config?.arch_version ??
+                        'v4.0-Gen0-TinyCNN'
+                    )}{' '}
+                    ({(serverStatus?.param_count ?? 55104).toLocaleString()} params)
+                  </code>
+                </span>
+                <span className="rl-loop-meta-chip">
+                  <span>Weight Transfer</span>
+                  <code>
+                    {String(
+                      serverStatus?.recursive_loop?.active_config?.arch_config?.weight_transfer_mode ??
+                        'warm_start'
+                    ) === 'warm_start'
+                      ? 'Warm-Start Overlap'
+                      : 'Scratch Restart'}
+                  </code>
+                </span>
+                <span className="rl-loop-meta-chip">
+                  <span>Auto-Evolution</span>
+                  <code style={{ color: serverStatus?.recursive_loop?.enabled ? '#4ade80' : '#94a3b8' }}>
+                    {serverStatus?.recursive_loop?.enabled
+                      ? `ON • Every ${(
+                          serverStatus?.recursive_loop?.test_episodes_per_cycle ?? 5000
+                        ).toLocaleString()} Eps (Next @ Ep ${(
+                          serverStatus?.recursive_loop?.next_cycle_target_episode ?? 5000
+                        ).toLocaleString()})`
+                      : 'OFF (Manual)'}
+                  </code>
+                </span>
+              </div>
+              <button
+                type="button"
+                className="speed-pill-btn active"
+                onClick={() => setTrainerTab('recursive_loop')}
+              >
+                🧬 Evolution &amp; Parameter Studio →
+              </button>
             </div>
 
             {/* SINGLE TRAINING ARMY COMPOSITION & VILLAGE LAYOUTS */}
@@ -2225,7 +2296,12 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   className="clash-btn green"
                   onClick={() => setTrainerTab('recursive_loop')}
                 >
-                  ♾️ Recursive Loop (10m)
+                  🧬 Evolution Studio (Gen{' '}
+                  {Number(
+                    serverStatus?.recursive_loop?.active_config?.arch_config
+                      ?.generation ?? 0
+                  )}
+                  )
                 </button>
               </div>
             </div>

@@ -27,6 +27,15 @@ from torch.distributions import Categorical
 NEG_INF = -1e8
 
 
+def _safe_group_count(channels: int, max_groups: int = 8) -> int:
+    """Returns the largest divisor of `channels` that is <= `max_groups` (at least 1)."""
+    ch = max(1, int(channels))
+    for g in range(min(max_groups, ch), 0, -1):
+        if ch % g == 0:
+            return g
+    return 1
+
+
 class TacticalFeatureSynthesizer(nn.Module):
     """
     Synthesizes 6 explicit Clash of Clans tactical geometry channels on-the-fly from the
@@ -117,7 +126,7 @@ class ConvNeXtV2Block(nn.Module):
 
     def __init__(self, channels: int, expansion: int = 2, groups: int = 8):
         super().__init__()
-        g = min(groups, channels)
+        g = _safe_group_count(channels, groups)
         mid = max(channels, channels * expansion)
         self.dwconv = nn.Conv2d(
             channels, channels, kernel_size=7, padding=3, groups=channels, bias=False
@@ -182,7 +191,7 @@ class UNetConvBlock(nn.Module):
 
     def __init__(self, in_ch: int, out_ch: int, groups: int = 8):
         super().__init__()
-        g = min(groups, out_ch)
+        g = _safe_group_count(out_ch, groups)
         self.block = nn.Sequential(
             nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1, bias=False),
             nn.GroupNorm(g, out_ch),
@@ -196,7 +205,8 @@ class UNetConvBlock(nn.Module):
         c1 = self.block[0](x)
         h1 = self.block[2](self.block[1](c1).to(c1.dtype))
         c2 = self.block[3](h1)
-        return self.block[5](self.block[4](c2).to(c2.dtype))
+        h2 = self.block[5](self.block[4](c2).to(c2.dtype))
+        return h1 + h2
 
 
 class TinySingleConvBlock(nn.Module):
@@ -208,7 +218,7 @@ class TinySingleConvBlock(nn.Module):
 
     def __init__(self, in_ch: int, out_ch: int, groups: int = 4):
         super().__init__()
-        g = min(groups, out_ch)
+        g = _safe_group_count(out_ch, groups)
         self.block = nn.Sequential(
             nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1, bias=False),
             nn.GroupNorm(g, out_ch),
@@ -228,7 +238,7 @@ class TinySkipUpBlock(nn.Module):
 
     def __init__(self, in_ch: int, skip_ch: int, out_ch: int, groups: int = 4):
         super().__init__()
-        g = min(groups, out_ch)
+        g = _safe_group_count(out_ch, groups)
         self.conv = nn.Sequential(
             nn.Conv2d(in_ch + skip_ch, out_ch, kernel_size=3, padding=1, bias=False),
             nn.GroupNorm(g, out_ch),
@@ -263,7 +273,7 @@ class UNetUpBlock(nn.Module):
     ):
         super().__init__()
         up_ch = max(4, in_ch // 2)
-        g_up = min(groups, up_ch)
+        g_up = _safe_group_count(up_ch, groups)
         self.up = nn.Sequential(
             nn.ConvTranspose2d(
                 in_ch,
@@ -323,7 +333,7 @@ class DilatedResBlock(nn.Module):
 
     def __init__(self, channels: int, groups: int = 8):
         super().__init__()
-        g = min(groups, channels)
+        g = _safe_group_count(channels, groups)
         self.block = nn.Sequential(
             nn.Conv2d(channels, channels, kernel_size=3, padding=2, dilation=2, bias=False),
             nn.GroupNorm(g, channels),
@@ -360,13 +370,13 @@ class CoCSpatialEncoder(nn.Module):
     def __init__(
         self,
         in_channels: int = 59,
-        base_ch: int = 20,
-        spatial_dim: int = 20,
-        embed_dim: int = 64,
-        backbone_type: str = "tiny_cnn",
-        use_coord_features: bool = False,
+        base_ch: int = 24,
+        spatial_dim: int = 24,
+        embed_dim: int = 96,
+        backbone_type: str = "coord_se_res",
+        use_coord_features: bool = True,
         use_dilated_context: bool = False,
-        use_se_attention: bool = False,
+        use_se_attention: bool = True,
         use_convnext_grn: bool = False,
         use_segnext_msca: bool = False,
         use_unet_decoder: bool = False,
@@ -376,7 +386,7 @@ class CoCSpatialEncoder(nn.Module):
         self.base_ch = base_ch
         self.spatial_dim = spatial_dim
         self.embed_dim = embed_dim
-        self.backbone_type = str(backbone_type or "tiny_cnn")
+        self.backbone_type = str(backbone_type or "coord_se_res")
         self.use_coord_features = bool(use_coord_features)
         self.use_dilated_context = bool(use_dilated_context)
         self.use_se_attention = bool(use_se_attention)
@@ -395,6 +405,7 @@ class CoCSpatialEncoder(nn.Module):
             c3 = base_ch * 4
             c4 = base_ch * 8
             self.enc1 = UNetConvBlock(effective_in_ch, c1)
+            self.stem_se = SEChannelAttention(c1) if self.use_se_attention else None
             self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
             self.enc2 = UNetConvBlock(c1, c2)
             self.dilated_context = DilatedResBlock(c2) if self.use_dilated_context else None
@@ -411,7 +422,7 @@ class CoCSpatialEncoder(nn.Module):
             self.up3 = UNetUpBlock(
                 in_ch=c4, skip_ch=c3, out_ch=c3, padding=1, output_padding=1
             )
-            g_tower = min(8, c3)
+            g_tower = _safe_group_count(c3, 8)
             self.global_tower = nn.Sequential(
                 nn.Conv2d(c3, c3, kernel_size=3, stride=2, padding=1, bias=False),
                 nn.GroupNorm(g_tower, c3),
@@ -442,6 +453,7 @@ class CoCSpatialEncoder(nn.Module):
                 if is_tiny
                 else UNetConvBlock(effective_in_ch, c1)
             )
+            self.stem_se = SEChannelAttention(c1) if self.use_se_attention else None
             self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
             self.enc2 = (
                 TinySingleConvBlock(c1, c2)
@@ -454,7 +466,7 @@ class CoCSpatialEncoder(nn.Module):
             self.bottleneck = self.enc2
             self.bottleneck_se = SEChannelAttention(c2) if self.use_se_attention else None
 
-            g_tower = min(8, c2)
+            g_tower = _safe_group_count(c2, 8)
             self.global_tower = nn.Sequential(
                 nn.Conv2d(c2, c2, kernel_size=3, stride=2, padding=1, bias=False),
                 nn.GroupNorm(g_tower, c2),
@@ -524,6 +536,8 @@ class CoCSpatialEncoder(nn.Module):
 
         if self.use_unet_decoder:
             e1 = self.enc1(x)
+            if self.stem_se is not None:
+                e1 = self.stem_se(e1)
             e2 = self.enc2(self.pool1(e1))
             if self.dilated_context is not None:
                 e2 = self.dilated_context(e2)
@@ -546,6 +560,8 @@ class CoCSpatialEncoder(nn.Module):
 
         # Fast 2-Stage Strided CNN + Skip Upsample Path (Stage 0 TinyCNN & Mid-Scale Evolutions)
         e1 = self.enc1(x)                   # (B, c1, 50, 50)
+        if self.stem_se is not None:
+            e1 = self.stem_se(e1)
         e2 = self.enc2(self.pool1(e1))      # (B, c2, 25, 25)
         if self.dilated_context is not None:
             e2 = self.dilated_context(e2)
@@ -566,7 +582,7 @@ class CoCSpatialEncoder(nn.Module):
 
 DEPLOY_FRACTION_BINS: Tuple[float, ...] = (0.0, 0.25, 0.50, 0.75, 1.00)
 
-DEFAULT_ARCH_CONFIG: Dict[str, Any] = {
+GEN0_BASELINE_ARCH_CONFIG: Dict[str, Any] = {
     "arch_version": "v4.0-Gen0-TinyCNN",
     "generation": 0,
     "backbone_type": "tiny_cnn",
@@ -589,16 +605,18 @@ DEFAULT_ARCH_CONFIG: Dict[str, Any] = {
     "logit_temp_idx": 1.6,
     "logit_temp_frac": 1.4,
     "tile_logit_scale": 2.2,
-    "th_threat_weight": 9.5,
-    "defense_threat_weight": 2.0,
-    "breach_prior_weight": 11.0,
-    "spell_combat_prior_weight": 8.0,
-    "film_cond_scale": 0.8,
-    "reg_ent_type_weight": 2.2,
-    "reg_ent_idx_weight": 2.2,
-    "reg_ent_frac_weight": 2.2,
-    "reg_ent_tile_weight": 0.12,
+    "th_threat_weight": 7.5,
+    "defense_threat_weight": 1.8,
+    "breach_prior_weight": 9.0,
+    "spell_combat_prior_weight": 7.5,
+    "film_cond_scale": 0.65,
+    "reg_ent_type_weight": 2.0,
+    "reg_ent_idx_weight": 2.0,
+    "reg_ent_frac_weight": 2.0,
+    "reg_ent_tile_weight": 0.14,
 }
+
+DEFAULT_ARCH_CONFIG: Dict[str, Any] = dict(GEN0_BASELINE_ARCH_CONFIG)
 
 
 def fraction_bin_to_value(bin_idx: int) -> float:
@@ -706,20 +724,20 @@ class CoCActorCritic(nn.Module):
         self.army_context_dim = army_context_dim
         self.num_fraction_bins = num_fraction_bins
 
-        base_ch = int(cfg.get("base_ch", 20))
-        spatial_dim_cfg = int(cfg.get("spatial_dim", 20))
-        embed_dim_cfg = int(cfg.get("embed_dim", 64))
-        head_hidden_dim = int(cfg.get("head_hidden_dim", 48))
+        base_ch = int(cfg.get("base_ch", 24))
+        spatial_dim_cfg = int(cfg.get("spatial_dim", 24))
+        embed_dim_cfg = int(cfg.get("embed_dim", 96))
+        head_hidden_dim = int(cfg.get("head_hidden_dim", 64))
         self.head_hidden_dim = head_hidden_dim
-        self.arch_version: str = str(cfg.get("arch_version", "v4.0-Gen0-TinyCNN"))
-        self.generation: int = int(cfg.get("generation", 0))
-        self.backbone_type: str = str(cfg.get("backbone_type", "tiny_cnn"))
+        self.arch_version: str = str(cfg.get("arch_version", "v4.1-Gen1-CoordSE-ResCNN"))
+        self.generation: int = int(cfg.get("generation", 1))
+        self.backbone_type: str = str(cfg.get("backbone_type", "coord_se_res"))
         self.weight_transfer_mode: str = str(
-            cfg.get("weight_transfer_mode", "scratch_restart")
+            cfg.get("weight_transfer_mode", "warm_start")
         )
-        self.use_coord_features: bool = bool(cfg.get("use_coord_features", False))
+        self.use_coord_features: bool = bool(cfg.get("use_coord_features", True))
         self.use_dilated_context: bool = bool(cfg.get("use_dilated_context", False))
-        self.use_se_attention: bool = bool(cfg.get("use_se_attention", False))
+        self.use_se_attention: bool = bool(cfg.get("use_se_attention", True))
         self.use_convnext_grn: bool = bool(cfg.get("use_convnext_grn", False))
         self.use_segnext_msca: bool = bool(cfg.get("use_segnext_msca", False))
         self.use_unet_decoder: bool = bool(
@@ -870,20 +888,20 @@ class CoCActorCritic(nn.Module):
 
     def get_arch_config(self) -> Dict[str, Any]:
         return {
-            "arch_version": str(getattr(self, "arch_version", "v4.0-Gen0-TinyCNN")),
-            "generation": int(getattr(self, "generation", 0)),
-            "backbone_type": str(getattr(self, "backbone_type", "tiny_cnn")),
+            "arch_version": str(getattr(self, "arch_version", "v4.1-Gen1-CoordSE-ResCNN")),
+            "generation": int(getattr(self, "generation", 1)),
+            "backbone_type": str(getattr(self, "backbone_type", "coord_se_res")),
             "weight_transfer_mode": str(
-                getattr(self, "weight_transfer_mode", "scratch_restart")
+                getattr(self, "weight_transfer_mode", "warm_start")
             ),
             "in_channels": int(self.in_channels),
             "base_ch": int(self.encoder.base_ch),
             "spatial_dim": int(self.encoder.spatial_dim),
             "embed_dim": int(self.encoder.embed_dim),
-            "head_hidden_dim": int(getattr(self, "head_hidden_dim", 48)),
-            "use_coord_features": bool(getattr(self, "use_coord_features", False)),
+            "head_hidden_dim": int(getattr(self, "head_hidden_dim", 64)),
+            "use_coord_features": bool(getattr(self, "use_coord_features", True)),
             "use_dilated_context": bool(getattr(self, "use_dilated_context", False)),
-            "use_se_attention": bool(getattr(self, "use_se_attention", False)),
+            "use_se_attention": bool(getattr(self, "use_se_attention", True)),
             "use_convnext_grn": bool(getattr(self, "use_convnext_grn", False)),
             "use_segnext_msca": bool(getattr(self, "use_segnext_msca", False)),
             "use_unet_decoder": bool(getattr(self, "use_unet_decoder", False)),
@@ -1058,7 +1076,11 @@ class CoCActorCritic(nn.Module):
         else:
             chosen_frac_bin = action[:, 4].long().clamp(0, self.num_fraction_bins - 1)
 
-        # 4. Spatial Tile Distribution (50x50 = 2500 tiles)
+        # Conditioned 50x50 Spatial Tile Pointer (including chosen_frac_bin signal)
+        frac_onehot = F.one_hot(
+            chosen_frac_bin.clamp(0, self.num_fraction_bins - 1),
+            num_classes=self.num_fraction_bins,
+        ).float()
         cond_spatial = self.tile_cond_proj(frac_cond_emb).unsqueeze(-1).unsqueeze(-1)
         if self.head_gate is not None:
             gate_w = self.head_gate(frac_cond_emb).unsqueeze(-1).unsqueeze(-1)
@@ -1069,8 +1091,16 @@ class CoCActorCritic(nn.Module):
         is_spell = (chosen_type == 6).float().unsqueeze(-1)
         raw_tile_logits = self._compute_raw_tile_logits(fused_spatial, is_spell)
 
+        th_alive_ratio = obs[:, 2:3].amax(dim=(-2, -1), keepdim=True)
+        cleanup_focus = (1.0 - th_alive_ratio) * 2.5 * obs[:, 0:1]
+        surgical_funnel = (
+            frac_onehot[:, 0:1].unsqueeze(-1).unsqueeze(-1)
+            * (obs[:, 56:59].sum(dim=1, keepdim=True).clamp(max=1.0) if obs.shape[1] >= 59 else obs[:, 0:1])
+        )
         threat_field = (
             0.6 * obs[:, 0:1]
+            + cleanup_focus
+            + 0.8 * surgical_funnel
             + self.defense_threat_weight * obs[:, 1:2]
             + self.th_threat_weight * obs[:, 2:3]
         )

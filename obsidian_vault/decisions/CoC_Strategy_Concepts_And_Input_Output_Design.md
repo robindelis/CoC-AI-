@@ -152,3 +152,24 @@ The output space is factorized into **4 autoregressively conditioned discrete ac
 │    `warm_start` or `scratch_restart`, verifies smoke test, and logs to Obsidian   │
 └───────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 5. Tactical Research Findings & I/O Recommendations Ledger
+
+### 5.1 Cycle #1 Audit: Gen 1 (`v4.1-Gen1-CoordSE-ResCNN`) → Gen 2 Evolution
+- **Evaluation Date**: 2026-11-02
+- **Telemetry Analyzed**:
+  - Model: `v4.1-Gen1-CoordSE-ResCNN` (Gen 1)
+  - Mean Destruction: `67.8%` | 2-Star TH18: `75.7%` | 3-Star Triple: `7.0%`
+  - Spatial Deploy Spread: `2.90t std` (tightened from $>7.0\text{t}$ baseline)
+  - Worst Village: `TH18 Offset Diamond (Hot Candle + Longshot)` at `59.0%`
+- **Classical CoC Strategy Diagnosis**:
+  1. **Sparse Channel Contrast Collapse**: Key TH18 lethal defenses—notably `Hot Candle` (`Ch 54`, 10.5t range, up to 6 melt flames), `Monolith` (`Ch 50`), and `Spell Towers` (`Ch 49`)—occupy only 1–2 discrete tiles on the entire 50×50 board (<0.1% spatial activation). Under standard Squeeze-and-Excitation (`SE`), global average pooling dilutes these critical lethal spikes against the dense background of outer trash buildings (`Ch 57..58`) and walls (`Ch 3`), causing the policy to sleepwalk Hero Charges directly into unmitigated melt beams.
+  2. **Hero Charge / Warden Walk Splash Radius Deficit**: A Warden Walk and Hero Charge requires assessing incoming defense threat over a 7.0t–10.5t radius (Warden aura 7.0t, Hot Candle 10.5t, Fireball 4.0t, Monolith 11.0t). The shallow 3×3 residual convolutions in Gen 1 lack the receptive field to anticipate the lethal focus-fire zone before Healers and Heroes commit into the compartment.
+  3. **Spell vs Perimeter Spatial Action Entanglement**: Totem spells (`idx=0`) and Rage spells (`idx=1`) must be dropped inside the Hot Candle / core pocket ahead of the push, but the single spatial convolution head remains biased toward valid perimeter deployment tiles (`Ch 4 == 0`).
+- **Tactical I/O Recommendations for OpenCode Argon 4 Evolver (`Gen 2: v4.2-ConvNeXtV2-GRN`)**:
+  1. **Global Response Normalization (`GRN`)**: Introduce ConvNeXt V2 blocks with feature-contrast normalization ($L_2$ feature competition across channels) to prevent channel saturation and amplify sparse defense channel activations (`Ch 50`, `Ch 54`).
+  2. **7×7 Depthwise Receptive Field**: Upgrade the spatial backbone to 7×7 depthwise convolutions to naturally capture the full 7.0t–10.5t Warden Walk and Hot Candle threat radius without strided resolution loss.
+  3. **Dual-Branch Spatial Pointer Head**: Decouple exterior perimeter unit deployment from interior combat spell casting (`use_dual_spatial_head=True`) so Rage/Totem drops can precisely target core defense clusters.
+

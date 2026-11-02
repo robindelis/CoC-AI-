@@ -1181,7 +1181,7 @@ Open the interactive 2D whiteboard visualizer presenting the 59-channel stacked 
 - [[decisions/Architecture_Decisions_And_System_Memory|Project Memory, Architectural Decision Records (ADRs) & Source of Truth]]
 
 ### 4. Empirical Benchmark Logs & AI Training Diagnostics (`experiments/`)
-- [[experiments/Recursive_AI_Improvement_Loop|Recursive AI Self-Improvement Loop — 10-Minute Autonomous Diagnosis, Pre-Change Baselines & Verification Ledger]]
+- [[experiments/Recursive_AI_Improvement_Loop|Progressive Model Evolution & Parameter Tuning Loop — Episode-Horizon Diagnosis, Pre-Change Baselines & Verification Ledger]]
 - [[experiments/Experiment_Log_And_Benchmarks|Master Experiment Log & Single-Army Specialist Benchmarks]]
 - [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Telemetry Architecture & PPO Pathology Fixes]]
 """
@@ -1493,13 +1493,13 @@ Full Dossier: [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagno
         "width": 1500,
         "height": 720,
         "color": "6",
-        "text": """### ♾️ Recursive AI Self-Improvement Loop (10-Minute Autonomous Cycle)
+        "text": """### 🧬 Progressive Model Evolution & Parameter Studio (Episode-Horizon Cycle)
 
-Full Long-Term Memory Ledger: [[experiments/Recursive_AI_Improvement_Loop|Recursive AI Self-Improvement Loop — Pre-Change Snapshots, Solutions & Verified Results]]
+Full Long-Term Memory Ledger: [[experiments/Recursive_AI_Improvement_Loop|Progressive Model Evolution & Parameter Tuning Loop — Pre-Change Snapshots, Solutions & Verified Results]]
 
-- **Autonomous Cadence**: Analyses training results every **10 minutes** (`600s`) or immediately after a verification training burst completes.
-- **Mandatory Pre-Change Baseline Snapshot**: Before every modification, documents the exact **Network Architecture** (`arch_config`), **Reward Shaping Formula & Weights** (`reward_config`), **PPO Hyperparameters** (`hyperparams`), and **Baseline Telemetry** (`pre_change_snapshot`) so we can rigorously analyze what worked when and learn from every intervention.
-- **Multi-Domain Hypothesis Generation**: Proposes 3–4 ranked candidate solutions across `architecture`, `reward_function`, `hyperparameters`, and `combined`, tests the selected solution, verifies whether the diagnosed plateau root cause was solved (`SOLVED` / `IMPROVED` / `ROLLED BACK`), and feeds the empirical lessons into subsequent cycles.""",
+- **Episode-Horizon Cadence**: Audits 300-episode training telemetry every **5,000 episodes** (configurable: 300 to 10,000 eps) or immediately after a verification training burst completes.
+- **Mandatory Pre-Change Baseline Snapshot**: Before every modification, documents the exact **Network Architecture** (`arch_config`, `Gen 0 → Gen 5`), **Reward Shaping Formula & Weights** (`reward_config`), **PPO Hyperparameters** (`hyperparams`), and **Baseline Telemetry** (`pre_change_snapshot`) so we can rigorously analyze what worked when and learn from every intervention.
+- **Multi-Domain Hypothesis & SOTA Vision Morphing**: Combines AGY CoC strategy research (`gemini-3.8-flash-medium`) with OpenCode Argon 4 (`google-vertex/gemini-4-argon#medium`) to tune parameters or progressively morph the vision backbone (`Gen 0 TinyCNN` → `Gen 5 Full Attention U-Net`) and automatically sync `model-visualizer`.""",
     })
     nodes.append({
         "id": "recursive-loop-chart",
@@ -1517,7 +1517,7 @@ Full Long-Term Memory Ledger: [[experiments/Recursive_AI_Improvement_Loop|Recurs
         "toNode": "recursive-loop-summary",
         "toSide": "top",
         "color": "6",
-        "label": "10m Recursive Diagnosis → Pre-Change Snapshot → Test → Verify",
+        "label": "Episode-Horizon Diagnosis → Pre-Change Snapshot → Morph/Tune → Verify",
     })
 
     canvas_data = {

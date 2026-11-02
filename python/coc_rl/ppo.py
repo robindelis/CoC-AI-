@@ -16,13 +16,13 @@ DEFAULT_REWARD_CONFIG: Dict[str, float] = {
     "star_weight": 12.0,
     "th_bonus": 20.0,  # Cycle 20 TH18 takedown milestone bonus
     "damage_weight": 15.0,
-    "funnel_weight": 0.08,
+    "funnel_weight": 0.10,
     "invalid_penalty": 0.05,
     "early_noop_penalty": 0.02,
-    "high_pct_milestone_75": 2.0,
-    "high_pct_milestone_90": 4.0,
-    "triple_wipe_bonus": 6.0,
-    "pacing_wait_bonus": 0.02,
+    "high_pct_milestone_75": 2.5,
+    "high_pct_milestone_90": 5.0,
+    "triple_wipe_bonus": 8.0,
+    "pacing_wait_bonus": 0.03,
 }
 
 DEFAULT_HYPERPARAMS: Dict[str, Any] = {

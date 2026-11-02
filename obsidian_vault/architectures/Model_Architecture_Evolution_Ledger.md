@@ -65,3 +65,14 @@ Instead of locking into a single static neural network, `python/coc_rl/networks.
     - `critic_head`: `MLP(64 -> 48 -> 1)` (`3,169` params)
 - **Planned Next Evolution Step (Gen 0 $\to$ Gen 1 after 5,000 Episodes)**:
   - Once `Gen 0` plateaus after 5,000 episodes, `opencode-model-evolver` (`google-vertex/gemini-4-argon#medium`) will analyze the plateau and morph the network toward **Gen 1 (`v4.1-CoordSE-ResCNN`)** or **Gen 2 (`v4.2-ConvNeXtV2-GRN`)**, introducing explicit TH18 polar/CoordConv channels, Squeeze-and-Excitation channel gating for the 59 sparse planes, and deeper $7\times 7$ depthwise / dilated receptive fields.
+
+---
+
+### 🔄 Cycle #1 — Generation 1 (`v4.1-Gen1-CoordSE-ResCNN`)
+
+- **Timestamp**: `2026-11-01 20:39:17` • **Episode**: `6,240`
+- **Transition**: `v4.0-Gen0-TinyCNN` (`55,104` params) → **`v4.1-Gen1-CoordSE-ResCNN`** (**`129,852` params**)
+- **Weight Handling Mode**: **`WARM_START`**
+- **Pre-Morph Telemetry**: Mean Destr `81.42%`, 2★+ TH18 `85.3%`, 3★ Triple `27.3%`, Combat Score `65.96/100`
+- **AGY CoC Strategy & I/O Research (`gemini-3.8-flash-medium`)**: [Rule-of-3 Funneling & TH18 Line-of-Sight Coordinate Geometry] At 81.4% mean destruction (85.3% 2★ TH18, 27.3% 3★), tactical bottleneck requires Enable `TacticalFeatureSynthesizer` (`use_coord_features=True`) to inject 6 explicit CoC spatial strategy planes `(X, Y, TH18_Radial_Dist, TH18_LoS_Angle, Exterior_Funnel_Trash, Active_Frontline_Zone)` plus `SEChannelAttention` (`use_se_attention=True`) to dynamically weight the 59 unit/defense channels.
+- **Architectural Morph Rationale**: Triggered after plateauing on Gen 0 (`v4.0-Gen0-TinyCNN` at 81.4% mean destr, 27.3% 3★, worst village `Offset Diamond (Hot Candle)` at 76.9%). Guided by the Obsidian SOTA Vision Catalog and AGY CoC Strategy Research, OpenCode Argon 4 (`google-vertex/gemini-4-argon#medium`) morphs Stage 0 TinyCNN into Gen 1 `CoordSE-ResCNN` by enabling `TacticalFeatureSynthesizer` (6 explicit CoC strategy planes: X/Y coords, TH18 radial distance & Siege LoS angle, exterior funnel trash density, and active frontline zone), double 3x3 residual blocks, and `SEChannelAttention` (`base_ch=24, embed_dim=96`) (`129,852` params, weight mode: `warm_start`).
