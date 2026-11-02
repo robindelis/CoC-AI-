@@ -1,7 +1,7 @@
 {
-  "last_synced_commit": "04b1033a06f92cc438771ddf79b3967df6b362a0",
-  "last_synced_commit_short": "04b1033",
-  "last_synced_at": "2026-11-02T11:10:36.721596+00:00",
-  "last_synced_subject": "feat(visualize): reconcile live layer specs, dual pointer spatial head, and manifest telemetry with active codebase",
+  "last_synced_commit": "d567ba1f74e00cf55bb24ee760b42c9653de703a",
+  "last_synced_commit_short": "d567ba1",
+  "last_synced_at": "2026-11-02T15:00:22.758212+00:00",
+  "last_synced_subject": "chore(model-visualizer): reconcile live architecture diagrams and manifest with latest codebase",
   "branch": "main"
 }

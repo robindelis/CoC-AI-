@@ -6,15 +6,15 @@ tags:
   - ppo
   - architecture
 updated: 2026-11-02
-last_synced_commit: "04b1033"
-last_synced_at: "2026-11-02 11:10:36"
+last_synced_commit: "d567ba1"
+last_synced_at: "2026-11-02 15:00:22"
 ---
 
 # 🏰 CoC TH18 Deep RL — Architecture & Training Vault
 
 > [!NOTE] 🔄 Codebase Synchronization Status
-> **Synchronized Commit**: [`04b1033`](file:///home/robin/Projects/CoC) &mdash; *feat(visualize): reconcile live layer specs, dual pointer spatial head, and manifest telemetry with active codebase*
-> **Synced At**: `2026-11-02 11:10:36 UTC` • **Full SHA**: `04b1033a06f92cc438771ddf79b3967df6b362a0`
+> **Synchronized Commit**: [`d567ba1`](file:///home/robin/Projects/CoC) &mdash; *chore(model-visualizer): reconcile live architecture diagrams and manifest with latest codebase*
+> **Synced At**: `2026-11-02 15:00:22 UTC` • **Full SHA**: `d567ba1f74e00cf55bb24ee760b42c9653de703a`
 
 Welcome to the central research vault tracking our **v3.0 59-Channel Dedicated Spatial CNN & Single-Army Specialist Actor-Critic** architecture, input/output tensor specifications, per-troop, per-hero, per-spell, and per-defense spatial encodings, and empirical training benchmarks for Clash of Clans Town Hall 18.
 
@@ -31,7 +31,7 @@ Open the interactive 2D whiteboard visualizer presenting the 59-channel stacked 
 
 | Model Run | Arch | Inputs (`obs` + `army_context`) | Dedicated Army Composition | Total Episodes | Peak Combat Record | Status |
 | :--- | :---: | :---: | :--- | :---: | :---: | :---: |
-| [[runs/v3_per_defense_31ch\|v3.0 — 59-Channel Dedicated Multi-Block Dilated CNN & Single-Army Specialist Actor-Critic]] | `v3.0` | `(59, 50, 50)` + `64D` | **TH18 Thrower + Healer + Totem Smash (Meta)** | **`9,000`** (6 sessions) | **`100%` (3★)** | **ACTIVE** |
+| [[runs/v3_per_defense_31ch\|v3.0 — 59-Channel Dedicated Multi-Block Dilated CNN & Single-Army Specialist Actor-Critic]] | `v3.0` | `(59, 50, 50)` + `64D` | **TH18 Thrower + Healer + Totem Smash (Meta)** | **`9,120`** (6 sessions) | **`100%` (3★)** | **ACTIVE** |
 
 ---
 

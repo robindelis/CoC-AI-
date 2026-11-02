@@ -586,3 +586,37 @@ Defined in `CoCActorCritic` (`python/coc_rl/networks.py`), the policy parameteri
   - Eliminates unnecessary and disruptive architectural churn; model modifications occur only when structurally bottlenecked.
   - SOTA vision modules are chosen based on empirical combat evidence rather than arbitrary sequence.
   - Accurate, real-time visualization and parameter accounting in the Web UI directly synchronized with active running configurations.
+
+### ADR-021: Subprocess Process-Group Lifecycle Management, Fast-Interrupt PPO Rollout Halting, Gen 1 CoordSE Architecture Baseline Promotion, and Static Type Hardening
+- **Date**: 2026-11-02
+- **Status**: Accepted
+- **Context**:
+  1. **Subprocess Leakage & Zombie Background Daemons**: During rapid stopping or restarting of the recursive training loop or automated agent invocations (`opencode`, `agy`), child processes spawned by Python were not assigned distinct process groups (`start_new_session=True`). Consequently, standard termination only signaled the immediate parent shell, leaving orphaned child processes consuming CPU/GPU cycles.
+  2. **Sluggish Training Stop Latency**: In `train_pytorch_ppo`, the training loop only checked `stop_requested` at the end of full rollout batches (which can span 1,800 ticks across parallel vectorized environments). If a user requested stop or restart mid-rollout, the engine blocked for several seconds until all parallel workers completed.
+  3. **Stale Recursive Cycle State on Fresh Starts**: Starting a fresh training run (`is_scratch=True`) previously carried over stale diagnostic hypotheses, cycles, and evaluation episode counters from prior runs, leading to premature cycle evaluation triggers.
+  4. **Gen 1 CoordSE Baseline Promotion**: Having successfully validated the `v4.1-Gen1-CoordSE-ResCNN` architecture (~130K params with CoordConv strategy planes and Squeeze-and-Excitation channel attention), default baseline configuration in `networks.py` needed formal promotion to `GEN1_COORDSE_ARCH_CONFIG`.
+  5. **Static Typing & Cross-Language Rust Idioms**: Lack of strict type stubs for `coc_py` and clippy patterns in Rust simulation crates allowed minor typing and idiom discrepancies to accumulate.
+- **Decision**:
+  1. **Process-Group Isolation & Centralized Subprocess Manager**:
+     - Introduced `run_managed_subprocess()` and `terminate_all_active_subprocesses()` in `python/coc_rl/training_feedback.py`.
+     - All external CLI calls (`opencode`, `agy`) execute with `start_new_session=True`, tracked in a thread-safe registry `_active_subprocs`.
+     - Full process groups are terminated via `os.killpg(os.getpgid(p.pid), signal.SIGTERM)` with graceful timeout followed by `SIGKILL` fallback.
+  2. **Inter-Step Early Exit Callback in PPO Rollouts**:
+     - Added `should_stop_callback` parameter to `train_pytorch_ppo()`.
+     - Evaluated inside the per-step vectorized environment step loop (`for step_i in range(max_steps_per_ep)`), enabling sub-millisecond halting when stop/restart is requested.
+  3. **Clean Reset of Recursive Loop State on Scratch Training**:
+     - In `python/ai_server.py`, `start_ppo_training()` now explicitly terminates all active subprocesses and purges `cycles`, `current_cycle_id`, `active_hypothesis`, and resets target episode windows when `is_scratch and not preserve_loop`.
+     - When resuming, correctly initializes cumulative episode counters from checkpoint metadata.
+     - Made training completion Obsidian vault sync asynchronous (`async_vault_sync=True`) so API calls return without blocking on markdown/canvas generation.
+  4. **Promotion of `GEN1_COORDSE_ARCH_CONFIG` as Default Architecture**:
+     - Set `DEFAULT_ARCH_CONFIG = dict(GEN1_COORDSE_ARCH_CONFIG)` (`v4.1-Gen1-CoordSE-ResCNN`, 130,268 parameters) with CoordConv, Squeeze-and-Excitation, and calibrated logit scales (`tile_logit_scale=2.8`, `th_threat_weight=9.5`, `breach_prior_weight=11.5`).
+     - Added automatic disk-fallback to `trained_models/loop/active_experiment_config.json` inside `CoCActorCritic.__init__()` when `arch_config is None`.
+  5. **Static Type Hardening & Rust Clippy Refactoring**:
+     - Configured `pyrightconfig.json` and added PyO3 type stub `typings/coc_py.pyi`.
+     - Modernized Rust codebase idioms: converted `.map_or(true, ...)` to `.is_none_or(...)`, `.clamp(...)`, and pattern matching in `crates/coc-engine`, `coc-data`, and `coc-py`.
+     - Registered polyglot static analysis maintenance agent `codebase-maintainer` (`.agents/agents/codebase-maintainer/agent.md`).
+- **Consequences**:
+  - Immediate, responsive stop and restart controls in AI Studio with zero zombie child processes.
+  - Deterministic cycle isolation preventing state bleeding between training runs.
+  - Production RL policies initialize by default with spatial coordinate features and SE channel attention.
+  - Clean typing throughout Python runtime and modern idiom compliance across Rust simulation engine.
