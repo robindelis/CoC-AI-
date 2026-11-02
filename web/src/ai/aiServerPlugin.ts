@@ -219,6 +219,21 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
     const pathname = urlObj.pathname;
 
     function buildLiveArchitectureSpecFromDisk() {
+      const manifestPath = path.join(rootDir, 'docs', 'architecture', 'manifest.json');
+      if (fs.existsSync(manifestPath)) {
+        try {
+          const raw = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+          if (raw && raw.live_spec && Array.isArray(raw.live_spec.layers)) {
+            return {
+              architecture_hash: raw.architecture_hash ?? String(Date.now()),
+              spec: raw.live_spec,
+            };
+          }
+        } catch {
+          // ignore and fallback
+        }
+      }
+
       const networksPath = path.join(rootDir, 'python', 'coc_rl', 'networks.py');
       let sourceCode = '';
       try {

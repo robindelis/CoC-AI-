@@ -449,6 +449,26 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
     })
 
     # Head 4: Spatial Tile Head (U-Net up2+up1 or TinySkipUpBlock up1)
+    spell_tile_head = getattr(model, "spell_tile_conv_head", None)
+    mid_tile_ch = max(16, spatial_dim)
+    is_tiny_tile = (
+        getattr(enc, "backbone_type", "") == "tiny_cnn"
+        and not use_unet
+        and not use_dual_head
+    )
+    tile_conv_macs = (
+        spatial_dim * 1 * 50 * 50
+        if is_tiny_tile
+        else (spatial_dim * mid_tile_ch * 9 + mid_tile_ch * 1) * 50 * 50
+    )
+    spell_conv_macs = (
+        (spatial_dim * mid_tile_ch * 9 + mid_tile_ch * 1) * 50 * 50
+        if spell_tile_head is not None
+        else 0
+    )
+    gate_macs = (embed_dim + 17) * spatial_dim if head_gate is not None else 0
+    film_macs = (embed_dim + 17) * spatial_dim
+
     if use_unet:
         tile_params = (
             _mod_params(getattr(enc, "up2", None))
@@ -457,18 +477,26 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
             + _mod_params(getattr(model, "tile_cond_proj", None))
             + _mod_params(head_gate)
             + _mod_params(getattr(model, "tile_conv_head", None))
+            + _mod_params(spell_tile_head)
         )
         tile_macs = (
             (c3 * c2 * 9 + (c2 * 2) * c2 * 9 + c2 * c2 * 9) * 25 * 25
             + (c2 * c1 * 9 + (c1 * 2) * spatial_dim * 9 + spatial_dim * spatial_dim * 9) * 50 * 50
-            + (spatial_dim * 32 * 9 + 32 * 1) * 50 * 50
+            + tile_conv_macs
+            + spell_conv_macs
             + (2 * spatial_dim * max(8, spatial_dim // 4) if spatial_se is not None else 0)
-            + ((embed_dim + 17) * spatial_dim)
+            + film_macs
+            + gate_macs
         )
         tile_type = "U-Net Full 50×50 Upscale (up2 + up1) + Tile Head (Head 4)"
+        if spell_tile_head is not None:
+            tile_type += " + Dual Branch (Troop vs Spell)"
         tile_short = "UNet50×50"
         tile_desc = (
-            f"up2(12×12→25×25 + Skip2) → up1(25×25→50×50 + Skip1) → FiLM({embed_dim + 17}→{spatial_dim}) → Conv 3×3 + 1×1 (1×50×50)"
+            f"up2(12×12→25×25 + Skip2) → up1(25×25→50×50 + Skip1) → FiLM({embed_dim + 17}→{spatial_dim})"
+            + (" + Gated" if head_gate is not None else "")
+            + " → Conv 3×3 + 1×1 (1×50×50)"
+            + (" + Spell Branch" if spell_tile_head is not None else "")
         )
         tile_in_shape = [c3, 12, 12]
     else:
@@ -478,17 +506,26 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
             + _mod_params(getattr(model, "tile_cond_proj", None))
             + _mod_params(head_gate)
             + _mod_params(getattr(model, "tile_conv_head", None))
+            + _mod_params(spell_tile_head)
         )
         tile_macs = (
             (c2 + c1) * spatial_dim * 9 * 50 * 50
-            + (spatial_dim * spatial_dim * 9 + spatial_dim * 1) * 50 * 50
+            + tile_conv_macs
+            + spell_conv_macs
             + (2 * spatial_dim * max(8, spatial_dim // 4) if spatial_se is not None else 0)
-            + ((embed_dim + 17) * spatial_dim)
+            + film_macs
+            + gate_macs
         )
         tile_type = "TinySkipUpBlock (25×25→50×50) + Skip1 + Tile Head (Head 4)"
+        if spell_tile_head is not None:
+            tile_type += " + Dual Branch (Troop vs Spell)"
         tile_short = "SkipUp50×50"
+        tile_conv_desc = "Conv 1×1 (1×50×50)" if is_tiny_tile else "Conv 3×3 + 1×1 (1×50×50)"
         tile_desc = (
-            f"up1(Bilinear 25×25→50×50 + Skip1 {c2}+{c1}→{spatial_dim}) → FiLM({embed_dim + 17}→{spatial_dim}) → Conv 3×3 + 1×1 (1×50×50)"
+            f"up1(Bilinear 25×25→50×50 + Skip1 {c2}+{c1}→{spatial_dim}) → FiLM({embed_dim + 17}→{spatial_dim})"
+            + (" + Gated" if head_gate is not None else "")
+            + f" → {tile_conv_desc}"
+            + (" + Spell Branch" if spell_tile_head is not None else "")
         )
         tile_in_shape = [c2, 25, 25]
 
