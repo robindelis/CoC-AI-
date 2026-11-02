@@ -1,7 +1,7 @@
 {
-  "last_synced_commit": "d3b55215454f8a5f4d105bf4f07a76dd647ac13c",
-  "last_synced_commit_short": "d3b5521",
-  "last_synced_at": "2026-10-31T20:31:37.602580+00:00",
-  "last_synced_subject": "feat(visualize): reconcile model architecture specs, MAC calculations, and manifest with dynamic head and block dimensions",
+  "last_synced_commit": "2c6ab9e5cec797665f7afac8d7b428d50898fc19",
+  "last_synced_commit_short": "2c6ab9e",
+  "last_synced_at": "2026-11-02T10:51:02.517202+00:00",
+  "last_synced_subject": "Fix training start wedge & GroupNorm bugs, unify Gen 0-5 evolution UI, and streamline Parameter Studio",
   "branch": "main"
 }

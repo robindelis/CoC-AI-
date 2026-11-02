@@ -7,9 +7,9 @@ tags:
   - agy-research
   - coc-rl
   - benchmark-ledger
-updated: "2026-11-01"
-current_generation: "Gen 0 (v4.0-Gen0-TinyCNN)"
-current_params: 49830
+updated: "2026-11-02"
+current_generation: "Gen 1 (v4.1-Gen1-CoordSE-ResCNN)"
+current_params: 129852
 episode_step_budget: 5000
 ---
 
@@ -39,7 +39,9 @@ Instead of locking into a single static neural network, `python/coc_rl/networks.
 
 | Gen # | Arch Version Tag | Total Params | Spatial Backbone Summary | Input / Output Tactical Features | Weight Init Mode | Episodes Trained | Pre → Post 300-Ep Destr % | Pre → Post 2★ TH18 / 3★ | Status & Key Finding |
 | :---: | :--- | :---: | :--- | :--- | :---: | :---: | :---: | :---: | :--- |
-| **Gen 0** | `v4.0-Gen0-TinyCNN` | **`~50K`** | 2-layer strided CNN (`59→20` at $50\times 50$, `20→32` at $25\times 25$, bilinear + $1\times 1$ skip fuse `→20`) + `64-D` Global Tower | Raw `(59, 50, 50)` + `64-D` inventory; 4 autoregressive heads + $1\times 1$ `Conv2d(20→1)` spatial tile head | `scratch_restart` | `0 / 5,000` | *Baseline Floor* | *Baseline Floor* | **ACTIVE BASELINE** — Ready for initial 5,000-episode training run. |
+| **Gen 0** | `v4.0-Gen0-TinyCNN` | **`~50K`** | 2-layer strided CNN (`59→20` at $50\times 50$, `20→32` at $25\times 25$, bilinear + $1\times 1$ skip fuse `→20`) + `64-D` Global Tower | Raw `(59, 50, 50)` + `64-D` inventory; 4 autoregressive heads + $1\times 1$ `Conv2d(20→1)` spatial tile head | `scratch_restart` | `6,240 / 5,000` | `81.42%` | `85.3% 2★ / 27.3% 3★` | **SUPERSEDED** — Reached 81.4% destr baseline, plateaued on Offset Diamond. |
+| **Gen 1** | `v4.1-Gen1-CoordSE-ResCNN` | **`~130K`** | 2-layer ResCNN (`59+6→24` at $50\times 50$, `24→48` at $25\times 25$ with double $3\times 3$ ResBlocks, bilinear + skip fuse `→24`, bottleneck SE attention) + `96-D` Global Tower | `TacticalFeatureSynthesizer` (6 polar/LoS planes), `SEChannelAttention`, `frac_onehot` conditioned spatial pointer, cleanup & surgical funnel priors | `warm_start` | `0 / 5,000` | *Benchmarking* | *Benchmarking* | **ACTIVE GENERATION** — Morphed via warm start weight transfer; undergoing 5,000-ep benchmark. |
+
 
 ---
 

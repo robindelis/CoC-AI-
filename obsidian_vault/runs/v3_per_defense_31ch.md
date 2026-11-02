@@ -6,7 +6,7 @@ status: "active"
 total_episodes: 4
 best_pct: 100
 best_stars: 3
-updated_at: "2026-11-02 11:31:01"
+updated_at: "2026-11-02 11:50:58"
 tags:
   - coc-rl
   - ppo
@@ -145,8 +145,8 @@ $$R_t = 0.35 \cdot \Delta \%_{\text{destr}} + 15.0 \cdot \Delta \text{HP}_{\text
 
 | Attack Composition | **Central Box** | **Offset Diamond** | **Anti-Hydra Ring** | **Anti-Fireball** | **Compact Teaser** | **Avg Destruction** | **3★ Rate** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **TH18 Thrower + Healer + Totem Smash** | `34% (0★)` | `12% (0★)` | `25% (0★)` | `13% (0★)` | `53% (2★)` | **27.4%** | **0.0%** |
-| **Base Defense Rate (Avg)** | **34.0% (0.0★)** | **12.0% (0.0★)** | **25.0% (0.0★)** | **13.0% (0.0★)** | **53.0% (2.0★)** | **Overall: 27.4%** | — |
+| **TH18 Thrower + Healer + Totem Smash** | `56% (2★)` | `35% (1★)` | `84% (2★)` | `32% (1★)` | `51% (2★)` | **51.6%** | **0.0%** |
+| **Base Defense Rate (Avg)** | **56.0% (2.0★)** | **35.0% (1.0★)** | **84.0% (2.0★)** | **32.0% (1.0★)** | **51.0% (2.0★)** | **Overall: 51.6%** | — |
 
 ---
 

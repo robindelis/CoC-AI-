@@ -527,3 +527,31 @@ Defined in `CoCActorCritic` (`python/coc_rl/networks.py`), the policy parameteri
   - ~5×–8× faster initial training iteration on the ~50K-parameter `Gen 0` baseline.
   - Every architectural upgrade is empirically justified by 5,000-episode combat telemetry and permanently traced in the Obsidian Vault.
 
+### ADR-019: Safe GroupNorm Channel Factorization, Spatial Tile Conditioning via Discrete Fraction One-Hot & Prior Weighting, and Auto-Triggered Architecture Visualization
+- **Date**: 2026-11-02
+- **Status**: Accepted
+- **Context**:
+  1. **Dynamic Channel Factorization Fragility in GroupNorm**: As model evolution allows variable channel dimensions (`base_ch`, `spatial_dim`, `embed_dim`), hardcoded group counts (`groups=8` or `groups=4`) fail whenever channel dimensions are not cleanly divisible by the group count, causing PyTorch runtime crashes during instantiation or forward passes.
+  2. **Tile Pointer Blindness to Deployment Batch Size**: Previously, the spatial tile head ($50\times 50 = 2500$ logits) was conditioned on `global_emb + one_hot(type)`. However, an attacker's deployment location is heavily dependent on batch fraction: single-unit surgical scouting ($0.0$, one unit) belongs on exterior peripheral trash buildings to establish a funnel, whereas massive troop dumps ($1.0$, full reserve) or siege machines require direct breach trajectories toward high-threat compartments.
+  3. **Town Hall 18 Core Takedown vs Peripheral Cleanup Pacing**: After destroying Town Hall 18, agents frequently suffered from pathing stagnation in the empty center. Combat policies needed an explicit post-TH cleanup incentive targeting remaining perimeter defenses and resource storages.
+  4. **Visualizer Desynchronization During Dynamic Evolution**: With model evolution and parameter tuning occurring autonomously, static documentation graphs and the UI's `NetworkBuilderPanel` could desynchronize from active model configurations if not refreshed automatically.
+- **Decision**:
+  1. **Safe GroupNorm Divisor (`_safe_group_count`)**:
+     - Implemented `_safe_group_count(channels: int, max_groups: int = 8) -> int` across all neural blocks (`ConvNeXtV2Block`, `UNetConvBlock`, `TinySingleConvBlock`, `TinySkipUpBlock`, `UNetUpBlock`, `DilatedResBlock`).
+     - Dynamically selects the largest divisor of `channels` $\le \text{max\_groups}$ (falling back to 1 if prime), preventing runtime exceptions across arbitrary morphed layer widths.
+  2. **Fraction-Conditioned Spatial Pointer & Dual Priors**:
+     - Expanded spatial tile conditioning to incorporate `frac_onehot` (5-dimensional one-hot representation of chosen batch fraction bin).
+     - Augmented the tile logit threat field with two dynamic priors:
+       $$\text{cleanup\_focus} = (1.0 - \text{TH}_{\text{alive\_ratio}}) \cdot 2.5 \cdot \text{obs}_{0}$$
+       $$\text{surgical\_funnel} = \text{frac\_onehot}_{0} \cdot \left(\sum_{c=56}^{58} \text{obs}_{c}\right)$$
+       $$\text{threat\_field} = 0.6 \cdot \text{obs}_{0} + \text{cleanup\_focus} + 0.8 \cdot \text{surgical\_funnel} + w_{\text{def}} \cdot \text{obs}_{1} + w_{\text{th}} \cdot \text{obs}_{2}$$
+  3. **Transition to Generation 1 (`v4.1-Gen1-CoordSE-ResCNN`)**:
+     - Upgraded default active architecture to `Gen 1`: `base_ch=24`, `spatial_dim=24`, `embed_dim=96`, `head_hidden_dim=64`, `use_coord_features=True` (`TacticalFeatureSynthesizer` 6-channel polar/LoS injection), `use_se_attention=True` (`SEChannelAttention`), and `weight_transfer_mode="warm_start"` (`129,852` parameters).
+     - Adjusted PPO rewards: `funnel_weight=0.10`, `high_pct_milestone_75=2.5`, `high_pct_milestone_90=5.0`, `triple_wipe_bonus=8.0`, `pacing_wait_bonus=0.03`.
+  4. **Mandatory Visualizer Auto-Trigger**:
+     - Added `trigger_model_visualizer_agent()` in `python/coc_rl/recursive_loop.py` and `python/ai_server.py`.
+     - Whenever model architecture or `arch_config` is updated, the specialized `model-visualizer` agent is invoked automatically in the background to ensure `docs/architecture/` graphs and UI specs reflect the live model.
+- **Consequences**:
+  - Robust GroupNorm operation across arbitrary model architectures and channel configurations.
+  - Substantially sharper surgical funneling on exterior structures and rapid post-TH core clearing.
+  - Real-time synchronization between active model checkpoints, `NetworkBuilderPanel`, and architecture diagrams.
