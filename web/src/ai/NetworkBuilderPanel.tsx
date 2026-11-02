@@ -756,8 +756,9 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
     const armyTrackY = 236;
     const botBranchY = 330;
 
-    // U-Net vertical staircase for Stage 1 downscaling (50x50 -> 25x25 -> 12x12 -> 6x6)
-    const stage1Y = [126, 152, 178, 204];
+    const isUNet = spatialLayers.length >= 4;
+    // U-Net vertical staircase for Stage 1 downscaling
+    const stage1Y = isUNet ? [126, 152, 178, 204] : [126, 168];
 
     const splitX = startX + (spatialLayers.length + 1) * stepX;
     const globalEndX = splitX + (globalTowerLayers.length - 1) * stepX;
@@ -792,10 +793,14 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
           <rect width={svgWidth} height={svgHeight} fill="url(#bgGridGrad)" rx={8} />
 
           <text x={20} y={20} fill="#60a5fa" fontSize={10} fontWeight={800}>
-            STAGE 1 • U-NET DOWNSCALING ENCODER (50×50 → 25×25 → 12×12 → 6×6 Bottleneck)
+            {isUNet
+              ? 'STAGE 1 • U-NET DOWNSCALING ENCODER (50×50 → 25×25 → 12×12 → 6×6 Bottleneck)'
+              : 'STAGE 1 • 2-STAGE STRIDED SPATIAL ENCODER (50×50 → 25×25 Feature Grid)'}
           </text>
           <text x={splitX - 18} y={20} fill="#34d399" fontSize={10} fontWeight={800}>
-            STAGE 2 • UPSCALE TO 12×12 → GLOBAL TOWER (5 HEADS) &amp; FULL U-NET 50×50 UPSCALE (GRID POSITION)
+            {isUNet
+              ? 'STAGE 2 • UPSCALE TO 12×12 → GLOBAL TOWER (5 HEADS) & FULL U-NET 50×50 UPSCALE (GRID POSITION)'
+              : 'STAGE 2 • GLOBAL TOWER (5 HEADS) & SKIP UPSAMPLING TO 50×50 (GRID POSITION)'}
           </text>
 
           {/* INPUT 1: Spatial Observation Grid obs (59×50×50) */}
@@ -863,18 +868,20 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
           })}
 
           {/* Dashed U-Net Skip Connection 3: Enc3 (128×12×12) -> Up3 (128×12×12) */}
-          <path
-            d={`M ${startX + 3 * stepX} ${stage1Y[2] - 24} Q ${(startX + 3 * stepX + splitX) / 2} ${topBranchY - 38} ${splitX} ${topBranchY - 22}`}
-            fill="none"
-            stroke="#fb923c"
-            strokeWidth={1.6}
-            strokeDasharray="5 3"
-          />
+          {isUNet && (
+            <path
+              d={`M ${startX + 3 * stepX} ${stage1Y[2] - 24} Q ${(startX + 3 * stepX + splitX) / 2} ${topBranchY - 38} ${splitX} ${topBranchY - 22}`}
+              fill="none"
+              stroke="#fb923c"
+              strokeWidth={1.6}
+              strokeDasharray="5 3"
+            />
+          )}
 
-          {/* Upper Branch: Stage 2 Up3 (12×12) + Global Tower G2..G5 */}
+          {/* Upper Branch: Global Tower Layers */}
           {globalTowerLayers.map((gLayer, idx) => {
             const prevX = idx === 0 ? stemLastX : splitX + (idx - 1) * stepX;
-            const prevY = idx === 0 ? stage1Y[3] : topBranchY;
+            const prevY = idx === 0 ? (stage1Y[Math.min(spatialLayers.length - 1, stage1Y.length - 1)] ?? stage1Y[0]) : topBranchY;
             const curX = splitX + idx * stepX;
             const is1D = gLayer.outputShape.length === 1;
 
@@ -977,78 +984,120 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
           />
           {drawFusionCircle(fusionX, topBranchY + 34, '⊕', 'global_emb', '256D Fused State')}
 
-          {/* Lower Branch: Full U-Net Upscaling (12×12 → 25×25 → 50×50) + Skip Connections + FiLM Tile Head */}
-          {drawFilterCone(
-            splitX,
-            topBranchY,
-            up2X,
-            botBranchY + 12,
-            'UpConv 3×3 + Skip2',
-            'rgba(249, 115, 22, 0.24)',
-            '#fb923c'
-          )}
-          {/* Dashed Skip 2 from Enc2 (64×25×25) -> Up2 */}
-          <path
-            d={`M ${startX + 2 * stepX} ${stage1Y[1] + 24} Q ${(startX + 2 * stepX + up2X) / 2} ${botBranchY + 52} ${up2X - 16} ${botBranchY + 18}`}
-            fill="none"
-            stroke="#fb923c"
-            strokeWidth={1.5}
-            strokeDasharray="5 3"
-          />
-          {drawCuboid({
-            key: 'unet_up2',
-            cx: up2X,
-            cy: botBranchY + 12,
-            c: 64,
-            h: 25,
-            w: 25,
-            color: '#ea580c',
-            borderColor: '#fb923c',
-            topLabel: 'Up2: 25×25',
-            shapeLabel: '64×25×25',
-            subLabel: 'cat[Up(d3), Skip2]',
-            isSelected: selectedBlockId === 'head_tile_conv',
-            onClick: () => {
-              setSelectedBlockId('head_tile_conv');
-              setHeadFilter('head_tile_conv');
-            },
-          })}
+          {/* Lower Branch: Tile Segmentation Head */}
+          {isUNet ? (
+            <>
+              {drawFilterCone(
+                splitX,
+                topBranchY,
+                up2X,
+                botBranchY + 12,
+                'UpConv 3×3 + Skip2',
+                'rgba(249, 115, 22, 0.24)',
+                '#fb923c'
+              )}
+              {/* Dashed Skip 2 from Enc2 (64×25×25) -> Up2 */}
+              <path
+                d={`M ${startX + 2 * stepX} ${stage1Y[1] + 24} Q ${(startX + 2 * stepX + up2X) / 2} ${botBranchY + 52} ${up2X - 16} ${botBranchY + 18}`}
+                fill="none"
+                stroke="#fb923c"
+                strokeWidth={1.5}
+                strokeDasharray="5 3"
+              />
+              {drawCuboid({
+                key: 'unet_up2',
+                cx: up2X,
+                cy: botBranchY + 12,
+                c: 64,
+                h: 25,
+                w: 25,
+                color: '#ea580c',
+                borderColor: '#fb923c',
+                topLabel: 'Up2: 25×25',
+                shapeLabel: '64×25×25',
+                subLabel: 'cat[Up(d3), Skip2]',
+                isSelected: selectedBlockId === 'head_tile_conv',
+                onClick: () => {
+                  setSelectedBlockId('head_tile_conv');
+                  setHeadFilter('head_tile_conv');
+                },
+              })}
 
-          {drawFilterCone(
-            up2X,
-            botBranchY + 12,
-            up1X,
-            botBranchY,
-            'UpConv 3×3 + Skip1',
-            'rgba(249, 115, 22, 0.24)',
-            '#fb923c'
+              {drawFilterCone(
+                up2X,
+                botBranchY + 12,
+                up1X,
+                botBranchY,
+                'UpConv 3×3 + Skip1',
+                'rgba(249, 115, 22, 0.24)',
+                '#fb923c'
+              )}
+              {/* Dashed Skip 1 from Enc1 -> Up1 */}
+              <path
+                d={`M ${startX + stepX} ${stage1Y[0] + 36} Q ${(startX + stepX + up1X) / 2} ${botBranchY + 72} ${up1X - 16} ${botBranchY + 26}`}
+                fill="none"
+                stroke="#fb923c"
+                strokeWidth={1.5}
+                strokeDasharray="5 3"
+              />
+              {drawCuboid({
+                key: 'unet_up1',
+                cx: up1X,
+                cy: botBranchY,
+                c: spatialDim,
+                h: 50,
+                w: 50,
+                color: '#2563eb',
+                borderColor: '#60a5fa',
+                topLabel: 'Up1: Full 50×50',
+                shapeLabel: `${spatialDim}×50×50`,
+                subLabel: 'cat[Up(d2), Skip1]',
+                isSelected: selectedBlockId === 'head_tile_conv',
+                onClick: () => {
+                  setSelectedBlockId('head_tile_conv');
+                  setHeadFilter('head_tile_conv');
+                },
+              })}
+            </>
+          ) : (
+            <>
+              {drawFilterCone(
+                stemLastX,
+                stage1Y[Math.min(spatialLayers.length - 1, stage1Y.length - 1)] ?? stage1Y[0],
+                up1X,
+                botBranchY,
+                'TinySkipUpBlock + Skip1',
+                'rgba(249, 115, 22, 0.24)',
+                '#fb923c'
+              )}
+              {/* Dashed Skip 1 from Enc1 -> Up1 */}
+              <path
+                d={`M ${startX + stepX} ${stage1Y[0] + 36} Q ${(startX + stepX + up1X) / 2} ${botBranchY + 72} ${up1X - 16} ${botBranchY + 26}`}
+                fill="none"
+                stroke="#fb923c"
+                strokeWidth={1.5}
+                strokeDasharray="5 3"
+              />
+              {drawCuboid({
+                key: 'unet_up1',
+                cx: up1X,
+                cy: botBranchY,
+                c: spatialDim,
+                h: 50,
+                w: 50,
+                color: '#2563eb',
+                borderColor: '#60a5fa',
+                topLabel: 'Up1: 25×25→50×50',
+                shapeLabel: `${spatialDim}×50×50`,
+                subLabel: 'cat[Up(enc2), Skip1]',
+                isSelected: selectedBlockId === 'head_tile_conv',
+                onClick: () => {
+                  setSelectedBlockId('head_tile_conv');
+                  setHeadFilter('head_tile_conv');
+                },
+              })}
+            </>
           )}
-          {/* Dashed Skip 1 from Enc1 (32×50×50) -> Up1 */}
-          <path
-            d={`M ${startX + stepX} ${stage1Y[0] + 36} Q ${(startX + stepX + up1X) / 2} ${botBranchY + 72} ${up1X - 16} ${botBranchY + 26}`}
-            fill="none"
-            stroke="#fb923c"
-            strokeWidth={1.5}
-            strokeDasharray="5 3"
-          />
-          {drawCuboid({
-            key: 'unet_up1',
-            cx: up1X,
-            cy: botBranchY,
-            c: spatialDim,
-            h: 50,
-            w: 50,
-            color: '#2563eb',
-            borderColor: '#60a5fa',
-            topLabel: 'Up1: Full 50×50',
-            shapeLabel: `${spatialDim}×50×50`,
-            subLabel: 'cat[Up(d2), Skip1]',
-            isSelected: selectedBlockId === 'head_tile_conv',
-            onClick: () => {
-              setSelectedBlockId('head_tile_conv');
-              setHeadFilter('head_tile_conv');
-            },
-          })}
 
           <path
             d={`M ${fusionX} ${topBranchY + 50} C ${fusionX - 10} ${botBranchY - 70}, ${tileFiLMX} ${topBranchY + 120}, ${tileFiLMX} ${botBranchY - 42}`}
@@ -1251,9 +1300,16 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
     const botY = 205;
     const midY = 135;
 
-    const splitX = startX + 5 * stepX; // Col 5
-    const g5X = splitX + 4 * stepX; // Col 9
-    const armyProjX = splitX + 2 * stepX; // Col 7
+    const headLayer = activeLayers.find((l) => l.id === head.id);
+    const liveHeadParams = headLayer?.params ?? head.params;
+    const liveBackboneParams = activeLayers
+      .filter((l) => l.stage !== 'heads')
+      .reduce((acc, l) => acc + l.params, 0);
+    const liveSubModelTotal = liveBackboneParams + liveHeadParams;
+
+    const splitX = startX + (spatialLayers.length + 1) * stepX;
+    const g5X = splitX + (globalTowerLayers.length - 1) * stepX;
+    const armyProjX = splitX + 2 * stepX;
     const fusionX = g5X + 68;
     const globalBarX = fusionX + 58;
 
@@ -1280,8 +1336,8 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span className="arch-head-stat-pill">
-              Head: <b style={{ color: head.border }}>{head.params.toLocaleString()} p</b> • Sub-Model Total:{' '}
-              <b>{(head.backboneParams + head.params).toLocaleString()} p</b>
+              Head: <b style={{ color: head.border }}>{liveHeadParams.toLocaleString()} p</b> • Sub-Model Total:{' '}
+              <b>{liveSubModelTotal.toLocaleString()} p</b>
             </span>
             <span className="arch-head-stat-pill" style={{ color: head.border }}>
               Out: <b>{head.outputDim}</b>
@@ -1322,7 +1378,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
               SHARED ENCODER PATHWAY • Input 1: obs ({inChannels}×50×50) + Input 2: army_context ({armyContextDim}D)
             </text>
             <text x={fusionX - 10} y={18} fill={head.border} fontSize={9.2} fontWeight={800}>
-              HEAD {head.index} VOLUMETRIC PIPELINE • {head.shortTitle.toUpperCase()} ({head.params.toLocaleString()} PARAMS)
+              HEAD {head.index} VOLUMETRIC PIPELINE • {head.shortTitle.toUpperCase()} ({liveHeadParams.toLocaleString()} PARAMS)
             </text>
 
             {/* 1. Input 1: obs (10×50×50) */}
@@ -1384,7 +1440,7 @@ export const NetworkBuilderPanel: React.FC<NetworkBuilderPanelProps> = ({
 
             {/* 4. Global Tower G1..G5 */}
             {globalTowerLayers.map((gLayer, idx) => {
-              const prevX = idx === 0 ? startX + 4 * stepX : splitX + (idx - 1) * stepX;
+              const prevX = idx === 0 ? startX + spatialLayers.length * stepX : splitX + (idx - 1) * stepX;
               const curX = splitX + idx * stepX;
               const is1D = gLayer.outputShape.length === 1;
               return (

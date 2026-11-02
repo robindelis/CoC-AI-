@@ -1377,10 +1377,10 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
               </span>
             ) : serverStatus?.recursive_loop?.enabled && isTraining ? (
               <span className="ai-live-pulse-badge">
-                ● Gen{' '}
-                {Number(
+                ●{' '}
+                {String(
                   serverStatus?.recursive_loop?.active_config?.arch_config
-                    ?.generation ?? 0
+                    ?.arch_version ?? 'v4.0-TinyCNN'
                 )}{' '}
                 (
                 {(
@@ -1398,10 +1398,9 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   color: '#7dd3fc',
                 }}
               >
-                Gen{' '}
-                {Number(
+                {String(
                   serverStatus?.recursive_loop?.active_config?.arch_config
-                    ?.generation ?? 0
+                    ?.arch_version ?? 'v4.0-TinyCNN'
                 )}{' '}
                 • Horizon{' '}
                 {(
@@ -1417,12 +1416,11 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   color: '#fde047',
                 }}
               >
-                Gen{' '}
-                {Number(
+                {String(
                   serverStatus?.recursive_loop?.active_config?.arch_config
-                    ?.generation ?? 0
+                    ?.arch_version ?? 'v4.0-TinyCNN'
                 )}{' '}
-                • Cycle #{serverStatus?.recursive_loop?.current_cycle_id ?? 1}
+                • Cycle #{serverStatus?.recursive_loop?.current_cycle_id ?? 0}
               </span>
             )}
           </button>
@@ -1626,7 +1624,6 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                 <span className="rl-loop-meta-chip">
                   <span>Active Architecture</span>
                   <code style={{ color: '#e9d5ff' }}>
-                    Gen {Number(serverStatus?.recursive_loop?.active_config?.arch_config?.generation ?? 0)} •{' '}
                     {String(
                       serverStatus?.recursive_loop?.active_config?.arch_config?.arch_version ??
                         'v4.0-Gen0-TinyCNN'
@@ -2296,12 +2293,7 @@ export const AIStudioView: React.FC<AIStudioViewProps> = ({
                   className="clash-btn green"
                   onClick={() => setTrainerTab('recursive_loop')}
                 >
-                  🧬 Evolution Studio (Gen{' '}
-                  {Number(
-                    serverStatus?.recursive_loop?.active_config?.arch_config
-                      ?.generation ?? 0
-                  )}
-                  )
+                  🧬 Evolution &amp; Parameter Studio
                 </button>
               </div>
             </div>

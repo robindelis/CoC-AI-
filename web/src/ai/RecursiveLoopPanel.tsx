@@ -22,43 +22,76 @@ interface RecursiveLoopPanelProps {
   onRefreshStatus: () => Promise<void>;
 }
 
-export interface GenPresetSpec {
-  gen: number;
-  version: string;
+interface ComposableModuleSpec {
+  key: string;
   shortTitle: string;
-  backbone: string;
-  paramsLabel: string;
-  summary: string;
-  tags: string[];
-  config: {
-    arch_version: string;
-    generation: number;
-    backbone_type: string;
-    base_ch: number;
-    spatial_dim: number;
-    embed_dim: number;
-    head_hidden_dim: number;
-    critic_depth: number;
-    use_coord_features: boolean;
-    use_se_attention: boolean;
-    use_dilated_context: boolean;
-    use_convnext_grn: boolean;
-    use_segnext_msca: boolean;
-    use_unet_decoder: boolean;
-    use_dual_spatial_head: boolean;
-    use_gated_heads: boolean;
-  };
+  targetBottleneck: string;
+  detail: string;
 }
 
-export const GENERATION_LADDER: GenPresetSpec[] = [
+const COMPOSABLE_SOTA_MODULES: ComposableModuleSpec[] = [
   {
-    gen: 0,
-    version: 'v4.0-Gen0-TinyCNN',
-    shortTitle: 'TinyCNN',
-    backbone: 'tiny_cnn',
+    key: 'use_coord_features',
+    shortTitle: '+6 CoC Tactical Coords',
+    targetBottleneck: 'Perimeter Trash Drift & TH18 LoS',
+    detail: 'X/Y, TH18 radial dist & Siege ray angle, trash mask, frontline',
+  },
+  {
+    key: 'use_se_attention',
+    shortTitle: 'SE 59-Ch Attention',
+    targetBottleneck: 'Sparse Defense / Troop Re-Weighting',
+    detail: 'Squeeze-and-Excitation dynamic 59-channel gating',
+  },
+  {
+    key: 'use_convnext_grn',
+    shortTitle: 'ConvNeXt V2 7×7 GRN',
+    targetBottleneck: '7–10t Splash & Sparse Channel Collapse',
+    detail: '7×7 depthwise conv + Global Response Normalization',
+  },
+  {
+    key: 'use_dilated_context',
+    shortTitle: 'Dilated Context (d=2,4)',
+    targetBottleneck: 'Multi-Ring Wall & Defense Reach',
+    detail: 'Multi-scale dilated residual block at 25×25',
+  },
+  {
+    key: 'use_segnext_msca',
+    shortTitle: 'SegNeXt Strip MSCA',
+    targetBottleneck: 'Orthogonal Wall Compartments & Ring Bases',
+    detail: 'Anisotropic 1×7+7×1 & 1×11+11×1 strip convolutions',
+  },
+  {
+    key: 'use_dual_spatial_head',
+    shortTitle: 'Dual Troop/Spell Pointer',
+    targetBottleneck: 'Border Troop Drop vs. Interior Spell Conflict',
+    detail: 'Decouples perimeter troop funnel head from interior spell head',
+  },
+  {
+    key: 'use_unet_decoder',
+    shortTitle: '4-Stage U-Net Decoder',
+    targetBottleneck: '50×50 Global Receptive Field & 2★→3★ Sweep',
+    detail: 'Contracting-expansive 50→25→12→6→12→25→50 skip pathways',
+  },
+  {
+    key: 'use_gated_heads',
+    shortTitle: 'Sigmoid Gated Pointer',
+    targetBottleneck: 'Action-Conditioned Spatial Masking',
+    detail: 'Multiplicative sigmoid spatial gating from chosen slot/type',
+  },
+];
+
+interface ArchTemplateSpec {
+  id: string;
+  label: string;
+  paramsLabel: string;
+  config: Record<string, number | string | boolean>;
+}
+
+const ARCH_TEMPLATES: ArchTemplateSpec[] = [
+  {
+    id: 'baseline_tiny',
+    label: 'Baseline Fast CNN (v4.0-TinyCNN)',
     paramsLabel: '55.1K',
-    summary: '2-stage strided CNN + 1×1 pointer',
-    tags: ['20ch Stem', '64D Emb', '1×1 Pointer'],
     config: {
       arch_version: 'v4.0-Gen0-TinyCNN',
       generation: 0,
@@ -79,15 +112,11 @@ export const GENERATION_LADDER: GenPresetSpec[] = [
     },
   },
   {
-    gen: 1,
-    version: 'v4.1-Gen1-CoordSE-ResCNN',
-    shortTitle: 'CoordSE-Res',
-    backbone: 'coord_se_res',
+    id: 'coord_se_breach',
+    label: 'Tactical Coord + SE ResCNN (Core Breach)',
     paramsLabel: '130.3K',
-    summary: '+6 CoC tactical coord planes + SE-Attn',
-    tags: ['+6 CoC Coords', 'SE-Attn', '24ch / 96D'],
     config: {
-      arch_version: 'v4.1-Gen1-CoordSE-ResCNN',
+      arch_version: 'v4-CoordSE-TacticalResCNN',
       generation: 1,
       backbone_type: 'coord_se_res',
       base_ch: 24,
@@ -106,15 +135,34 @@ export const GENERATION_LADDER: GenPresetSpec[] = [
     },
   },
   {
-    gen: 2,
-    version: 'v4.2-Gen2-ConvNeXtV2-GRN',
-    shortTitle: 'ConvNeXtV2-GRN',
-    backbone: 'convnext_v2',
-    paramsLabel: '260.0K',
-    summary: '+7×7 depthwise ConvNeXt GRN + Dilated Res',
-    tags: ['7×7 ConvNeXt GRN', 'Dilated d=2,4', '28ch / 128D'],
+    id: 'dual_ptr_funnel',
+    label: 'Dual-Pointer Gated BreachNet (Troop vs Spell)',
+    paramsLabel: '198.4K',
     config: {
-      arch_version: 'v4.2-Gen2-ConvNeXtV2-GRN',
+      arch_version: 'v4-DualPointer-GatedBreachNet',
+      generation: 2,
+      backbone_type: 'coord_se_res',
+      base_ch: 24,
+      spatial_dim: 28,
+      embed_dim: 128,
+      head_hidden_dim: 96,
+      critic_depth: 2,
+      use_coord_features: true,
+      use_se_attention: true,
+      use_dilated_context: true,
+      use_convnext_grn: false,
+      use_segnext_msca: false,
+      use_unet_decoder: false,
+      use_dual_spatial_head: true,
+      use_gated_heads: true,
+    },
+  },
+  {
+    id: 'convnext_grn_threat',
+    label: 'ConvNeXt V2 7×7 GRN ThreatNet (59-Ch Contrast)',
+    paramsLabel: '260.0K',
+    config: {
+      arch_version: 'v4-ConvNeXtV2-GRN-ThreatNet',
       generation: 2,
       backbone_type: 'convnext_v2',
       base_ch: 28,
@@ -133,15 +181,11 @@ export const GENERATION_LADDER: GenPresetSpec[] = [
     },
   },
   {
-    gen: 3,
-    version: 'v4.3-Gen3-SegNeXt-MSCA-DualPtr',
-    shortTitle: 'SegNeXt-MSCA',
-    backbone: 'segnext_msca',
+    id: 'segnext_compartment',
+    label: 'SegNeXt Strip-MSCA CompartmentNet (Ring/Diamond)',
     paramsLabel: '390.2K',
-    summary: '+Strip Attn (1×7, 1×11) + Dual Spatial Pointer',
-    tags: ['SegNeXt Strip', 'Dual Pointer', '3-Layer Critic'],
     config: {
-      arch_version: 'v4.3-Gen3-SegNeXt-MSCA-DualPtr',
+      arch_version: 'v4-SegNeXt-MSCA-CompartmentNet',
       generation: 3,
       backbone_type: 'segnext_msca',
       base_ch: 32,
@@ -160,48 +204,17 @@ export const GENERATION_LADDER: GenPresetSpec[] = [
     },
   },
   {
-    gen: 4,
-    version: 'v4.4-Gen4-SOTA-Hybrid-UNet',
-    shortTitle: 'Hybrid U-Net',
-    backbone: 'unet',
+    id: 'multiscale_unet_critic',
+    label: 'Multi-Scale 4-Stage U-Net + 3L Critic (Full Wipe)',
     paramsLabel: '1.54M',
-    summary: '4-stage U-Net (50→6→50) + GRN + MSCA',
-    tags: ['4-Stage U-Net', 'GRN + MSCA', '24ch / 192D'],
     config: {
-      arch_version: 'v4.4-Gen4-SOTA-Hybrid-UNet',
+      arch_version: 'v4-MultiScale-UNet-DeepCritic',
       generation: 4,
       backbone_type: 'unet',
       base_ch: 24,
       spatial_dim: 28,
       embed_dim: 192,
       head_hidden_dim: 128,
-      critic_depth: 3,
-      use_coord_features: true,
-      use_se_attention: true,
-      use_dilated_context: true,
-      use_convnext_grn: true,
-      use_segnext_msca: true,
-      use_unet_decoder: true,
-      use_dual_spatial_head: true,
-      use_gated_heads: true,
-    },
-  },
-  {
-    gen: 5,
-    version: 'v4.5-Gen5-Full-Attention-UNet',
-    shortTitle: 'Full SOTA U-Net',
-    backbone: 'unet',
-    paramsLabel: '2.69M',
-    summary: 'Full-width 32ch/256D Hybrid Attention U-Net',
-    tags: ['Full 32ch U-Net', '256D Global', 'All SOTA Blocks'],
-    config: {
-      arch_version: 'v4.5-Gen5-Full-Attention-UNet',
-      generation: 5,
-      backbone_type: 'unet',
-      base_ch: 32,
-      spatial_dim: 32,
-      embed_dim: 256,
-      head_hidden_dim: 160,
       critic_depth: 3,
       use_coord_features: true,
       use_se_attention: true,
@@ -223,7 +236,7 @@ const CATEGORY_COLORS: Record<
     bg: 'rgba(168, 85, 247, 0.16)',
     border: '#a855f7',
     text: '#d8b4fe',
-    label: 'ARCHITECTURE',
+    label: 'ARCH CONDITIONING',
   },
   reward_function: {
     bg: 'rgba(250, 204, 21, 0.16)',
@@ -253,15 +266,15 @@ const CATEGORY_COLORS: Record<
     bg: 'rgba(236, 72, 153, 0.18)',
     border: '#ec4899',
     text: '#f9a8d4',
-    label: 'MORPH NEXT GEN',
+    label: 'ARGON 4 ARCH EVOLUTION',
   },
 };
 
 const PIPELINE_STAGES = [
   { id: 'monitoring', num: 1, label: '1. Episode Telemetry Audit' },
-  { id: 'analyzing', num: 2, label: '2. Strategy & Plateau Diagnosis' },
+  { id: 'analyzing', num: 2, label: '2. Argon 4 Diagnosis & Arch Check' },
   { id: 'documenting_baseline', num: 3, label: '3. Pre-Change Snapshot' },
-  { id: 'testing_solution', num: 4, label: '4. Morph / Tune & Sync Visualizer' },
+  { id: 'testing_solution', num: 4, label: '4. Apply / Evolve & Sync Visualizer' },
   { id: 'verifying_solution', num: 5, label: '5. Empirical Verification' },
 ] as const;
 
@@ -270,13 +283,13 @@ const DECISION_LABELS: Record<
   { label: string; color: string; bg: string; border: string }
 > = {
   keep_monitoring: {
-    label: 'KEEP MONITORING (PROGRESSING)',
+    label: 'KEEP CURRENT ARCH & MONITOR',
     color: '#4ade80',
     bg: 'rgba(34, 197, 94, 0.14)',
     border: '#22c55e',
   },
   apply_in_place_solution: {
-    label: 'APPLY IN-PLACE TUNING',
+    label: 'KEEP ARCH — TUNE IN-PLACE',
     color: '#38bdf8',
     bg: 'rgba(56, 189, 248, 0.14)',
     border: '#0284c7',
@@ -288,7 +301,7 @@ const DECISION_LABELS: Record<
     border: '#ef4444',
   },
   stop_and_restart_new_arch: {
-    label: 'MORPH TO NEXT ARCHITECTURE GEN',
+    label: 'EVOLVE TO NEW ARCHITECTURE',
     color: '#f9a8d4',
     bg: 'rgba(236, 72, 153, 0.16)',
     border: '#ec4899',
@@ -312,7 +325,7 @@ const DECISION_LABELS: Record<
     border: '#ef4444',
   },
   stopped_and_restarted_new_arch: {
-    label: 'ESCALATED — MORPHED TO NEW ARCH GEN',
+    label: 'ESCALATED — EVOLVED NEW ARCHITECTURE',
     color: '#f9a8d4',
     bg: 'rgba(236, 72, 153, 0.18)',
     border: '#ec4899',
@@ -407,7 +420,6 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
   const phase = loopState?.phase ?? 'idle';
   const activeHyp = loopState?.active_hypothesis ?? null;
   const activeArchCfg = loopState?.active_config?.arch_config ?? {};
-  const activeGen = Number(activeArchCfg.generation ?? 0);
   const activeArchVersion = String(
     activeArchCfg.arch_version ?? 'v4.0-Gen0-TinyCNN'
   );
@@ -418,6 +430,11 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
   const latestStrategy =
     activeCycle?.strategy_research ??
     loopState?.latest_strategy_research ??
+    null;
+  const archAnalysis =
+    activeCycle?.architecture_analysis ??
+    activeCycle?.health_verdict?.architecture_analysis ??
+    loopState?.latest_architecture_analysis ??
     null;
   const lastVizSync = loopState?.last_model_visualizer_sync ?? null;
   const liveTelemetry =
@@ -468,47 +485,13 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
     await onRefreshStatus();
   };
 
-  const handleSelectGenerationPreset = (spec: GenPresetSpec) => {
+  const handleToggleComposableModule = (flagKey: string) => {
     setEditArch((prev) => ({
       ...prev,
-      ...spec.config,
-      weight_transfer_mode:
-        spec.gen === 0
-          ? 'scratch_restart'
-          : String(prev.weight_transfer_mode ?? 'warm_start'),
+      [flagKey]: !prev[flagKey],
     }));
     setWorkspaceTab('studio');
     setParamEditorTab('arch');
-  };
-
-  const handleQuickApplyGeneration = async (spec: GenPresetSpec) => {
-    setIsBusy(true);
-    setParamSaveMsg(null);
-    try {
-      const nextArch = {
-        ...editArch,
-        ...spec.config,
-        weight_transfer_mode:
-          spec.gen === 0
-            ? 'scratch_restart'
-            : String(editArch.weight_transfer_mode ?? 'warm_start'),
-      };
-      setEditArch(nextArch);
-      await updateRecursiveLoopConfigParameters({
-        arch_config: nextArch,
-        reward_config: editReward,
-        hyperparams: editHyper,
-        run_code_agent: false,
-        reason: `switch_to_gen${spec.gen}_${spec.version}`,
-      });
-      setParamSaveMsg(
-        `Switched active architecture to Gen ${spec.gen} (${spec.version}) & synced model-visualizer.`
-      );
-      setTimeout(() => setParamSaveMsg(null), 4500);
-      await onRefreshStatus();
-    } finally {
-      setIsBusy(false);
-    }
   };
 
   const handleSaveEditedParameters = async (runCodeAgent: boolean) => {
@@ -526,8 +509,8 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
       });
       setParamSaveMsg(
         runCodeAgent
-          ? 'Applied parameters, ran Argon 4 morph & synced model-visualizer.'
-          : 'Applied parameters & synced model-visualizer.'
+          ? 'Applied parameters, ran Argon 4 code sync & updated model-visualizer.'
+          : 'Applied parameters & updated model-visualizer.'
       );
       setTimeout(() => setParamSaveMsg(null), 4500);
       await onRefreshStatus();
@@ -557,7 +540,7 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
   const handleResetLoop = async () => {
     if (cycles.length > 0) {
       const ok = window.confirm(
-        'Reset evolution history and restore Gen 0 TinyCNN baseline configuration?'
+        'Reset evolution history and restore Baseline Fast CNN configuration?'
       );
       if (!ok) return;
     }
@@ -654,7 +637,6 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
   const decisionMeta =
     DECISION_LABELS[activeDecisionKey] ?? DECISION_LABELS.keep_monitoring;
 
-  // Safe numeric helpers for telemetry display
   const meanPct = Number(
     liveTelemetry?.mean_pct_300 ?? liveTelemetry?.mean_pct_50 ?? 0
   );
@@ -681,6 +663,11 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
   const approxKl = Number(liveTelemetry?.approx_kl_50 ?? 0);
   const noopPct = Number(
     liveTelemetry?.noop_pct_50 ?? liveTelemetry?.mean_noop_pct_50 ?? 0
+  );
+
+  const recommendedModulesSet = useMemo(
+    () => new Set(archAnalysis?.selected_modules ?? []),
+    [archAnalysis?.selected_modules]
   );
 
   return (
@@ -755,10 +742,11 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
               className="clash-btn"
               disabled={isBusy || Boolean(loopState?.is_running_cycle)}
               onClick={() => void handleRunCycleNow(false)}
+              title="Run OpenCode Argon 4 Medium to determine if model evolution or in-place tuning is needed"
             >
               {isBusy || loopState?.is_running_cycle
-                ? '⟳ Running...'
-                : '📸 Diagnose Now'}
+                ? '⟳ Analyzing...'
+                : '🔍 Argon 4: Diagnose & Check Arch'}
             </button>
 
             <button
@@ -766,6 +754,7 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
               className="clash-btn gold"
               disabled={isBusy || Boolean(loopState?.is_running_cycle)}
               onClick={() => void handleRunCycleNow(true)}
+              title="Run Argon 4 analysis, snapshot baseline, and automatically apply the recommended decision"
             >
               ⚡ Run Evolution Step
             </button>
@@ -780,8 +769,9 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
               }}
               disabled={isBusy || Boolean(loopState?.is_running_cycle)}
               onClick={() => void handleRestartWithNewArchitecture()}
+              title="Ask OpenCode Argon 4 Medium to synthesize and apply the best neural architecture for the current telemetry bottleneck"
             >
-              🧬 Morph Gen {activeGen} → Gen {Math.min(5, activeGen + 1)}
+              🧬 Argon 4: Synthesize &amp; Evolve Arch
             </button>
 
             {activeHyp && (
@@ -805,9 +795,9 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
               }}
               disabled={isBusy || Boolean(loopState?.is_running_cycle)}
               onClick={() => void handleResetLoop()}
-              title="Reset evolution history and restore Gen 0 TinyCNN baseline"
+              title="Reset evolution history and restore Baseline Fast CNN"
             >
-              ↺ Reset Gen 0
+              ↺ Reset Baseline
             </button>
           </div>
         </div>
@@ -858,48 +848,38 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
         </div>
 
         {/* =================================================================== */}
-        {/* 2. PROGRESSIVE ARCHITECTURE LADDER (GEN 0 -> GEN 5)                 */}
+        {/* 2. COMPOSABLE SOTA VISION & SPATIAL-RL MODULES (NON-SEQUENTIAL)     */}
         {/* =================================================================== */}
-        <div className="rl-gen-ladder-strip">
-          {GENERATION_LADDER.map((gSpec) => {
-            const isActiveGen = gSpec.gen === activeGen;
-            const isPastGen = gSpec.gen < activeGen;
+        <div className="rl-modules-grid-strip">
+          {COMPOSABLE_SOTA_MODULES.map((mod) => {
+            const isActiveOnModel = Boolean(activeArchCfg[mod.key]);
+            const isArgonRecommended =
+              !isActiveOnModel && recommendedModulesSet.has(mod.key);
             return (
               <div
-                key={gSpec.gen}
+                key={mod.key}
                 className={`rl-gen-card ${
-                  isActiveGen ? 'active' : isPastGen ? 'passed' : ''
+                  isActiveOnModel
+                    ? 'active'
+                    : isArgonRecommended
+                    ? 'passed'
+                    : ''
                 }`}
-                onClick={() => handleSelectGenerationPreset(gSpec)}
+                onClick={() => handleToggleComposableModule(mod.key)}
+                title={`${mod.detail} — Click to toggle in Parameter Studio`}
               >
                 <div className="rl-gen-card-top">
                   <span className="rl-gen-num-badge">
-                    {isPastGen ? '✓ ' : isActiveGen ? '● ' : ''}Gen {gSpec.gen}
+                    {isActiveOnModel
+                      ? '● ACTIVE'
+                      : isArgonRecommended
+                      ? '★ ARGON 4 TARGET'
+                      : 'MODULE'}
                   </span>
-                  <code className="rl-gen-params">{gSpec.paramsLabel}</code>
+                  <code className="rl-gen-params">{mod.key.replace('use_', '')}</code>
                 </div>
-                <strong className="rl-gen-title">{gSpec.shortTitle}</strong>
-                <span className="rl-gen-summary">{gSpec.summary}</span>
-                <div className="rl-gen-tags">
-                  {gSpec.tags.map((t) => (
-                    <span key={t} className="rl-gen-tag">
-                      {t}
-                    </span>
-                  ))}
-                </div>
-                {!isActiveGen && (
-                  <button
-                    type="button"
-                    className="rl-gen-activate-btn"
-                    disabled={isBusy}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleQuickApplyGeneration(gSpec);
-                    }}
-                  >
-                    Use Gen {gSpec.gen}
-                  </button>
-                )}
+                <strong className="rl-gen-title">{mod.shortTitle}</strong>
+                <span className="rl-gen-summary">{mod.targetBottleneck}</span>
               </div>
             );
           })}
@@ -907,13 +887,13 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
       </section>
 
       {/* =================================================================== */}
-      {/* 3. EXECUTIVE SUMMARY: STATE, DECISION MADE & WHY, ACTIVE CONFIG     */}
+      {/* 3. EXECUTIVE SUMMARY: TELEMETRY | ARGON 4 DECISION & WHY | ARCH     */}
       {/* =================================================================== */}
       <div className="rl-exec-summary-grid">
-        {/* CARD A: WHAT IS HAPPENING & LIVE TELEMETRY */}
+        {/* CARD A: LIVE 300-EP TELEMETRY */}
         <section className="ai-card rl-exec-card">
           <div className="rl-exec-card-hdr">
-            <span className="rl-exec-step-tag">STATUS &amp; TELEMETRY</span>
+            <span className="rl-exec-step-tag">1. LIVE 300-EP TELEMETRY</span>
             <span
               className="ai-health-badge"
               style={{
@@ -984,10 +964,12 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
           </div>
         </section>
 
-        {/* CARD B: WHAT DECISION HAS BEEN MADE & WHY */}
+        {/* CARD B: ARGON 4 STAGE 1 — IS MODEL EVOLUTION REQUIRED & WHY? */}
         <section className="ai-card rl-exec-card">
           <div className="rl-exec-card-hdr">
-            <span className="rl-exec-step-tag">DECISION &amp; WHY</span>
+            <span className="rl-exec-step-tag">
+              2. ARGON 4 DECISION — IS ARCH EVOLUTION NEEDED?
+            </span>
             <span
               className="rl-cat-chip"
               style={{
@@ -996,11 +978,75 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
                 color: decisionMeta.color,
               }}
             >
-              { activeCycle ? decisionMeta.label : 'AWAITING FIRST CYCLE' }
+              {activeCycle ? decisionMeta.label : 'AWAITING ANALYSIS'}
             </span>
           </div>
 
-          {activeCycle && hv ? (
+          {archAnalysis ? (
+            <div className="rl-exec-body">
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <span
+                  className="rl-cat-chip"
+                  style={{
+                    background: archAnalysis.evolution_required
+                      ? 'rgba(236, 72, 153, 0.2)'
+                      : 'rgba(56, 189, 248, 0.16)',
+                    borderColor: archAnalysis.evolution_required
+                      ? '#ec4899'
+                      : '#0284c7',
+                    color: archAnalysis.evolution_required
+                      ? '#f9a8d4'
+                      : '#7dd3fc',
+                  }}
+                >
+                  {archAnalysis.evolution_required
+                    ? '🧬 ARCH EVOLUTION REQUIRED: YES'
+                    : '🛠️ ARCH EVOLUTION REQUIRED: NO (TUNE IN-PLACE)'}
+                </span>
+                <strong style={{ fontSize: '0.76rem', color: '#f8fafc' }}>
+                  {archAnalysis.evolution_verdict_headline}
+                </strong>
+              </div>
+
+              <div className="rl-exec-why-box">
+                <div>
+                  <span className="ai-issue-tag">Why</span>{' '}
+                  {archAnalysis.evolution_rationale}
+                </div>
+                {hv?.reasons[0] && (
+                  <div>
+                    <span className="ai-issue-tag cause">Root Cause</span>{' '}
+                    <b style={{ color: '#f8fafc' }}>{hv.reasons[0].title}:</b>{' '}
+                    {hv.reasons[0].root_cause}
+                  </div>
+                )}
+              </div>
+
+              {latestStrategy && (
+                <div className="rl-exec-strategy-line">
+                  <span
+                    className="ai-issue-tag"
+                    style={{ background: '#0284c7', color: '#fff' }}
+                  >
+                    CoC Strategy
+                  </span>
+                  <span>
+                    <b style={{ color: '#7dd3fc' }}>
+                      {latestStrategy.tactical_focus}:
+                    </b>{' '}
+                    {latestStrategy.io_recommendation}
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : activeCycle && hv ? (
             <div className="rl-exec-body">
               <strong className="rl-exec-headline">{hv.headline}</strong>
               {hv.reasons[0] && (
@@ -1018,53 +1064,38 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
                   </div>
                 </div>
               )}
-              {latestStrategy && (
-                <div className="rl-exec-strategy-line">
-                  <span className="ai-issue-tag" style={{ background: '#0284c7', color: '#fff' }}>
-                    CoC Strategy
-                  </span>
-                  <span>
-                    <b style={{ color: '#7dd3fc' }}>
-                      {latestStrategy.tactical_focus}:
-                    </b>{' '}
-                    {latestStrategy.io_recommendation}
-                  </span>
-                </div>
-              )}
             </div>
           ) : (
             <div className="rl-exec-body">
               <strong className="rl-exec-headline">
-                Gen {activeGen} ({activeArchVersion}) active — next automated audit at Ep{' '}
-                {nextTargetEp.toLocaleString()}
+                OpenCode Argon 4 Medium evaluates telemetry at Ep{' '}
+                {nextTargetEp.toLocaleString()} (or on demand) to decide:
               </strong>
-              {latestStrategy ? (
-                <div className="rl-exec-strategy-line">
-                  <span className="ai-issue-tag" style={{ background: '#0284c7', color: '#fff' }}>
-                    CoC Strategy
-                  </span>
-                  <span>
-                    <b style={{ color: '#7dd3fc' }}>
-                      {latestStrategy.tactical_focus}:
-                    </b>{' '}
-                    {latestStrategy.io_recommendation}
-                  </span>
+              <div className="rl-exec-why-box">
+                <div>
+                  <b>1. Is Model Evolution Required?</b> Checks whether the
+                  current architecture is structurally bottlenecked or only needs
+                  in-place reward / PPO / prior tuning.
                 </div>
-              ) : (
-                <p style={{ margin: 0, fontSize: '0.75rem', color: '#94a3b8' }}>
-                  Click &ldquo;📸 Diagnose Now&rdquo; or &ldquo;⚡ Run Evolution Step&rdquo; at any time to evaluate the last 300 episodes and generate candidate solutions.
-                </p>
-              )}
+                <div>
+                  <b>2. What Architecture Type Is Appropriate?</b> Diagnoses the
+                  exact failure mode (compartment corridors, troop/spell pointer
+                  conflict, sparse defense contrast, or 2★→3★ value lag) and
+                  synthesizes a tailored architecture.
+                </div>
+              </div>
             </div>
           )}
         </section>
 
-        {/* CARD C: ACTIVE ARCHITECTURE & APPLIED INTERVENTION */}
+        {/* CARD C: ACTIVE MODEL & ARGON 4 TARGET ARCHITECTURE SYNTHESIS */}
         <section className="ai-card rl-exec-card">
           <div className="rl-exec-card-hdr">
-            <span className="rl-exec-step-tag">ARCHITECTURE &amp; INTERVENTION</span>
+            <span className="rl-exec-step-tag">
+              3. ACTIVE &amp; TARGET ARCHITECTURE
+            </span>
             <code className="rl-arch-pill">
-              Gen {activeGen} • {activeBackbone} •{' '}
+              {activeBackbone} •{' '}
               {activeWeightMode === 'warm_start' ? 'Warm-Start' : 'Scratch'}
             </code>
           </div>
@@ -1076,46 +1107,76 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
                 <strong style={{ color: '#e9d5ff' }}>{activeArchVersion}</strong>
               </div>
               <div className="rl-kv-item">
-                <span>Dimensions</span>
+                <span>Dimensions &amp; Critic</span>
                 <strong>
                   {Number(activeArchCfg.base_ch ?? 20)}ch •{' '}
-                  {Number(activeArchCfg.spatial_dim ?? 20)}sp •{' '}
-                  {Number(activeArchCfg.embed_dim ?? 64)}D
+                  {Number(activeArchCfg.embed_dim ?? 64)}D •{' '}
+                  {Number(activeArchCfg.critic_depth ?? 2)}L Critic
                 </strong>
               </div>
             </div>
 
             {activeHyp ? (
               <div className="rl-exec-why-box" style={{ borderColor: '#38bdf8' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: 6,
+                  }}
+                >
                   <strong style={{ color: '#7dd3fc' }}>
-                    🧪 Testing Cycle #{activeHyp.cycle_id}: {activeHyp.solution.title}
+                    🧪 Testing Cycle #{activeHyp.cycle_id}:{' '}
+                    {activeHyp.solution.title}
                   </strong>
                   <span style={{ color: '#fde047', fontWeight: 700 }}>
                     {horizonProgressPct}%
                   </span>
                 </div>
                 <div className="rl-diff-pills">
-                  {(activeHyp.solution.diff_summary ?? []).slice(0, 4).map((d, i) => (
-                    <code key={i} className="rl-diff-pill">
-                      {d}
-                    </code>
-                  ))}
-                </div>
-              </div>
-            ) : activeCycle?.selected_solution ? (
-              <div className="rl-exec-why-box">
-                <strong style={{ color: '#86efac' }}>
-                  ✓ Cycle #{activeCycle.cycle_id}: {activeCycle.selected_solution.title}
-                </strong>
-                <div className="rl-diff-pills">
-                  {(activeCycle.selected_solution.diff_summary ?? [])
+                  {(activeHyp.solution.diff_summary ?? [])
                     .slice(0, 4)
                     .map((d, i) => (
                       <code key={i} className="rl-diff-pill">
                         {d}
                       </code>
                     ))}
+                </div>
+              </div>
+            ) : archAnalysis ? (
+              <div
+                className="rl-exec-why-box"
+                style={{
+                  borderColor: archAnalysis.evolution_required
+                    ? '#ec4899'
+                    : '#253654',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <strong style={{ color: '#f9a8d4' }}>
+                    🎯 Argon 4 Target: {archAnalysis.recommended_arch_version}
+                  </strong>
+                  <code style={{ fontSize: '0.68rem', color: '#fde047' }}>
+                    {archAnalysis.total_params.toLocaleString()}p •{' '}
+                    {archAnalysis.weight_transfer_mode}
+                  </code>
+                </div>
+                <span style={{ fontSize: '0.69rem', color: '#cbd5e1' }}>
+                  <b>Targets:</b> {archAnalysis.bottleneck_targeted}
+                </span>
+                <div className="rl-diff-pills">
+                  {archAnalysis.selected_modules.map((m) => (
+                    <code key={m} className="rl-diff-pill">
+                      {m.replace('use_', '')}
+                    </code>
+                  ))}
                 </div>
               </div>
             ) : (
@@ -1125,8 +1186,12 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
                   activeArchCfg.use_se_attention ? 'SE-Attn' : null,
                   activeArchCfg.use_convnext_grn ? '7×7 ConvNeXt GRN' : null,
                   activeArchCfg.use_segnext_msca ? 'SegNeXt MSCA' : null,
-                  activeArchCfg.use_unet_decoder ? '4-Stage U-Net' : '2-Stage Fast CNN',
-                  activeArchCfg.use_dual_spatial_head ? 'Dual Pointer' : 'Single Pointer',
+                  activeArchCfg.use_unet_decoder
+                    ? '4-Stage U-Net'
+                    : '2-Stage Fast CNN',
+                  activeArchCfg.use_dual_spatial_head
+                    ? 'Dual Pointer'
+                    : 'Single Pointer',
                 ]
                   .filter(Boolean)
                   .map((tag) => (
@@ -1151,7 +1216,7 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
           }`}
           onClick={() => setWorkspaceTab('decisions')}
         >
-          🧪 Diagnosis, Solutions &amp; Verification
+          🧪 Argon 4 Diagnosis, Solutions &amp; Verification
           {activeCycle && (
             <span className="rl-tab-count">Cycle #{activeCycle.cycle_id}</span>
           )}
@@ -1164,8 +1229,8 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
           }`}
           onClick={() => setWorkspaceTab('studio')}
         >
-          🎛️ Parameter &amp; Architecture Studio
-          <span className="rl-tab-count">Gen {Number(editArch.generation ?? activeGen)}</span>
+          🎛️ Composable Architecture &amp; Parameter Studio
+          <span className="rl-tab-count">{String(editArch.arch_version ?? activeArchVersion)}</span>
         </button>
 
         <button
@@ -1519,7 +1584,7 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
                                     color: '#4ade80',
                                   }}
                                 >
-                                  ★ RECOMMENDED
+                                  ★ ARGON 4 RECOMMENDED
                                 </span>
                               )}
                               <strong
@@ -1666,7 +1731,7 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
             <section
               className="ai-card"
               style={{
-                padding: '24px',
+                padding: '20px 24px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
@@ -1676,11 +1741,10 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
             >
               <div>
                 <h3 style={{ margin: '0 0 4px 0', color: '#f8fafc', fontSize: '0.95rem' }}>
-                  No Diagnostic Cycles Recorded Yet in This Session
+                  No Argon 4 Diagnostic Cycles Recorded Yet in This Session
                 </h3>
                 <p style={{ margin: 0, fontSize: '0.78rem', color: '#94a3b8' }}>
-                  Auto-evolution triggers every {testEps.toLocaleString()} episodes, or click{' '}
-                  <b>📸 Diagnose Now</b> / <b>⚡ Run Evolution Step</b> to run a 300-episode audit immediately.
+                  Click <b>🔍 Argon 4: Diagnose &amp; Check Arch</b> to evaluate the last 300 episodes and determine whether a model architecture evolution or in-place parameter tune is needed.
                 </p>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -1690,7 +1754,7 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
                   disabled={isBusy}
                   onClick={() => setWorkspaceTab('studio')}
                 >
-                  🎛️ Open Parameter Studio
+                  🎛️ Open Composable Studio
                 </button>
                 <button
                   type="button"
@@ -1698,7 +1762,7 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
                   disabled={isBusy}
                   onClick={() => void handleRunCycleNow(false)}
                 >
-                  📸 Run First Diagnosis
+                  🔍 Run Argon 4 Analysis Now
                 </button>
               </div>
             </section>
@@ -1707,7 +1771,7 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
       )}
 
       {/* =================================================================== */}
-      {/* TAB 2: PARAMETER & ARCHITECTURE STUDIO                              */}
+      {/* TAB 2: COMPOSABLE ARCHITECTURE & PARAMETER STUDIO                   */}
       {/* =================================================================== */}
       {workspaceTab === 'studio' && (
         <section className="ai-card">
@@ -1715,7 +1779,7 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
             <div className="rl-subtab-bar">
               {(
                 [
-                  ['arch', '🧬 Architecture & Tactical Priors'],
+                  ['arch', '🧬 Composable Architecture & Priors'],
                   ['reward', '🏆 Reward Shaping Weights'],
                   ['hyperparams', '⚡ PPO Hyperparameters'],
                 ] as const
@@ -1760,31 +1824,56 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
 
           {paramEditorTab === 'arch' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {/* STRUCTURAL & GENERATION CONTROLS */}
+              {/* STRUCTURAL & TEMPLATE CONTROLS */}
               <div className="rl-param-section-box">
                 <strong className="rl-param-sec-title">
-                  1. Backbone Generation, Dimensions &amp; Weight Transfer
+                  1. Archetype Template, Backbone Topology &amp; Dimensions
                 </strong>
                 <div className="rl-param-inputs-grid">
                   <label className="rl-param-field">
-                    <span>Generation Preset (0..5)</span>
+                    <span>Reference Archetype (Optional)</span>
                     <select
                       className="clash-select"
-                      value={Number(editArch.generation ?? 0)}
+                      value={
+                        ARCH_TEMPLATES.find(
+                          (t) =>
+                            t.config.arch_version === editArch.arch_version
+                        )?.id ?? ''
+                      }
                       onChange={(e) => {
-                        const g = Number(e.target.value);
-                        const spec =
-                          GENERATION_LADDER.find((s) => s.gen === g) ??
-                          GENERATION_LADDER[0];
-                        handleSelectGenerationPreset(spec);
+                        const found = ARCH_TEMPLATES.find(
+                          (t) => t.id === e.target.value
+                        );
+                        if (found) {
+                          setEditArch((prev) => ({
+                            ...prev,
+                            ...found.config,
+                          }));
+                        }
                       }}
                     >
-                      {GENERATION_LADDER.map((s) => (
-                        <option key={s.gen} value={s.gen}>
-                          Gen {s.gen} • {s.shortTitle} ({s.paramsLabel})
+                      <option value="">Custom Composed Architecture</option>
+                      {ARCH_TEMPLATES.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.label} ({t.paramsLabel})
                         </option>
                       ))}
                     </select>
+                  </label>
+
+                  <label className="rl-param-field">
+                    <span>arch_version</span>
+                    <input
+                      type="text"
+                      className="clash-select"
+                      value={String(editArch.arch_version ?? 'v4-Custom')}
+                      onChange={(e) =>
+                        setEditArch((prev) => ({
+                          ...prev,
+                          arch_version: e.target.value,
+                        }))
+                      }
+                    />
                   </label>
 
                   <label className="rl-param-field">
@@ -1859,26 +1948,16 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
               {/* SOTA VISION MODULE TOGGLES */}
               <div className="rl-param-section-box">
                 <strong className="rl-param-sec-title">
-                  2. SOTA Vision &amp; Spatial-RL Architectural Blocks
+                  2. Composable SOTA Vision &amp; Spatial-RL Building Blocks
                 </strong>
                 <div className="rl-bool-toggles-grid">
-                  {(
-                    [
-                      ['use_coord_features', '+6 CoC Tactical Coord Planes'],
-                      ['use_se_attention', 'SE 59-Channel Attention'],
-                      ['use_dilated_context', 'Dilated Res Context (d=2,4)'],
-                      ['use_convnext_grn', 'ConvNeXt V2 7×7 + GRN'],
-                      ['use_segnext_msca', 'SegNeXt Strip Attention'],
-                      ['use_unet_decoder', '4-Stage U-Net Decoder'],
-                      ['use_dual_spatial_head', 'Dual Troop/Spell Pointer'],
-                      ['use_gated_heads', 'Sigmoid Gated Spatial Head'],
-                    ] as const
-                  ).map(([flagKey, label]) => {
-                    const isOn = Boolean(editArch[flagKey]);
+                  {COMPOSABLE_SOTA_MODULES.map((mod) => {
+                    const isOn = Boolean(editArch[mod.key]);
                     return (
                       <label
-                        key={flagKey}
+                        key={mod.key}
                         className={`rl-bool-chip ${isOn ? 'on' : ''}`}
+                        title={mod.detail}
                       >
                         <input
                           type="checkbox"
@@ -1886,11 +1965,11 @@ export const RecursiveLoopPanel: React.FC<RecursiveLoopPanelProps> = ({
                           onChange={(e) =>
                             setEditArch((prev) => ({
                               ...prev,
-                              [flagKey]: e.target.checked,
+                              [mod.key]: e.target.checked,
                             }))
                           }
                         />
-                        <span>{label}</span>
+                        <span>{mod.shortTitle}</span>
                       </label>
                     );
                   })}

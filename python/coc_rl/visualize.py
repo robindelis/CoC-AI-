@@ -26,16 +26,36 @@ MANIFEST_PATH = os.path.join(ARCH_DIR, "manifest.json")
 NETWORKS_PATH = os.path.join(os.path.dirname(__file__), "networks.py")
 
 
+ACTIVE_CONFIG_PATH = os.path.join(REPO_ROOT, "trained_models", "loop", "active_experiment_config.json")
+
+
+def load_active_arch_config() -> Optional[Dict[str, Any]]:
+    """Loads the active experiment arch_config from disk if present."""
+    if os.path.exists(ACTIVE_CONFIG_PATH):
+        try:
+            with open(ACTIVE_CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("arch_config")
+        except Exception:
+            pass
+    return None
+
+
 def compute_networks_hash(model: Optional[nn.Module] = None) -> str:
-    """Computes a SHA-256 digest of `networks.py` and the live `model` repr + parameter counts."""
+    """Computes a SHA-256 digest of `networks.py`, active config, and the live `model` repr + parameter counts."""
     h = hashlib.sha256()
     if os.path.exists(NETWORKS_PATH):
         with open(NETWORKS_PATH, "rb") as f:
+            h.update(f.read())
+    if os.path.exists(ACTIVE_CONFIG_PATH):
+        with open(ACTIVE_CONFIG_PATH, "rb") as f:
             h.update(f.read())
     if model is not None:
         h.update(repr(model).encode("utf-8"))
         for name, p in model.named_parameters():
             h.update(f"{name}:{tuple(p.shape)}".encode("utf-8"))
+        if hasattr(model, "get_arch_config"):
+            h.update(json.dumps(model.get_arch_config(), sort_keys=True).encode("utf-8"))
     return h.hexdigest()
 
 
@@ -62,83 +82,181 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
     Runs a live forward trace with shape & parameter hooks on `model` (`CoCActorCritic`)
     so the 3D U-Net Feature Map diagram, Layer-by-Layer table, KPI pills, and PyTorch code
     in the Web UI always reflect any edits made to `python/coc_rl/networks.py` on every refresh.
+    Dynamically supports both 2-stage CNN backbones (Gen 0..Gen 2) and full U-Net backbones (Gen 3..Gen 5).
     """
     in_ch = int(getattr(model, "in_channels", 59))
     army_ctx_dim = int(getattr(model, "army_context_dim", 64))
     num_frac_bins = int(getattr(model, "num_fraction_bins", 5))
-    base_ch = int(getattr(model.encoder, "base_ch", 32))
-    spatial_dim = int(getattr(model.encoder, "spatial_dim", 32))
-    embed_dim = int(getattr(model.encoder, "embed_dim", 256))
 
-    c1 = base_ch          # 32
-    c2 = base_ch * 2      # 64
-    c3 = base_ch * 4      # 128
-    c4 = base_ch * 8      # 256
+    enc = getattr(model, "encoder", None)
+    base_ch = int(getattr(enc, "base_ch", 24)) if enc is not None else 24
+    spatial_dim = int(getattr(enc, "spatial_dim", 24)) if enc is not None else 24
+    embed_dim = int(getattr(enc, "embed_dim", 96)) if enc is not None else 96
+    head_hidden_dim = int(getattr(model, "head_hidden_dim", 64))
+    critic_depth = int(getattr(model, "critic_depth", 2))
+
+    use_unet = bool(getattr(enc, "use_unet_decoder", False))
+    use_coord = bool(getattr(enc, "use_coord_features", False))
+    use_dilated = bool(getattr(enc, "use_dilated_context", False))
+    use_convnext = bool(getattr(enc, "use_convnext_grn", False))
+    use_segnext = bool(getattr(enc, "use_segnext_msca", False))
+    use_dual_head = bool(getattr(model, "use_dual_spatial_head", False))
+    use_gated = bool(getattr(model, "use_gated_heads", False))
+    effective_in_ch = in_ch + (6 if use_coord else 0)
+
+    c1 = base_ch
+    is_tiny = (
+        getattr(enc, "backbone_type", "") == "tiny_cnn"
+        and not use_dilated
+        and not use_convnext
+        and not use_segnext
+        and not use_unet
+    )
+    c2 = int(round(base_ch * 1.6)) if is_tiny else (base_ch * 2)
+    c2 = max(16, (c2 // 4) * 4)
+    c3 = base_ch * 4
+    c4 = base_ch * 8
 
     def _mod_params(m: Optional[nn.Module]) -> int:
         if m is None:
             return 0
         return int(sum(p.numel() for p in m.parameters()))
 
-    enc1_params = _mod_params(getattr(model.encoder, "enc1", None))
-    dilated_mod = getattr(model.encoder, "dilated_context", None)
-    enc2_params = _mod_params(getattr(model.encoder, "enc2", None)) + _mod_params(dilated_mod)
-    enc3_params = _mod_params(getattr(model.encoder, "enc3", None))
-    bneck_se_mod = getattr(model.encoder, "bottleneck_se", None)
-    bneck_params = _mod_params(getattr(model.encoder, "bottleneck", None)) + _mod_params(bneck_se_mod)
-    up3_params = _mod_params(getattr(model.encoder, "up3", None))
-    up2_params = _mod_params(getattr(model.encoder, "up2", None))
-    up1_params = _mod_params(getattr(model.encoder, "up1", None))
+    stem_se = getattr(enc, "stem_se", None)
+    dilated_mod = getattr(enc, "dilated_context", None)
+    convnext_mod = getattr(enc, "convnext_block", None)
+    msca_mod = getattr(enc, "msca_block", None)
+    bottleneck_se = getattr(enc, "bottleneck_se", None)
+    spatial_se = getattr(enc, "spatial_se", None)
+    head_gate = getattr(model, "head_gate", None)
+    gt = getattr(enc, "global_tower", None)
 
-    gt = model.encoder.global_tower
-    g1_mods = [gt[0], gt[1], gt[2]] if len(gt) >= 3 else [gt[0]]
-    g5_mods = [gt[5], gt[6], gt[7]] if len(gt) >= 8 else []
-    g1_params = sum(_mod_params(m) for m in g1_mods)
-    g5_params = sum(_mod_params(m) for m in g5_mods)
+    layers: List[Dict[str, Any]] = []
 
-    head_hidden_dim = int(getattr(model, "head_hidden_dim", 128))
-    critic_depth = int(getattr(model, "critic_depth", 2))
+    # -------------------------------------------------------------
+    # S1: Spatial Stem (enc1 + optional SE)
+    # -------------------------------------------------------------
+    enc1_params = _mod_params(getattr(enc, "enc1", None)) + _mod_params(stem_se)
+    enc1_is_single = type(getattr(enc, "enc1", None)).__name__ == "TinySingleConvBlock"
+    enc1_conv_macs = (
+        effective_in_ch * c1 * 9 * 50 * 50
+        if enc1_is_single
+        else (effective_in_ch * c1 * 9 + c1 * c1 * 9) * 50 * 50
+    )
+    stem_se_macs = 2 * c1 * max(8, c1 // 4) if stem_se is not None else 0
+    enc1_rf = 3 if enc1_is_single else 5
+    enc1_type_str = f"Spatial Stem: enc1 ({type(getattr(enc, 'enc1', None)).__name__})"
+    if stem_se is not None:
+        enc1_type_str += " + SE-Attn"
+    if use_coord:
+        enc1_type_str += " + CoordConv"
 
-    enc2_macs = (c1 * c2 * 9 + c2 * c2 * 9) * 25 * 25
+    enc1_desc = (
+        f"{'1×' if enc1_is_single else '2×'}(Conv 3×3 → GN → SiLU), {effective_in_ch}→{c1} ch at 50×50 + Skip 1"
+    )
+    if stem_se is not None:
+        enc1_desc += " + SEChannelAttention"
+    if use_coord:
+        enc1_desc += " + TacticalFeatureSynthesizer(6ch)"
+
+    layers.append({
+        "id": "s1",
+        "stage": "spatial",
+        "type": enc1_type_str,
+        "short": "Enc1 50×50",
+        "desc": enc1_desc,
+        "inputShape": [effective_in_ch, 50, 50],
+        "outputShape": [c1, 50, 50],
+        "receptiveField": enc1_rf,
+        "params": enc1_params,
+        "macs": enc1_conv_macs + stem_se_macs,
+        "color": "#2563eb",
+        "border": "#60a5fa",
+        "coneLabel": "1×3×3 GN4" if enc1_is_single else "2×3×3 GN8",
+    })
+
+    # -------------------------------------------------------------
+    # S2: Stage 2 Down (enc2 + context blocks + bottleneck_se if not use_unet)
+    # -------------------------------------------------------------
+    enc2_is_single = type(getattr(enc, "enc2", None)).__name__ == "TinySingleConvBlock"
+    enc2_base_macs = (
+        c1 * c2 * 9 * 25 * 25
+        if enc2_is_single
+        else (c1 * c2 * 9 + c2 * c2 * 9) * 25 * 25
+    )
+    context_macs = 0
     if dilated_mod is not None:
-        enc2_macs += (c2 * c2 * 9 + c2 * c2 * 9) * 25 * 25
+        context_macs += (c2 * c2 * 9 + c2 * c2 * 9) * 25 * 25
+    if convnext_mod is not None:
+        context_macs += (c2 * 49 + c2 * (c2 * 2) + (c2 * 2) * c2) * 25 * 25
+    if msca_mod is not None:
+        context_macs += (c2 * 25 + 2 * c2 * 7 + 2 * c2 * 11 + c2 * c2) * 25 * 25
 
-    bneck_macs = (c3 * c4 * 9 + c4 * c4 * 9) * 6 * 6
-    if bneck_se_mod is not None:
-        bneck_macs += c4 * max(8, c4 // 4) * 2
+    bneck_se_in_s2 = (not use_unet) and (bottleneck_se is not None)
+    bneck_se_s2_macs = 2 * c2 * max(8, c2 // 4) if bneck_se_in_s2 else 0
 
-    layers: List[Dict[str, Any]] = [
-        {
-            "id": "s1",
-            "stage": "spatial",
-            "type": "U-Net Down 1: enc1 (2× Conv3×3-GN8-SiLU)",
-            "short": "Enc1 50×50",
-            "desc": f"2×(Conv 3×3 → GroupNorm(8) → SiLU), {in_ch}→{c1} ch at 50×50 + Skip 1",
-            "inputShape": [in_ch, 50, 50],
-            "outputShape": [c1, 50, 50],
-            "receptiveField": 5,
-            "params": enc1_params,
-            "macs": (in_ch * c1 * 9 + c1 * c1 * 9) * 50 * 50,
-            "color": "#2563eb",
-            "border": "#60a5fa",
-            "coneLabel": "2×3×3 GN8",
-        },
-        {
-            "id": "s2",
-            "stage": "spatial",
-            "type": "U-Net Down 2: MaxPool 2×2 + enc2" + (" + DilatedResBlock" if dilated_mod is not None else ""),
-            "short": "Enc2 25×25",
-            "desc": f"MaxPool2d(2×2) + 2×(Conv 3×3 → GroupNorm(8) → SiLU)" + (" + DilatedRes(d=2,4)" if dilated_mod is not None else "") + f", {c1}→{c2} ch at 25×25 + Skip 2",
-            "inputShape": [c1, 50, 50],
-            "outputShape": [c2, 25, 25],
-            "receptiveField": 14,
-            "params": enc2_params,
-            "macs": enc2_macs,
-            "color": "#2563eb",
-            "border": "#60a5fa",
-            "coneLabel": "Pool2 + 2×3×3",
-        },
-        {
+    enc2_params = (
+        _mod_params(getattr(enc, "enc2", None))
+        + _mod_params(dilated_mod)
+        + _mod_params(convnext_mod)
+        + _mod_params(msca_mod)
+        + (_mod_params(bottleneck_se) if bneck_se_in_s2 else 0)
+    )
+
+    enc2_rf = 10 if enc2_is_single else 14
+    if dilated_mod is not None:
+        enc2_rf += 24
+    if convnext_mod is not None:
+        enc2_rf += 12
+    if msca_mod is not None:
+        enc2_rf += 20
+    enc2_rf = min(50, enc2_rf)
+
+    enc2_type_str = f"Down 2: MaxPool + enc2 ({type(getattr(enc, 'enc2', None)).__name__})"
+    if dilated_mod is not None:
+        enc2_type_str += " + DilatedRes"
+    if convnext_mod is not None:
+        enc2_type_str += " + ConvNeXtV2"
+    if msca_mod is not None:
+        enc2_type_str += " + SegNeXt"
+    if bneck_se_in_s2:
+        enc2_type_str += " + SE-Attn"
+
+    enc2_desc = (
+        f"MaxPool2d(2×2) + {'1×' if enc2_is_single else '2×'}(Conv 3×3 → GN → SiLU), {c1}→{c2} ch at 25×25"
+    )
+    if dilated_mod is not None:
+        enc2_desc += " + DilatedRes(d=2,4)"
+    if convnext_mod is not None:
+        enc2_desc += " + ConvNeXtV2(7×7 GRN)"
+    if msca_mod is not None:
+        enc2_desc += " + SegNeXtMSCA"
+    if bneck_se_in_s2:
+        enc2_desc += " + SE-Attn"
+    if use_unet:
+        enc2_desc += " + Skip 2"
+
+    layers.append({
+        "id": "s2",
+        "stage": "spatial",
+        "type": enc2_type_str,
+        "short": "Enc2 25×25",
+        "desc": enc2_desc,
+        "inputShape": [c1, 50, 50],
+        "outputShape": [c2, 25, 25],
+        "receptiveField": enc2_rf,
+        "params": enc2_params,
+        "macs": enc2_base_macs + context_macs + bneck_se_s2_macs,
+        "color": "#2563eb",
+        "border": "#60a5fa",
+        "coneLabel": "Pool2 + 1×3×3" if enc2_is_single else "Pool2 + 2×3×3",
+    })
+    # -------------------------------------------------------------
+    # S3, S4, G1: Full U-Net Contracting & Expansive stages (when use_unet is True)
+    # -------------------------------------------------------------
+    if use_unet:
+        enc3_params = _mod_params(getattr(enc, "enc3", None))
+        layers.append({
             "id": "s3",
             "stage": "spatial",
             "type": "U-Net Down 3: MaxPool 2×2 + enc3",
@@ -152,13 +270,19 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
             "color": "#1d4ed8",
             "border": "#60a5fa",
             "coneLabel": "Pool2 + 2×3×3",
-        },
-        {
+        })
+
+        bneck_params = _mod_params(getattr(enc, "bottleneck", None)) + _mod_params(bottleneck_se)
+        bneck_macs = (c3 * c4 * 9 + c4 * c4 * 9) * 6 * 6
+        if bottleneck_se is not None:
+            bneck_macs += 2 * c4 * max(8, c4 // 4)
+
+        layers.append({
             "id": "s4",
             "stage": "spatial",
-            "type": "U-Net Bottleneck: MaxPool 2×2 + bottleneck" + (" + SEChannelAttention" if bneck_se_mod is not None else ""),
+            "type": "U-Net Bottleneck: MaxPool 2×2 + bottleneck" + (" + SEChannelAttention" if bottleneck_se is not None else ""),
             "short": "Bot 6×6",
-            "desc": f"MaxPool2d(2×2) + 2×(Conv 3×3 → GroupNorm(8) → SiLU)" + (" + SE-Attn" if bneck_se_mod is not None else "") + f", {c3}→{c4} ch at 6×6",
+            "desc": f"MaxPool2d(2×2) + 2×(Conv 3×3 → GroupNorm(8) → SiLU)" + (" + SE-Attn" if bottleneck_se is not None else "") + f", {c3}→{c4} ch at 6×6",
             "inputShape": [c3, 12, 12],
             "outputShape": [c4, 6, 6],
             "receptiveField": 50,
@@ -167,8 +291,10 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
             "color": "#7c3aed",
             "border": "#a78bfa",
             "coneLabel": "Pool2 + 2×3×3",
-        },
-        {
+        })
+
+        up3_params = _mod_params(getattr(enc, "up3", None))
+        layers.append({
             "id": "g1",
             "stage": "global",
             "type": "Stage 2 Partial Upscale: up3 (6×6 → 12×12 + Skip 3)",
@@ -183,170 +309,223 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
             "border": "#fb923c",
             "coneLabel": "UpConv 3×3 + Skip3",
             "hasSkipArc": True,
-        },
-        {
-            "id": "g2",
-            "stage": "global",
-            "type": "Global Tower Strided Conv2d + GN8 + SiLU",
-            "short": "GT Conv 6×6",
-            "desc": f"{c3} filters, 3×3, stride=2, pad=1, GroupNorm(8), SiLU (from Stage 2 Up3 12×12)",
-            "inputShape": [c3, 12, 12],
-            "outputShape": [c3, 6, 6],
-            "receptiveField": 50,
-            "params": g1_params,
-            "macs": c3 * c3 * 9 * 6 * 6,
-            "color": "#2563eb",
-            "border": "#60a5fa",
-            "coneLabel": "3×3 s=2",
-        },
-        {
-            "id": "g3",
-            "stage": "global",
-            "type": "AdaptiveAvgPool2d",
-            "short": "AdapPool",
-            "desc": "Global Average Pool 1×1",
-            "inputShape": [c3, 6, 6],
-            "outputShape": [c3, 1, 1],
-            "receptiveField": 50,
-            "params": 0,
-            "macs": 0,
-            "color": "#d97706",
-            "border": "#fbbf24",
-            "coneLabel": "Pool 1×1",
-        },
-        {
-            "id": "g4",
-            "stage": "global",
-            "type": "Flatten",
-            "short": "Flatten",
-            "desc": f"Flatten {c3}×1×1 → {c3}",
-            "inputShape": [c3, 1, 1],
-            "outputShape": [c3],
-            "receptiveField": 50,
-            "params": 0,
-            "macs": 0,
-            "color": "#475569",
-            "border": "#94a3b8",
-            "coneLabel": "Flatten",
-        },
-        {
-            "id": "g5",
-            "stage": "global",
-            "type": "Linear + LayerNorm + SiLU",
-            "short": "GlobalTower",
-            "desc": f"Linear({c3} → {embed_dim}) + LayerNorm({embed_dim}) + SiLU",
-            "inputShape": [c3],
-            "outputShape": [embed_dim],
-            "receptiveField": 50,
-            "params": g5_params,
-            "macs": c3 * embed_dim,
-            "color": "#059669",
-            "border": "#34d399",
-            "coneLabel": "Dense",
-        },
-        {
-            "id": "head_army_ctx",
-            "stage": "global",
-            "type": "army_context_proj (Fusion)",
-            "short": "ArmyCtx",
-            "desc": f"army_context({army_ctx_dim}) → Linear({army_ctx_dim} → {embed_dim}) + LayerNorm({embed_dim}) + SiLU ⊕ global_emb",
-            "inputShape": [army_ctx_dim],
-            "outputShape": [embed_dim],
-            "receptiveField": 50,
-            "params": _mod_params(model.army_context_proj),
-            "macs": army_ctx_dim * embed_dim,
-            "color": "#0891b2",
-            "border": "#38bdf8",
-            "coneLabel": "64→256 ⊕",
-        },
-        {
-            "id": "head_slot_type",
-            "stage": "heads",
-            "type": "slot_type_head (Head 1)",
-            "short": "TypeHead",
-            "desc": f"Linear({embed_dim} → 7) + 1.4·tanh(z/3) + slot_type mask",
-            "inputShape": [embed_dim],
-            "outputShape": [7],
-            "receptiveField": 50,
-            "params": _mod_params(model.slot_type_head),
-            "macs": embed_dim * 7,
-            "color": "#ca8a04",
-            "border": "#facc15",
-        },
-        {
-            "id": "head_slot_idx",
-            "stage": "heads",
-            "type": "slot_idx_head (Head 2)",
-            "short": "IdxHead",
-            "desc": f"cat[global_emb({embed_dim}), one_hot(type)(7)] → MLP({embed_dim + 7} → {head_hidden_dim} → 10) + 1.6·tanh(z/3) + slot_idx mask",
-            "inputShape": [embed_dim + 7],
-            "outputShape": [10],
-            "receptiveField": 50,
-            "params": _mod_params(model.slot_idx_head),
-            "macs": (embed_dim + 7) * head_hidden_dim + head_hidden_dim * 10,
-            "color": "#0284c7",
-            "border": "#38bdf8",
-        },
-        {
-            "id": "head_deploy_fraction",
-            "stage": "heads",
-            "type": "deploy_fraction_head (Head 3)",
-            "short": "FracHead",
-            "desc": f"cat[global_emb({embed_dim}), one_hot(type)(7), one_hot(idx)(10)] → MLP({embed_dim + 17} → {head_hidden_dim} → {num_frac_bins})",
-            "inputShape": [embed_dim + 17],
-            "outputShape": [num_frac_bins],
-            "receptiveField": 50,
-            "params": _mod_params(model.deploy_fraction_head),
-            "macs": (embed_dim + 17) * head_hidden_dim + head_hidden_dim * num_frac_bins,
-            "color": "#9333ea",
-            "border": "#c084fc",
-        },
-        {
-            "id": "head_tile_conv",
-            "stage": "heads",
-            "type": "U-Net Full 50×50 Upscale (up2 + up1) + Tile Head (Head 4)",
-            "short": "UNet50×50",
-            "desc": f"up2(12×12→25×25 + Skip2) → up1(25×25→50×50 + Skip1) → FiLM({embed_dim + 17}→{spatial_dim}) → Conv 3×3 + 1×1 (1×50×50)",
-            "inputShape": [c3, 12, 12],
-            "outputShape": [1, 50, 50],
-            "receptiveField": 50,
-            "params": (
-                up2_params
-                + up1_params
-                + _mod_params(getattr(model.encoder, "spatial_se", None))
-                + _mod_params(getattr(model, "tile_cond_proj", None))
-                + _mod_params(getattr(model, "head_gate", None))
-                + _mod_params(getattr(model, "tile_conv_head", None))
-            ),
-            "macs": (
-                (c3 * c2 * 9 + (c2 * 2) * c2 * 9 + c2 * c2 * 9) * 25 * 25
-                + (c2 * c1 * 9 + (c1 * 2) * spatial_dim * 9 + spatial_dim * spatial_dim * 9) * 50 * 50
-                + (spatial_dim * 32 * 9 + 32 * 1) * 50 * 50
-                + (spatial_dim * max(8, spatial_dim // 4) * 2 if getattr(model.encoder, "spatial_se", None) is not None else 0)
-                + ((embed_dim + 17) * spatial_dim if getattr(model, "head_gate", None) is not None else 0)
-            ),
-            "color": "#d97706",
-            "border": "#facc15",
-        },
-        {
-            "id": "head_critic",
-            "stage": "heads",
-            "type": "critic_head (Head 5)",
-            "short": "Critic",
-            "desc": f"MLP({embed_dim} → {head_hidden_dim}" + (f" → {head_hidden_dim}" if critic_depth >= 3 else "") + f" → 1 Value V(s), SiLU, depth={critic_depth})",
-            "inputShape": [embed_dim],
-            "outputShape": [1],
-            "receptiveField": 50,
-            "params": _mod_params(model.critic_head),
-            "macs": (
-                (embed_dim * head_hidden_dim + head_hidden_dim * head_hidden_dim + head_hidden_dim * 1)
-                if critic_depth >= 3
-                else (embed_dim * head_hidden_dim + head_hidden_dim * 1)
-            ),
-            "color": "#16a34a",
-            "border": "#4ade80",
-        },
-    ]
+        })
+
+    # -------------------------------------------------------------
+    # Global Tower: G2..G5
+    # -------------------------------------------------------------
+    gt_in_ch = c3 if use_unet else c2
+    gt_in_res = 12 if use_unet else 25
+    gt_out_res = 6 if use_unet else 13
+
+    g2_params = _mod_params(gt[0]) + _mod_params(gt[1]) if gt is not None and len(gt) >= 2 else 0
+    layers.append({
+        "id": "g2",
+        "stage": "global",
+        "type": "Global Tower Strided Conv2d + GN + SiLU",
+        "short": f"GT Conv {gt_out_res}×{gt_out_res}",
+        "desc": f"{gt_in_ch} filters, 3×3, stride=2, pad=1, GroupNorm, SiLU ({gt_in_res}×{gt_in_res} → {gt_out_res}×{gt_out_res})",
+        "inputShape": [gt_in_ch, gt_in_res, gt_in_res],
+        "outputShape": [gt_in_ch, gt_out_res, gt_out_res],
+        "receptiveField": 50,
+        "params": g2_params,
+        "macs": gt_in_ch * gt_in_ch * 9 * gt_out_res * gt_out_res,
+        "color": "#2563eb",
+        "border": "#60a5fa",
+        "coneLabel": "3×3 s=2",
+    })
+
+    layers.append({
+        "id": "g3",
+        "stage": "global",
+        "type": "AdaptiveAvgPool2d",
+        "short": "AdapPool",
+        "desc": "Global Average Pool 1×1",
+        "inputShape": [gt_in_ch, gt_out_res, gt_out_res],
+        "outputShape": [gt_in_ch, 1, 1],
+        "receptiveField": 50,
+        "params": 0,
+        "macs": 0,
+        "color": "#d97706",
+        "border": "#fbbf24",
+        "coneLabel": "Pool 1×1",
+    })
+
+    layers.append({
+        "id": "g4",
+        "stage": "global",
+        "type": "Flatten",
+        "short": "Flatten",
+        "desc": f"Flatten {gt_in_ch}×1×1 → {gt_in_ch}",
+        "inputShape": [gt_in_ch, 1, 1],
+        "outputShape": [gt_in_ch],
+        "receptiveField": 50,
+        "params": 0,
+        "macs": 0,
+        "color": "#475569",
+        "border": "#94a3b8",
+        "coneLabel": "Flatten",
+    })
+
+    g5_params = _mod_params(gt[5]) + _mod_params(gt[6]) if gt is not None and len(gt) >= 7 else 0
+    layers.append({
+        "id": "g5",
+        "stage": "global",
+        "type": "Linear + LayerNorm + SiLU",
+        "short": "GlobalTower",
+        "desc": f"Linear({gt_in_ch} → {embed_dim}) + LayerNorm({embed_dim}) + SiLU",
+        "inputShape": [gt_in_ch],
+        "outputShape": [embed_dim],
+        "receptiveField": 50,
+        "params": g5_params,
+        "macs": gt_in_ch * embed_dim,
+        "color": "#059669",
+        "border": "#34d399",
+        "coneLabel": "Dense",
+    })
+
+    # -------------------------------------------------------------
+    # Fusion & Actor / Critic Heads
+    # -------------------------------------------------------------
+    layers.append({
+        "id": "head_army_ctx",
+        "stage": "global",
+        "type": "army_context_proj (Fusion)",
+        "short": "ArmyCtx",
+        "desc": f"army_context({army_ctx_dim}) → Linear({army_ctx_dim} → {embed_dim}) + LayerNorm({embed_dim}) + SiLU ⊕ global_emb",
+        "inputShape": [army_ctx_dim],
+        "outputShape": [embed_dim],
+        "receptiveField": 50,
+        "params": _mod_params(model.army_context_proj),
+        "macs": army_ctx_dim * embed_dim,
+        "color": "#0891b2",
+        "border": "#38bdf8",
+        "coneLabel": f"{army_ctx_dim}→{embed_dim} ⊕",
+    })
+
+    layers.append({
+        "id": "head_slot_type",
+        "stage": "heads",
+        "type": "slot_type_head (Head 1)",
+        "short": "TypeHead",
+        "desc": f"Linear({embed_dim} → 7) + 1.4·tanh(z/3) + slot_type mask",
+        "inputShape": [embed_dim],
+        "outputShape": [7],
+        "receptiveField": 50,
+        "params": _mod_params(model.slot_type_head),
+        "macs": embed_dim * 7,
+        "color": "#ca8a04",
+        "border": "#facc15",
+    })
+
+    layers.append({
+        "id": "head_slot_idx",
+        "stage": "heads",
+        "type": "slot_idx_head (Head 2)",
+        "short": "IdxHead",
+        "desc": f"cat[global_emb({embed_dim}), 1hot(type)(7)] → MLP({embed_dim + 7} → {head_hidden_dim} → 10) + 1.6·tanh(z/3) + slot_idx mask",
+        "inputShape": [embed_dim + 7],
+        "outputShape": [10],
+        "receptiveField": 50,
+        "params": _mod_params(model.slot_idx_head),
+        "macs": (embed_dim + 7) * head_hidden_dim + head_hidden_dim * 10,
+        "color": "#0284c7",
+        "border": "#38bdf8",
+    })
+
+    layers.append({
+        "id": "head_deploy_fraction",
+        "stage": "heads",
+        "type": "deploy_fraction_head (Head 3)",
+        "short": "FracHead",
+        "desc": f"cat[global_emb({embed_dim}), 1hot(type)(7), 1hot(idx)(10)] → MLP({embed_dim + 17} → {head_hidden_dim} → {num_frac_bins})",
+        "inputShape": [embed_dim + 17],
+        "outputShape": [num_frac_bins],
+        "receptiveField": 50,
+        "params": _mod_params(model.deploy_fraction_head),
+        "macs": (embed_dim + 17) * head_hidden_dim + head_hidden_dim * num_frac_bins,
+        "color": "#9333ea",
+        "border": "#c084fc",
+    })
+
+    # Head 4: Spatial Tile Head (U-Net up2+up1 or TinySkipUpBlock up1)
+    if use_unet:
+        tile_params = (
+            _mod_params(getattr(enc, "up2", None))
+            + _mod_params(getattr(enc, "up1", None))
+            + _mod_params(spatial_se)
+            + _mod_params(getattr(model, "tile_cond_proj", None))
+            + _mod_params(head_gate)
+            + _mod_params(getattr(model, "tile_conv_head", None))
+        )
+        tile_macs = (
+            (c3 * c2 * 9 + (c2 * 2) * c2 * 9 + c2 * c2 * 9) * 25 * 25
+            + (c2 * c1 * 9 + (c1 * 2) * spatial_dim * 9 + spatial_dim * spatial_dim * 9) * 50 * 50
+            + (spatial_dim * 32 * 9 + 32 * 1) * 50 * 50
+            + (2 * spatial_dim * max(8, spatial_dim // 4) if spatial_se is not None else 0)
+            + ((embed_dim + 17) * spatial_dim)
+        )
+        tile_type = "U-Net Full 50×50 Upscale (up2 + up1) + Tile Head (Head 4)"
+        tile_short = "UNet50×50"
+        tile_desc = (
+            f"up2(12×12→25×25 + Skip2) → up1(25×25→50×50 + Skip1) → FiLM({embed_dim + 17}→{spatial_dim}) → Conv 3×3 + 1×1 (1×50×50)"
+        )
+        tile_in_shape = [c3, 12, 12]
+    else:
+        tile_params = (
+            _mod_params(getattr(enc, "up1", None))
+            + _mod_params(spatial_se)
+            + _mod_params(getattr(model, "tile_cond_proj", None))
+            + _mod_params(head_gate)
+            + _mod_params(getattr(model, "tile_conv_head", None))
+        )
+        tile_macs = (
+            (c2 + c1) * spatial_dim * 9 * 50 * 50
+            + (spatial_dim * spatial_dim * 9 + spatial_dim * 1) * 50 * 50
+            + (2 * spatial_dim * max(8, spatial_dim // 4) if spatial_se is not None else 0)
+            + ((embed_dim + 17) * spatial_dim)
+        )
+        tile_type = "TinySkipUpBlock (25×25→50×50) + Skip1 + Tile Head (Head 4)"
+        tile_short = "SkipUp50×50"
+        tile_desc = (
+            f"up1(Bilinear 25×25→50×50 + Skip1 {c2}+{c1}→{spatial_dim}) → FiLM({embed_dim + 17}→{spatial_dim}) → Conv 3×3 + 1×1 (1×50×50)"
+        )
+        tile_in_shape = [c2, 25, 25]
+
+    layers.append({
+        "id": "head_tile_conv",
+        "stage": "heads",
+        "type": tile_type,
+        "short": tile_short,
+        "desc": tile_desc,
+        "inputShape": tile_in_shape,
+        "outputShape": [1, 50, 50],
+        "receptiveField": 50,
+        "params": tile_params,
+        "macs": tile_macs,
+        "color": "#d97706",
+        "border": "#facc15",
+    })
+
+    critic_macs = (
+        (embed_dim * head_hidden_dim + head_hidden_dim * head_hidden_dim + head_hidden_dim * 1)
+        if critic_depth >= 3
+        else (embed_dim * head_hidden_dim + head_hidden_dim * 1)
+    )
+    layers.append({
+        "id": "head_critic",
+        "stage": "heads",
+        "type": "critic_head (Head 5)",
+        "short": "Critic",
+        "desc": f"MLP({embed_dim} → {head_hidden_dim}" + (f" → {head_hidden_dim}" if critic_depth >= 3 else "") + f" → 1 Value V(s), SiLU, depth={critic_depth})",
+        "inputShape": [embed_dim],
+        "outputShape": [1],
+        "receptiveField": 50,
+        "params": _mod_params(getattr(model, "critic_head", None)),
+        "macs": critic_macs,
+        "color": "#16a34a",
+        "border": "#4ade80",
+    })
 
     total_params = int(sum(p.numel() for p in model.parameters()))
     total_macs = int(sum(l["macs"] for l in layers))
@@ -359,6 +538,8 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
         except Exception:
             pass
 
+    arch_cfg = model.get_arch_config() if hasattr(model, "get_arch_config") else (load_active_arch_config() or {})
+
     return {
         "in_channels": in_ch,
         "spatial_dim": spatial_dim,
@@ -369,6 +550,7 @@ def extract_live_layer_specs(model: CoCActorCritic) -> Dict[str, Any]:
         "total_macs": total_macs,
         "layers": layers,
         "source_code": source_code,
+        "arch_config": arch_cfg,
     }
 
 
@@ -516,9 +698,10 @@ def ensure_architecture_diagrams(
     or the live model architecture changes, when files are missing, or when `force=True`.
     """
     os.makedirs(ARCH_DIR, exist_ok=True)
+    active_arch_cfg = load_active_arch_config()
     if model is None:
-        in_ch = input_size[1] if input_size is not None else 59
-        model = CoCActorCritic(in_channels=in_ch)
+        in_ch = input_size[1] if input_size is not None else int((active_arch_cfg or {}).get("in_channels", 59))
+        model = CoCActorCritic(in_channels=in_ch, arch_config=active_arch_cfg)
     else:
         in_ch = int(getattr(model, "in_channels", 59))
 

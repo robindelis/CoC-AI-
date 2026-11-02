@@ -701,6 +701,22 @@ export interface AIStrategyResearch {
   duration_sec: number;
 }
 
+export interface AIArchitectureEvolutionAnalysis {
+  analyzed_by: string;
+  evolution_required: boolean;
+  evolution_verdict_headline: string;
+  evolution_rationale: string;
+  current_arch_version: string;
+  recommended_arch_version: string;
+  recommended_backbone: string;
+  bottleneck_targeted: string;
+  design_rationale: string;
+  weight_transfer_mode: string;
+  selected_modules: string[];
+  recommended_arch_config: Record<string, number | string | boolean>;
+  total_params: number;
+}
+
 export interface AIRecursiveLoopCycle {
   cycle_id: number;
   started_at: string;
@@ -709,6 +725,7 @@ export interface AIRecursiveLoopCycle {
   episode_at_analysis: number;
   restarted_from_scratch?: boolean;
   strategy_research?: AIStrategyResearch | null;
+  architecture_analysis?: AIArchitectureEvolutionAnalysis | null;
   health_verdict: {
     status: 'healthy_progressing' | 'plateaued' | 'degrading' | string;
     health_score: number;
@@ -722,6 +739,7 @@ export interface AIRecursiveLoopCycle {
     headline: string;
     progression_summary: string;
     model_used: string;
+    architecture_analysis?: AIArchitectureEvolutionAnalysis | null;
     reasons: AIRecursiveLoopReason[];
   };
   pre_change_snapshot: AIPreChangeSnapshot;
@@ -788,6 +806,7 @@ export interface AIRecursiveLoopState {
     hyperparams: Record<string, number | string>;
   };
   latest_strategy_research?: AIStrategyResearch | null;
+  latest_architecture_analysis?: AIArchitectureEvolutionAnalysis | null;
   last_model_visualizer_sync?: AIModelVisualizerSync | null;
   live_telemetry_compact?: Partial<AICompactBaselineMetrics> | null;
   reward_formula?: string;

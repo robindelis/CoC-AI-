@@ -375,52 +375,68 @@ def run_agy_strategy_research(
     arch_cfg = dict(DEFAULT_ARCH_CONFIG)
     arch_cfg.update(active_config.get("arch_config", {}))
 
-    cur_gen = int(arch_cfg.get("generation", 0))
     th_rate = float(metrics.get("two_star_th_rate_300", 0.0))
     triple_rate = float(metrics.get("three_star_triple_rate_300", 0.0))
     mean_pct = float(metrics.get("mean_pct_300", 0.0))
     spread_std = float(metrics.get("spatial_spread_std", 5.0))
+    v_gap = float(metrics.get("inter_village_gap_pct", 0.0))
+    near_miss = float((metrics.get("star_funnel") or {}).get("near_miss_85_to_99_pct_rate", 0.0))
     worst_v = metrics.get("worst_village") or {"name": "N/A", "recent_avg_pct": 0.0}
 
-    # Synthesize deterministic CoC strategy & I/O analysis grounded in telemetry
-    if cur_gen == 0 or not arch_cfg.get("use_coord_features"):
+    # Diagnose tactical focus directly from empirical 300-episode combat bottlenecks (not a sequential index)
+    if v_gap >= 9.0 or (float(worst_v.get("recent_avg_pct", 100.0)) < 64.0 and not arch_cfg.get("use_segnext_msca")):
+        tactical_focus = "Orthogonal Wall Compartment Corridors & Asymmetric Ring/Diamond Breaching"
+        io_recommendation = (
+            "Activate `SegNeXtMSCABlock` (`use_segnext_msca=True`, anisotropic 1x7+7x1 and 1x11+11x1 strip convolutions) "
+            "and `DilatedResBlock` (`use_dilated_context=True`) to model axis-aligned wall compartments, Log Launcher corridors, "
+            f"and close the {v_gap:.1f}% cross-village gap on `{worst_v.get('name')}`."
+        )
+        recommended_features = ["use_segnext_msca", "use_dilated_context"]
+    elif (th_rate < 60.0 or spread_std > 7.5) and not arch_cfg.get("use_dual_spatial_head"):
+        tactical_focus = "Decoupled Perimeter Rule-of-3 Funneling vs. Interior Spell Engagement"
+        io_recommendation = (
+            "Enable `use_dual_spatial_head=True` and `use_gated_heads=True` alongside `TacticalFeatureSynthesizer` "
+            "(`use_coord_features=True`) so perimeter troop funneling logits and interior Rage/Totem spell placement "
+            "operate on separate spatial pointer branches."
+        )
+        recommended_features = ["use_coord_features", "use_dual_spatial_head", "use_gated_heads"]
+    elif not arch_cfg.get("use_convnext_grn") and (mean_pct < 74.0 or th_rate < 68.0):
+        tactical_focus = "Hero Charge / Warden Walk Splash Radius & 59-Channel Sparse Threat Contrast"
+        io_recommendation = (
+            "Introduce `ConvNeXtV2Block` (7x7 depthwise conv + `GlobalResponseNorm`, `use_convnext_grn=True`) "
+            "and `SEChannelAttention` (`use_se_attention=True`) to span 7-tile weapon radii and prevent feature collapse "
+            "across sparse high-threat defense channels (Monolith, Hot Candle, Single Infernos)."
+        )
+        recommended_features = ["use_convnext_grn", "use_se_attention"]
+    elif (triple_rate < 30.0 or near_miss >= 10.0) and not arch_cfg.get("use_unet_decoder"):
+        tactical_focus = "Multi-Phase 2★→3★ Back-End Compartment Sweep & Global Receptive Field"
+        io_recommendation = (
+            "Synthesize a 4-stage Contracting-Expansive U-Net decoder (`use_unet_decoder=True`) paired with a "
+            "3-layer LayerNorm Critic (`critic_depth=3`) for full 50x50 receptive field and multi-phase GAE credit assignment."
+        )
+        recommended_features = ["use_unet_decoder", "critic_depth=3"]
+    elif not arch_cfg.get("use_coord_features"):
         tactical_focus = "Rule-of-3 Funneling & TH18 Line-of-Sight Coordinate Geometry"
         io_recommendation = (
             "Enable `TacticalFeatureSynthesizer` (`use_coord_features=True`) to inject 6 explicit CoC "
             "spatial strategy planes `(X, Y, TH18_Radial_Dist, TH18_LoS_Angle, Exterior_Funnel_Trash, Active_Frontline_Zone)` "
-            "plus `SEChannelAttention` (`use_se_attention=True`) to dynamically weight the 59 unit/defense channels."
+            "plus `SEChannelAttention` (`use_se_attention=True`)."
         )
         recommended_features = ["use_coord_features", "use_se_attention"]
-    elif cur_gen == 1 or not arch_cfg.get("use_convnext_grn"):
-        tactical_focus = "Hero Charge / Warden Walk Splash Radius & Sparse Channel Contrast"
-        io_recommendation = (
-            "Upgrade encoder with `ConvNeXtV2Block` (7x7 depthwise conv + `GlobalResponseNorm`, `use_convnext_grn=True`) "
-            "and `DilatedResBlock` (`use_dilated_context=True`) to match 7-tile Wizard/Bomb Tower splash radii and "
-            "prevent feature collapse across sparse hero/defense channels."
-        )
-        recommended_features = ["use_convnext_grn", "use_dilated_context"]
-    elif cur_gen == 2 or not arch_cfg.get("use_segnext_msca"):
-        tactical_focus = "Orthogonal Wall Compartment Corridors & Decoupled Perimeter/Core Pointers"
-        io_recommendation = (
-            "Activate `SegNeXtMSCABlock` (`use_segnext_msca=True`, strip convolutions 1x7+7x1 and 1x11+11x1) "
-            "for axis-aligned wall compartments and Log Launcher corridors, and enable `use_dual_spatial_head=True` "
-            "to decouple Perimeter Troop Funneling logits from Interior Spell Engagement logits."
-        )
-        recommended_features = ["use_segnext_msca", "use_dual_spatial_head", "use_gated_heads"]
     else:
         tactical_focus = "Multi-Phase Deep Core Breach & Royal Champion Back-End Sweep"
         io_recommendation = (
-            "Enable full 4-stage Contracting-Expansive U-Net decoder (`use_unet_decoder=True`) with "
-            "3-layer LayerNorm Critic (`critic_depth=3`) for global 50x50 receptive field and multi-phase GAE credit assignment."
+            "Combine multi-scale U-Net skip pathways (`use_unet_decoder=True`), strip attention (`use_segnext_msca=True`), "
+            "and dual troop/spell spatial pointers (`use_dual_spatial_head=True`) with a 3-layer Critic (`critic_depth=3`)."
         )
-        recommended_features = ["use_unet_decoder", "critic_depth=3"]
+        recommended_features = ["use_unet_decoder", "use_segnext_msca", "use_dual_spatial_head", "critic_depth=3"]
 
     agy_bin = shutil.which("agy") or "/home/robin/.local/bin/agy"
     agy_summary = ""
     agy_executed = False
     if os.path.exists(agy_bin):
         prompt = (
-            f"Analyze Cycle #{cycle_id} TH18 combat telemetry (Gen {cur_gen} `{arch_cfg.get('arch_version')}`, "
+            f"Analyze Cycle #{cycle_id} TH18 combat telemetry (Active Arch `{arch_cfg.get('arch_version')}`, "
             f"Mean Destr {mean_pct:.1f}%, 2-Star TH18 {th_rate:.1f}%, 3-Star {triple_rate:.1f}%, "
             f"Spread std {spread_std:.2f}t, Worst Village {worst_v.get('name')} at {worst_v.get('recent_avg_pct')}%). "
             f"Focus on classical CoC strategy concepts ({tactical_focus}) and recommend the optimal input/output "
@@ -940,22 +956,26 @@ def _build_targeted_new_architecture_solution(
     reasons: List[Dict[str, Any]],
     active_config: Dict[str, Any],
     past_cycles: List[Dict[str, Any]],
+    llm_proposed_arch: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Progressive SOTA Vision & Spatial-RL Architecture Morphing Ladder:
-    Advances the model bit-by-bit from Stage 0 (`v4.0-Gen0-TinyCNN`, ~50K params) through
-    Gen 1 (`CoordSE-ResCNN`), Gen 2 (`ConvNeXtV2-GRN`), Gen 3 (`SegNeXt-MSCA-DualPtr`),
-    Gen 4 (`SOTA-Hybrid-UNet`), and Gen 5 (`Full-Attention-UNet`) guided by:
-      - `obsidian_vault/architectures/SOTA_Vision_And_Spatial_RL_Architectures.md`
-      - `obsidian_vault/decisions/CoC_Strategy_Concepts_And_Input_Output_Design.md`
-      - `obsidian_vault/architectures/Model_Architecture_Evolution_Ledger.md`
-    Dynamically selects `weight_transfer_mode` (`"warm_start"` vs `"scratch_restart"`) per morph.
+    Bottleneck-Driven Neural Architecture Synthesis (Non-Sequential):
+    Instead of stepping through a fixed 1-to-5 sequence, synthesizes the specific
+    neural architecture topology appropriate for the diagnosed 300-episode combat
+    and RL pathology (or applies the custom architecture designed by the OpenCode
+    Argon 4 Medium agent in `llm_proposed_arch`).
     """
     arch_cfg = dict(DEFAULT_ARCH_CONFIG)
     arch_cfg.update(active_config.get("arch_config", {}))
 
-    reason_titles = " & ".join(str(r.get("title", "")) for r in reasons[:2]) or "5,000-Episode Generation Plateau"
+    reason_titles = " & ".join(str(r.get("title", "")) for r in reasons[:2]) or "Structural Representational Bottleneck"
+    mean_pct = float(metrics.get("mean_pct_300", metrics.get("mean_pct_50", 0.0)))
+    th_rate = float(metrics.get("two_star_th_rate_300", metrics.get("two_star_th_rate_50", 0.0)))
     triple_rate = float(metrics.get("three_star_triple_rate_300", metrics.get("three_star_triple_rate_50", 0.0)))
+    v_gap = float(metrics.get("inter_village_gap_pct", 0.0))
+    top5_mass = float(metrics.get("top5_tile_mass_pct", 25.0))
+    cal_gap = abs(float(metrics.get("calibration_gap", 0.0)))
+    near_miss = float((metrics.get("star_funnel") or {}).get("near_miss_85_to_99_pct_rate", 0.0))
     drawdown = float(metrics.get("drawdown_from_peak_pct", 0.0))
     slope = float(metrics.get("pct_slope_per_100ep", 0.0))
     worst_v = metrics.get("worst_village") or {"name": "Worst Layout", "recent_avg_pct": 0.0}
@@ -963,42 +983,139 @@ def _build_targeted_new_architecture_solution(
     cur_gen = int(arch_cfg.get("generation", 0))
     next_gen = cur_gen + 1
 
-    # Decide weight transfer mode: warm_start transfers overlapping weights when progressing up the ladder;
-    # scratch_restart is chosen if the policy suffered severe drawdown/degradation or major topology reset.
     severe_degradation = drawdown <= -4.0 and slope < -0.5
     weight_transfer_mode = "scratch_restart" if severe_degradation else "warm_start"
 
-    if next_gen == 1:
-        next_arch_version = "v4.1-Gen1-CoordSE-ResCNN"
+    # Diagnose which specific architectural topology is needed for the current failure mode
+    if isinstance(llm_proposed_arch, dict) and isinstance(llm_proposed_arch.get("arch_config"), dict):
+        raw_patch = llm_proposed_arch["arch_config"]
+        next_arch_version = str(
+            llm_proposed_arch.get("arch_version")
+            or raw_patch.get("arch_version")
+            or f"v4-Argon4-Custom-{raw_patch.get('backbone_type', 'Hybrid')}"
+        )
+        weight_transfer_mode = str(
+            llm_proposed_arch.get("weight_transfer_mode")
+            or raw_patch.get("weight_transfer_mode")
+            or weight_transfer_mode
+        )
         new_arch_patch: Dict[str, Any] = {
             "arch_version": next_arch_version,
-            "generation": 1,
+            "generation": int(raw_patch.get("generation", next_gen)),
+            "backbone_type": str(raw_patch.get("backbone_type", arch_cfg.get("backbone_type", "coord_se_res"))),
+            "weight_transfer_mode": weight_transfer_mode,
+            "base_ch": int(raw_patch.get("base_ch", arch_cfg.get("base_ch", 24))),
+            "spatial_dim": int(raw_patch.get("spatial_dim", arch_cfg.get("spatial_dim", 24))),
+            "embed_dim": int(raw_patch.get("embed_dim", arch_cfg.get("embed_dim", 128))),
+            "head_hidden_dim": int(raw_patch.get("head_hidden_dim", arch_cfg.get("head_hidden_dim", 96))),
+            "use_coord_features": bool(raw_patch.get("use_coord_features", True)),
+            "use_se_attention": bool(raw_patch.get("use_se_attention", True)),
+            "use_dilated_context": bool(raw_patch.get("use_dilated_context", arch_cfg.get("use_dilated_context", False))),
+            "use_convnext_grn": bool(raw_patch.get("use_convnext_grn", arch_cfg.get("use_convnext_grn", False))),
+            "use_segnext_msca": bool(raw_patch.get("use_segnext_msca", arch_cfg.get("use_segnext_msca", False))),
+            "use_unet_decoder": bool(raw_patch.get("use_unet_decoder", arch_cfg.get("use_unet_decoder", False))),
+            "use_dual_spatial_head": bool(raw_patch.get("use_dual_spatial_head", arch_cfg.get("use_dual_spatial_head", False))),
+            "use_gated_heads": bool(raw_patch.get("use_gated_heads", arch_cfg.get("use_gated_heads", False))),
+            "critic_depth": int(raw_patch.get("critic_depth", arch_cfg.get("critic_depth", 2))),
+        }
+        bottleneck_targeted = str(llm_proposed_arch.get("bottleneck_targeted") or reason_titles)
+        morph_description = str(
+            llm_proposed_arch.get("design_rationale")
+            or f"synthesizes custom architecture `{next_arch_version}` tailored to resolve {bottleneck_targeted}"
+        )
+    elif v_gap >= 9.0 or (float(worst_v.get("recent_avg_pct", 100.0)) < 63.0 and not arch_cfg.get("use_segnext_msca")):
+        # Bottleneck: High cross-village spread / failing on orthogonal compartment or ring bases
+        next_arch_version = "v4-SegNeXt-MSCA-CompartmentNet"
+        bottleneck_targeted = f"Cross-Village Compartment & Ring Gap ({v_gap:.1f}% spread; worst: {worst_v.get('name')})"
+        new_arch_patch = {
+            "arch_version": next_arch_version,
+            "generation": next_gen,
+            "backbone_type": "segnext_msca",
+            "weight_transfer_mode": weight_transfer_mode,
+            "base_ch": 28,
+            "spatial_dim": 28,
+            "embed_dim": 128,
+            "head_hidden_dim": 96,
+            "use_coord_features": True,
+            "use_se_attention": True,
+            "use_dilated_context": True,
+            "use_convnext_grn": bool(arch_cfg.get("use_convnext_grn", False)),
+            "use_segnext_msca": True,
+            "use_unet_decoder": bool(arch_cfg.get("use_unet_decoder", False)),
+            "use_dual_spatial_head": bool(arch_cfg.get("use_dual_spatial_head", True)),
+            "use_gated_heads": True,
+            "critic_depth": int(arch_cfg.get("critic_depth", 2)),
+        }
+        morph_description = (
+            f"diagnoses a {v_gap:.1f}% cross-village performance gap (worst layout `{worst_v.get('name')}` at "
+            f"{worst_v.get('recent_avg_pct')}%) and synthesizes `SegNeXt-MSCA-CompartmentNet` using anisotropic "
+            "1x7+7x1 and 1x11+11x1 strip convolutions (`use_segnext_msca=True`) + multi-scale dilated context (`d=2,4`) "
+            "to capture orthogonal wall compartments and long-range defense corridors"
+        )
+    elif (th_rate < 62.0 or top5_mass < 26.0) and not arch_cfg.get("use_dual_spatial_head"):
+        # Bottleneck: Perimeter troop funneling vs interior spell targeting conflict / low 2-star TH18 breach
+        next_arch_version = "v4-DualPointer-GatedBreachNet"
+        bottleneck_targeted = f"TH18 Core Breach & Troop/Spell Pointer Conflict (2★ TH18 rate {th_rate:.1f}%)"
+        new_arch_patch = {
+            "arch_version": next_arch_version,
+            "generation": next_gen,
             "backbone_type": "coord_se_res",
             "weight_transfer_mode": weight_transfer_mode,
             "base_ch": 24,
-            "spatial_dim": 24,
-            "embed_dim": 96,
-            "head_hidden_dim": 64,
+            "spatial_dim": 28,
+            "embed_dim": 128,
+            "head_hidden_dim": 96,
             "use_coord_features": True,
             "use_se_attention": True,
-            "use_dilated_context": False,
-            "use_convnext_grn": False,
-            "use_segnext_msca": False,
+            "use_dilated_context": bool(arch_cfg.get("use_dilated_context", True)),
+            "use_convnext_grn": bool(arch_cfg.get("use_convnext_grn", False)),
+            "use_segnext_msca": bool(arch_cfg.get("use_segnext_msca", False)),
             "use_unet_decoder": False,
-            "use_dual_spatial_head": False,
-            "use_gated_heads": False,
+            "use_dual_spatial_head": True,
+            "use_gated_heads": True,
             "critic_depth": 2,
         }
         morph_description = (
-            "morphs Stage 0 TinyCNN into Gen 1 `CoordSE-ResCNN` by enabling `TacticalFeatureSynthesizer` "
-            "(6 explicit CoC strategy planes: X/Y coords, TH18 radial distance & Siege LoS angle, exterior funnel trash density, "
-            "and active frontline zone), double 3x3 residual blocks, and `SEChannelAttention` (`base_ch=24, embed_dim=96`)"
+            f"diagnoses low TH18 core conversion (2★ rate {th_rate:.1f}%, Top-5 tile mass {top5_mass:.1f}%) caused by "
+            "a single spatial head conflating border troop drops with interior spell casts, and synthesizes "
+            "`DualPointer-GatedBreachNet` (`use_dual_spatial_head=True, use_gated_heads=True, use_coord_features=True`) "
+            "to decouple perimeter funneling from interior Rage/Totem spell placement"
         )
-    elif next_gen == 2:
-        next_arch_version = "v4.2-Gen2-ConvNeXtV2-GRN"
+    elif (triple_rate < 30.0 and th_rate >= 58.0) or near_miss >= 10.0 or cal_gap >= 6.5:
+        # Bottleneck: Secures 2 stars but stalls on 85-99% back-end cleanup / long-horizon critic credit assignment
+        next_arch_version = "v4-MultiScale-UNet-DeepCritic"
+        bottleneck_targeted = f"Late-Battle 2★→3★ Cleanup & Value Horizon Lag (3★ {triple_rate:.1f}%, Gap {cal_gap:.1f})"
         new_arch_patch = {
             "arch_version": next_arch_version,
-            "generation": 2,
+            "generation": next_gen,
+            "backbone_type": "unet",
+            "weight_transfer_mode": weight_transfer_mode,
+            "base_ch": 24,
+            "spatial_dim": 28,
+            "embed_dim": 192,
+            "head_hidden_dim": 128,
+            "use_coord_features": True,
+            "use_se_attention": True,
+            "use_dilated_context": True,
+            "use_convnext_grn": bool(arch_cfg.get("use_convnext_grn", True)),
+            "use_segnext_msca": bool(arch_cfg.get("use_segnext_msca", False)),
+            "use_unet_decoder": True,
+            "use_dual_spatial_head": True,
+            "use_gated_heads": True,
+            "critic_depth": 3,
+        }
+        morph_description = (
+            f"diagnoses a 2★→3★ back-end cleanup stall ({th_rate:.1f}% 2★ but {triple_rate:.1f}% 3★, {near_miss:.1f}% "
+            f"near-misses, Critic |V(s₀)−R|={cal_gap:.1f}) and synthesizes a 4-stage Contracting-Expansive U-Net "
+            "(`use_unet_decoder=True`) with a 3-layer LayerNorm Critic (`critic_depth=3`) for global 50x50 receptive field"
+        )
+    elif not arch_cfg.get("use_convnext_grn"):
+        # Bottleneck: Sparse 59-channel defense blindness & 7-tile splash attrition
+        next_arch_version = "v4-ConvNeXtV2-GRN-ThreatNet"
+        bottleneck_targeted = f"Sparse 59-Channel Defense Contrast & Splash Radius (Mean Destr {mean_pct:.1f}%)"
+        new_arch_patch = {
+            "arch_version": next_arch_version,
+            "generation": next_gen,
             "backbone_type": "convnext_v2",
             "weight_transfer_mode": weight_transfer_mode,
             "base_ch": 28,
@@ -1011,69 +1128,18 @@ def _build_targeted_new_architecture_solution(
             "use_convnext_grn": True,
             "use_segnext_msca": False,
             "use_unet_decoder": False,
-            "use_dual_spatial_head": False,
+            "use_dual_spatial_head": bool(arch_cfg.get("use_dual_spatial_head", False)),
             "use_gated_heads": False,
             "critic_depth": 2,
         }
         morph_description = (
-            "upgrades Gen 1 into Gen 2 `ConvNeXtV2-GRN` by adding 7x7 depthwise separable ConvNeXt V2 blocks with "
-            "`GlobalResponseNorm` (matching 7-tile Wizard/Bomb Tower splash radii and preventing sparse channel collapse) "
-            "plus multi-scale `DilatedResBlock` (dilation 2 & 4, `base_ch=28, embed_dim=128`)"
-        )
-    elif next_gen == 3:
-        next_arch_version = "v4.3-Gen3-SegNeXt-MSCA-DualPtr"
-        new_arch_patch = {
-            "arch_version": next_arch_version,
-            "generation": 3,
-            "backbone_type": "segnext_msca",
-            "weight_transfer_mode": weight_transfer_mode,
-            "base_ch": 32,
-            "spatial_dim": 32,
-            "embed_dim": 160,
-            "head_hidden_dim": 128,
-            "use_coord_features": True,
-            "use_se_attention": True,
-            "use_dilated_context": True,
-            "use_convnext_grn": True,
-            "use_segnext_msca": True,
-            "use_unet_decoder": False,
-            "use_dual_spatial_head": True,
-            "use_gated_heads": True,
-            "critic_depth": 3,
-        }
-        morph_description = (
-            "evolves Gen 2 into Gen 3 `SegNeXt-MSCA-DualPtr` by introducing Multi-Scale Strip Convolutional Attention "
-            "(1x7+7x1 and 1x11+11x1 strip convs aligned with CoC orthogonal wall compartments and Log Launcher rays), "
-            "decoupled Perimeter Funnel vs Interior Spell Dual Spatial Pointer (`use_dual_spatial_head=True`), "
-            "and a 3-layer LayerNorm Critic (`critic_depth=3`)"
-        )
-    elif next_gen == 4:
-        next_arch_version = "v4.4-Gen4-SOTA-Hybrid-UNet"
-        new_arch_patch = {
-            "arch_version": next_arch_version,
-            "generation": 4,
-            "backbone_type": "unet",
-            "weight_transfer_mode": weight_transfer_mode,
-            "base_ch": 24,
-            "spatial_dim": 28,
-            "embed_dim": 192,
-            "head_hidden_dim": 128,
-            "use_coord_features": True,
-            "use_se_attention": True,
-            "use_dilated_context": True,
-            "use_convnext_grn": True,
-            "use_segnext_msca": True,
-            "use_unet_decoder": True,
-            "use_dual_spatial_head": True,
-            "use_gated_heads": True,
-            "critic_depth": 3,
-        }
-        morph_description = (
-            "morphs Gen 3 into Gen 4 `SOTA-Hybrid-UNet` with a full 4-stage contracting-expansive U-Net decoder "
-            "(`50->25->12->6->12->25->50`) fused with ConvNeXt V2 GRN, SegNeXt MSCA strip attention, and Dual Spatial Pointers"
+            f"diagnoses mid-battle attrition at {mean_pct:.1f}% mean destruction across the sparse 59-channel grid and "
+            "synthesizes `ConvNeXtV2-GRN-ThreatNet` (`use_convnext_grn=True` with 7x7 depthwise kernels and Global Response "
+            "Normalization + `SEChannelAttention`) to prevent sparse defense channel collapse"
         )
     else:
-        next_arch_version = f"v4.{next_gen}-Gen{next_gen}-Full-Attention-UNet"
+        next_arch_version = "v4-FullSOTA-HybridAttention-UNet"
+        bottleneck_targeted = reason_titles
         new_arch_patch = {
             "arch_version": next_arch_version,
             "generation": next_gen,
@@ -1094,8 +1160,8 @@ def _build_targeted_new_architecture_solution(
             "critic_depth": 3,
         }
         morph_description = (
-            f"scales to Gen {next_gen} Full-Capacity Hybrid Attention U-Net (`base_ch=32, embed_dim=256`) "
-            "combining all SOTA spatial attention and CoC tactical geometry modules"
+            "synthesizes a Full-Capacity Hybrid Attention U-Net (`base_ch=32, embed_dim=256`) combining "
+            "ConvNeXt V2 GRN, SegNeXt MSCA strip attention, 4-stage U-Net skip pathways, and Dual Spatial Pointers"
         )
 
     new_arch_patch.update({
@@ -1116,6 +1182,26 @@ def _build_targeted_new_architecture_solution(
         else f"{new_total_params / 1e6:.2f}M Params"
     )
     transfer_label = "Warm-Start Weight Transfer" if weight_transfer_mode == "warm_start" else "Scratch Restart"
+    custom_code_instr = (
+        str(llm_proposed_arch.get("code_edit_instructions"))
+        if isinstance(llm_proposed_arch, dict) and llm_proposed_arch.get("code_edit_instructions")
+        else (
+            f"Read `obsidian_vault/architectures/SOTA_Vision_And_Spatial_RL_Architectures.md` and "
+            f"`obsidian_vault/decisions/CoC_Strategy_Concepts_And_Input_Output_Design.md`. "
+            f"Evolve the model from `{arch_cfg.get('arch_version')}` to `{next_arch_version}` "
+            f"(`weight_transfer_mode='{weight_transfer_mode}'`) specifically to solve `{bottleneck_targeted}`. "
+            f"In `python/coc_rl/networks.py`, update `DEFAULT_ARCH_CONFIG` so "
+            f"`arch_version='{next_arch_version}'`, `generation={new_arch_patch['generation']}`, "
+            f"`backbone_type='{new_arch_patch['backbone_type']}'`, `weight_transfer_mode='{weight_transfer_mode}'`, "
+            f"`base_ch={new_arch_patch['base_ch']}`, `spatial_dim={new_arch_patch['spatial_dim']}`, "
+            f"`embed_dim={new_arch_patch['embed_dim']}`, `head_hidden_dim={new_arch_patch['head_hidden_dim']}`, "
+            f"`use_coord_features={new_arch_patch['use_coord_features']}`, `use_se_attention={new_arch_patch['use_se_attention']}`, "
+            f"`use_dilated_context={new_arch_patch['use_dilated_context']}`, `use_convnext_grn={new_arch_patch['use_convnext_grn']}`, "
+            f"`use_segnext_msca={new_arch_patch['use_segnext_msca']}`, `use_unet_decoder={new_arch_patch['use_unet_decoder']}`, "
+            f"`use_dual_spatial_head={new_arch_patch['use_dual_spatial_head']}`, `use_gated_heads={new_arch_patch['use_gated_heads']}`, "
+            f"and `critic_depth={new_arch_patch['critic_depth']}`."
+        )
+    )
 
     return {
         "solution_id": f"sol_restart_new_arch_v{len(past_cycles)+1}",
@@ -1124,46 +1210,31 @@ def _build_targeted_new_architecture_solution(
         "decision_type": "stop_and_restart_new_arch",
         "requires_restart_from_scratch": True,
         "weight_transfer_mode": weight_transfer_mode,
+        "bottleneck_targeted": bottleneck_targeted,
         "requires_code_edit": True,
         "target_files": ["python/coc_rl/networks.py", "python/coc_rl/ppo.py"],
-        "title": f"Morph Model to Gen {next_gen}: {next_arch_version} ({param_label} • {transfer_label})",
-        "target_problem": reason_titles,
+        "title": f"Evolve Architecture → {next_arch_version} ({param_label} • {transfer_label})",
+        "target_problem": bottleneck_targeted,
         "rationale": (
-            f"Triggered after plateauing on Gen {cur_gen} (`{arch_cfg.get('arch_version', 'v4.0-Gen0-TinyCNN')}` at "
-            f"{metrics.get('mean_pct_300', 0.0):.1f}% mean destr, {triple_rate:.1f}% 3★, worst village `{worst_v.get('name')}` "
-            f"at {worst_v.get('recent_avg_pct')}%). Guided by the Obsidian SOTA Vision Catalog and AGY CoC Strategy Research, "
-            f"OpenCode Argon 4 (`google-vertex/gemini-4-argon#medium`) {morph_description} (`{new_total_params:,}` params, "
-            f"weight mode: `{weight_transfer_mode}`)."
+            f"Targeted for `{bottleneck_targeted}` (active model `{arch_cfg.get('arch_version')}` at "
+            f"{mean_pct:.1f}% mean destr, {th_rate:.1f}% 2★ TH18, {triple_rate:.1f}% 3★, worst village `{worst_v.get('name')}` "
+            f"at {worst_v.get('recent_avg_pct')}%). OpenCode Argon 4 Medium (`google-vertex/gemini-4-argon#medium`) "
+            f"{morph_description} (`{new_total_params:,}` params, mode: `{weight_transfer_mode}`)."
         ),
-        "code_edit_instructions": (
-            f"Read `obsidian_vault/architectures/SOTA_Vision_And_Spatial_RL_Architectures.md`, "
-            f"`obsidian_vault/decisions/CoC_Strategy_Concepts_And_Input_Output_Design.md`, and "
-            f"`obsidian_vault/architectures/Model_Architecture_Evolution_Ledger.md`. "
-            f"Morph the model from Gen {cur_gen} (`{arch_cfg.get('arch_version')}`) to Gen {next_gen} (`{next_arch_version}`, "
-            f"`weight_transfer_mode='{weight_transfer_mode}'`) to solve `{reason_titles}`. "
-            f"In `python/coc_rl/networks.py`, update `DEFAULT_ARCH_CONFIG` (and any corresponding encoder/head blocks) so "
-            f"`arch_version='{next_arch_version}'`, `generation={next_gen}`, `backbone_type='{new_arch_patch['backbone_type']}'`, "
-            f"`weight_transfer_mode='{weight_transfer_mode}'`, `base_ch={new_arch_patch['base_ch']}`, "
-            f"`spatial_dim={new_arch_patch['spatial_dim']}`, `embed_dim={new_arch_patch['embed_dim']}`, "
-            f"`head_hidden_dim={new_arch_patch['head_hidden_dim']}`, `use_coord_features={new_arch_patch['use_coord_features']}`, "
-            f"`use_se_attention={new_arch_patch['use_se_attention']}`, `use_dilated_context={new_arch_patch['use_dilated_context']}`, "
-            f"`use_convnext_grn={new_arch_patch['use_convnext_grn']}`, `use_segnext_msca={new_arch_patch['use_segnext_msca']}`, "
-            f"`use_unet_decoder={new_arch_patch['use_unet_decoder']}`, `use_dual_spatial_head={new_arch_patch['use_dual_spatial_head']}`, "
-            f"`use_gated_heads={new_arch_patch['use_gated_heads']}`, and `critic_depth={new_arch_patch['critic_depth']}`."
-        ),
+        "code_edit_instructions": custom_code_instr,
         "config_patch": {
             "arch_config": new_arch_patch,
             "hyperparams": {
-                "lr": 0.00035 if next_gen <= 2 else 0.00028,
-                "critic_lr_mult": 2.8 if next_gen <= 2 else 3.0,
+                "lr": 0.00032 if not new_arch_patch.get("use_unet_decoder") else 0.00026,
+                "critic_lr_mult": 2.8 if new_arch_patch.get("critic_depth", 2) <= 2 else 3.0,
                 "vf_coef": 0.55,
                 "ent_coef": 0.015,
                 "matchup_mode": "round_robin",
             },
         },
         "expected_verification_criteria": (
-            f"Morph model to `{next_arch_version}` ({new_total_params:,} params) via `{weight_transfer_mode}`, "
-            "train for 5,000 episodes, and verify improvement in Mean Destruction %, 2★+ TH18 rate, and 3★ Triple rate."
+            f"Evolve model to `{next_arch_version}` ({new_total_params:,} params) via `{weight_transfer_mode}`, "
+            f"resolve `{bottleneck_targeted}`, and verify improvement in 300-ep Mean Destruction %, 2★ TH18, and 3★ Triple rates."
         ),
     }
 
@@ -1557,6 +1628,53 @@ def _build_deterministic_diagnosis_and_solutions(
         f"Decision: {recommended_decision.upper()} ({reasons[0]['title']})."
     )
 
+    target_arch_patch = (new_arch_restart_candidate.get("config_patch") or {}).get("arch_config", {})
+    selected_mods = [
+        k
+        for k in (
+            "use_coord_features",
+            "use_se_attention",
+            "use_dilated_context",
+            "use_convnext_grn",
+            "use_segnext_msca",
+            "use_unet_decoder",
+            "use_dual_spatial_head",
+            "use_gated_heads",
+        )
+        if target_arch_patch.get(k)
+    ]
+    arch_evolution_rationale = (
+        f"Architecture evolution IS REQUIRED: {recent_unsolved_count} recent in-place tuning cycles failed to break "
+        f"the plateau at {mean_pct:.1f}% mean destruction ({slope:+.2f}%/100ep), indicating a structural representational "
+        f"bottleneck on `{new_arch_restart_candidate.get('bottleneck_targeted', reasons[0]['title'])}`."
+        if should_restart_new_arch
+        else (
+            f"Architecture evolution is NOT required yet: active model `{arch_cfg.get('arch_version', 'v4.0')}` is still "
+            f"progressing ({slope:+.2f}%/100ep) or has only a first-stage reward/conditioning bottleneck (`{reasons[0]['title']}`) "
+            "that should be tuned in-place before changing network topology."
+        )
+    )
+
+    architecture_analysis = {
+        "analyzed_by": "google-vertex/gemini-4-argon#medium",
+        "evolution_required": bool(should_restart_new_arch),
+        "evolution_verdict_headline": (
+            f"EVOLVE ARCHITECTURE → {target_arch_patch.get('arch_version')}"
+            if should_restart_new_arch
+            else f"KEEP CURRENT ARCHITECTURE ({arch_cfg.get('arch_version', 'v4.0')}) & TUNE IN-PLACE"
+        ),
+        "evolution_rationale": arch_evolution_rationale,
+        "current_arch_version": str(arch_cfg.get("arch_version", "v4.0-Gen0-TinyCNN")),
+        "recommended_arch_version": str(target_arch_patch.get("arch_version", "v4-Custom")),
+        "recommended_backbone": str(target_arch_patch.get("backbone_type", "coord_se_res")),
+        "bottleneck_targeted": str(new_arch_restart_candidate.get("bottleneck_targeted", reasons[0]["title"])),
+        "design_rationale": str(new_arch_restart_candidate.get("rationale", "")),
+        "weight_transfer_mode": str(target_arch_patch.get("weight_transfer_mode", "warm_start")),
+        "selected_modules": selected_mods,
+        "recommended_arch_config": target_arch_patch,
+        "total_params": int(target_arch_patch.get("total_params", 130000)),
+    }
+
     return {
         "status": status,
         "health_score": health_score,
@@ -1571,6 +1689,7 @@ def _build_deterministic_diagnosis_and_solutions(
             f"Star conversion funnel: 1★={metrics['one_star_rate_300']:.1f}% → P(2★|1★)={p2_given_1:.1f}% → "
             f"P(3★|2★)={p3_given_2:.1f}% (Worst village: {worst_v.get('name')} at {worst_v.get('recent_avg_pct')}%)."
         ),
+        "architecture_analysis": architecture_analysis,
         "reasons": reasons,
         "candidate_solutions": candidates,
         "recommended_solution_ids": rec_ids,
@@ -1606,12 +1725,20 @@ def _build_recursive_loop_llm_prompt(
     }
     return f"""CRITICAL INSTRUCTION: Respond immediately in a single turn with ZERO tool calls. Output ONLY the raw JSON object (no markdown fences).
 
-You are the Autonomous Progressive Architecture & Parameter Evolution Architect for the Clash of Clans Town Hall 18 (TH18) Deep RL Attacker (`CoCActorCritic` + PPO + GAE).
-At each episode horizon check (default 5,000 episodes) you analyze training telemetry over the **last 300 episodes** (to eliminate short-window episode variance), determine honestly whether training is progressing, plateaued, or degrading, identify quantitative root causes, and choose one of the 4 strategic decisions:
-  1. `"keep_monitoring"`: Training is genuinely progressing over the 300-episode window.
-  2. `"apply_in_place_solution"`: Apply 1 or more in-place candidate solutions (`reward_function`, `architecture`, `hyperparameters`, `code_agent`) while continuing the current model.
-  3. `"rollback_to_baseline"`: Revert a recent change that degraded 300-episode combat performance.
-  4. `"stop_and_restart_new_arch"`: Stop the current model and restart training from scratch with the new neural architecture (`new_architecture_restart`, candidate index 4 or rank #1 if promoted) designed to solve the structural issues identified in the previous run!
+You are the OpenCode Argon 4 Medium (`google-vertex/gemini-4-argon#medium`) Neural Architecture & RL Evolution Analyst for the Clash of Clans Town Hall 18 (TH18) Deep RL Attacker (`CoCActorCritic` + PPO + GAE).
+Do NOT step through architectures in a predetermined 1-to-5 sequential order! Instead, perform a rigorous 2-stage analysis of the **last 300 episodes**:
+  - **STAGE 1 (Is Model Evolution Required?)**: Determine first whether a neural architecture evolution is actually required (`"architecture_evolution_required": true | false`). If the current architecture is still progressing (`"keep_monitoring"`) or if the bottleneck can be solved via in-place reward shaping, PPO hyperparameter, or spatial prior tuning (`"apply_in_place_solution"`), set `"architecture_evolution_required": false` and explain why. Only set `"architecture_evolution_required": true` (and `"recommended_decision": "stop_and_restart_new_arch"`) when the telemetry proves a structural representational bottleneck (e.g., repeated in-place failures, inability to generalize across compartment/ring layouts, troop vs. spell pointer conflict, or sparse channel collapse).
+  - **STAGE 2 (What Type of Architecture Is Appropriate?)**: Based on the specific failure mode in the 300-episode telemetry, synthesize the appropriate target architecture in `"proposed_architecture"` by selecting the exact combination of SOTA vision & spatial-RL modules needed:
+    * `use_coord_features`: +6 CoC tactical geometry planes (X/Y, TH18 radial dist & LoS angle, exterior trash, active frontline)
+    * `use_se_attention`: Squeeze-and-Excitation dynamic 59-channel re-weighting
+    * `use_dilated_context`: Multi-scale dilated residual context (dilation 2 & 4)
+    * `use_convnext_grn`: 7x7 depthwise ConvNeXt V2 block + Global Response Normalization (prevents sparse defense channel collapse)
+    * `use_segnext_msca`: Multi-Scale Strip Convolutional Attention (1x7+7x1 and 1x11+11x1 for orthogonal wall compartments & corridors)
+    * `use_unet_decoder`: Full 4-stage contracting-expansive U-Net decoder (50x50 global receptive field)
+    * `use_dual_spatial_head` & `use_gated_heads`: Decoupled Perimeter Troop Funneling vs. Interior Spell Engagement pointer heads
+    * `critic_depth`: 2 or 3 (3-layer LayerNorm critic for long-horizon multi-phase credit assignment)
+    * `backbone_type`: `"tiny_cnn"` | `"coord_se_res"` | `"convnext_v2"` | `"segnext_msca"` | `"unet"`
+    * `base_ch`, `spatial_dim` (multiples of 4: 20, 24, 28, 32), `embed_dim` (64, 96, 128, 160, 192, 256), `head_hidden_dim` (48, 64, 96, 128, 160)
 
 ### Live 300-Episode Telemetry, Active Configuration & Past Cycles Memory
 {json.dumps(payload, indent=2)}
@@ -1623,6 +1750,30 @@ Return ONLY a raw JSON object with this structure:
   "health_score": <int 0..100>,
   "is_plateaued": <boolean>,
   "recommended_decision": "keep_monitoring" | "apply_in_place_solution" | "rollback_to_baseline" | "stop_and_restart_new_arch",
+  "architecture_evolution_required": <boolean>,
+  "architecture_evolution_rationale": "<1-2 sentences explaining why a model architecture evolution IS or IS NOT required right now>",
+  "proposed_architecture": {{
+    "arch_version": "<descriptive name for the synthesized architecture, e.g. v4-MSCA-DualPtr-RingBreaker>",
+    "bottleneck_targeted": "<exact combat/RL failure mode targeted>",
+    "design_rationale": "<why this specific combination of backbone, receptive field, attention, and heads was chosen for this bottleneck>",
+    "weight_transfer_mode": "warm_start" | "scratch_restart",
+    "arch_config": {{
+      "backbone_type": "tiny_cnn" | "coord_se_res" | "convnext_v2" | "segnext_msca" | "unet",
+      "base_ch": <int: 20, 24, 28, or 32>,
+      "spatial_dim": <int: 20, 24, 28, or 32>,
+      "embed_dim": <int: 64, 96, 128, 160, 192, or 256>,
+      "head_hidden_dim": <int: 48, 64, 96, 128, or 160>,
+      "critic_depth": <2 or 3>,
+      "use_coord_features": <boolean>,
+      "use_se_attention": <boolean>,
+      "use_dilated_context": <boolean>,
+      "use_convnext_grn": <boolean>,
+      "use_segnext_msca": <boolean>,
+      "use_unet_decoder": <boolean>,
+      "use_dual_spatial_head": <boolean>,
+      "use_gated_heads": <boolean>
+    }}
+  }},
   "headline": "<1-sentence honest quantitative verdict citing 300-episode mean metrics>",
   "progression_summary": "<2-3 sentences citing exact 300-episode means, star funnel rates, slopes, and village bottlenecks>",
   "reasons": [
@@ -1696,6 +1847,64 @@ def diagnose_and_propose_solutions(
                     ]
                     if valid_reasons:
                         draft["reasons"] = valid_reasons
+
+                # Process OpenCode Argon 4 Medium 2-stage architecture analysis & custom synthesis
+                arch_analysis = dict(draft.get("architecture_analysis") or {})
+                if "architecture_evolution_required" in parsed and isinstance(parsed["architecture_evolution_required"], bool):
+                    arch_analysis["evolution_required"] = parsed["architecture_evolution_required"]
+                    if parsed["architecture_evolution_required"]:
+                        draft["recommended_decision"] = "stop_and_restart_new_arch"
+                if parsed.get("architecture_evolution_rationale"):
+                    arch_analysis["evolution_rationale"] = str(parsed["architecture_evolution_rationale"])
+
+                if isinstance(parsed.get("proposed_architecture"), dict):
+                    metrics_now = extract_compact_metrics_from_telemetry(telemetry)
+                    custom_arch_sol = _build_targeted_new_architecture_solution(
+                        metrics=metrics_now,
+                        reasons=draft["reasons"],
+                        active_config=active_config,
+                        past_cycles=past_cycles,
+                        llm_proposed_arch=parsed["proposed_architecture"],
+                    )
+                    draft["candidate_solutions"] = [
+                        custom_arch_sol if c.get("category") == "new_architecture_restart" else c
+                        for c in draft["candidate_solutions"]
+                    ]
+                    t_patch = (custom_arch_sol.get("config_patch") or {}).get("arch_config", {})
+                    arch_analysis.update({
+                        "analyzed_by": llm_used,
+                        "recommended_arch_version": str(t_patch.get("arch_version", "v4-Argon4-Custom")),
+                        "recommended_backbone": str(t_patch.get("backbone_type", "coord_se_res")),
+                        "bottleneck_targeted": str(custom_arch_sol.get("bottleneck_targeted", "")),
+                        "design_rationale": str(
+                            parsed["proposed_architecture"].get("design_rationale")
+                            or custom_arch_sol.get("rationale", "")
+                        ),
+                        "weight_transfer_mode": str(t_patch.get("weight_transfer_mode", "warm_start")),
+                        "selected_modules": [
+                            k
+                            for k in (
+                                "use_coord_features",
+                                "use_se_attention",
+                                "use_dilated_context",
+                                "use_convnext_grn",
+                                "use_segnext_msca",
+                                "use_unet_decoder",
+                                "use_dual_spatial_head",
+                                "use_gated_heads",
+                            )
+                            if t_patch.get(k)
+                        ],
+                        "recommended_arch_config": t_patch,
+                        "total_params": int(t_patch.get("total_params", 130000)),
+                    })
+
+                arch_analysis["evolution_verdict_headline"] = (
+                    f"EVOLVE ARCHITECTURE → {arch_analysis.get('recommended_arch_version')}"
+                    if arch_analysis.get("evolution_required")
+                    else f"KEEP CURRENT ARCHITECTURE ({arch_analysis.get('current_arch_version')}) & TUNE IN-PLACE"
+                )
+                draft["architecture_analysis"] = arch_analysis
 
                 rec_indices: List[int] = []
                 if isinstance(parsed.get("recommended_solution_indices"), list):
@@ -2600,7 +2809,7 @@ def run_recursive_improvement_cycle(
         )
         loop_state["latest_strategy_research"] = strategy_research
 
-        # Step 2B: Diagnose current training state & propose multi-domain solutions (including progressive arch morph)
+        # Step 2B: Diagnose current training state & propose multi-domain solutions (including Argon 4 arch analysis)
         diag = diagnose_and_propose_solutions(
             telemetry=telemetry,
             active_config=active_config,
@@ -2608,6 +2817,8 @@ def run_recursive_improvement_cycle(
             provider=provider,
             use_llm=use_llm,
         )
+        if diag.get("architecture_analysis"):
+            loop_state["latest_architecture_analysis"] = diag["architecture_analysis"]
 
         # Step 3: Mandatory Pre-Change Baseline Snapshot BEFORE any change
         loop_state["phase"] = "documenting_baseline"
@@ -2710,6 +2921,7 @@ def run_recursive_improvement_cycle(
             "episode_at_analysis": pre_snapshot["cumulative_episode"],
             "restarted_from_scratch": restarted_from_scratch,
             "strategy_research": strategy_research,
+            "architecture_analysis": diag.get("architecture_analysis"),
             "health_verdict": {
                 "status": diag["status"],
                 "health_score": diag["health_score"],
@@ -2722,6 +2934,7 @@ def run_recursive_improvement_cycle(
                 "headline": diag["headline"],
                 "progression_summary": diag["progression_summary"],
                 "model_used": diag.get("model_used", provider),
+                "architecture_analysis": diag.get("architecture_analysis"),
                 "reasons": diag["reasons"],
             },
             "pre_change_snapshot": pre_snapshot,
