@@ -3,10 +3,10 @@ title: "v3.0 — 59-Channel Dedicated Multi-Block Dilated CNN & Single-Army Spec
 model_id: "v3_per_defense_31ch"
 arch_version: "3.0"
 status: "active"
-total_episodes: 9120
+total_episodes: 31248
 best_pct: 100
 best_stars: 3
-updated_at: "2026-11-02 16:00:05"
+updated_at: "2026-11-04 15:45:46"
 tags:
   - coc-rl
   - ppo
@@ -26,9 +26,9 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 - **Architecture Version**: `v3.0` (`1,375,288` Trainable Parameters)
 - **Dedicated Army Composition**: **`TH18 Thrower + Healer + Totem Smash (Meta)`** (Exported in `.pt` checkpoint metadata for testing)
 - **Active Status**: **ACTIVE**
-- **Total Episodes Trained**: **`9,120`** (Cumulative across **6** training sessions)
-- **Peak Combat Performance**: **`100%` (3★)** (Best dense return: `+141.43679366509116`)
-- **Latest Checkpoint**: `trained_models/thrower_healer_totem_smash_ep9120_100pct_3star.pt`
+- **Total Episodes Trained**: **`31,248`** (Cumulative across **9** training sessions)
+- **Peak Combat Performance**: **`100%` (3★)** (Best dense return: `+147.06106439034144`)
+- **Latest Checkpoint**: `trained_models/thrower_healer_totem_smash_ep31248_100pct_3star.pt`
 
 ### 🔄 Resumed Training Sessions History
 | Session # | Start Ep | End Ep | Episodes Added | Checkpoint File | Peak % | Stars | Notes |
@@ -39,6 +39,9 @@ Back to [[00_Index_MOC|Vault Map of Content]] • View [[01_Model_Architecture_a
 | **#4** | `0` | `4` | `+4` | `thrower_healer_totem_smash_ep4_64pct_2star.pt` | `64%` | `2★` | Initial training (4 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
 | **#5** | `0` | `8,544` | `+8,544` | `thrower_healer_totem_smash_ep8544_100pct_3star.pt` | `100%` | `3★` | Initial training (8,544 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
 | **#6** | `8,544` | `9,000` | `+456` | `thrower_healer_totem_smash_ep9000_100pct_3star.pt` | `100%` | `3★` | Resumed training (+456 ep from thrower_healer_totem_smash_ep8544_100pct_3star.pt) on TH18 Thrower + Healer + Totem Smash (Meta) |
+| **#7** | `0` | `10,000` | `+10,000` | `thrower_healer_totem_smash_ep10000_100pct_3star.pt` | `100%` | `3★` | Initial training (10,000 ep) on TH18 Thrower + Healer + Totem Smash (Meta) |
+| **#8** | `10,000` | `26,248` | `+16,248` | `thrower_healer_totem_smash_ep26248_100pct_3star.pt` | `100%` | `3★` | Resumed training (+16,248 ep from thrower_healer_totem_smash_ep10000_100pct_3star.pt) on TH18 Thrower + Healer + Totem Smash (Meta) |
+| **#9** | `26,248` | `31,248` | `+5,000` | `thrower_healer_totem_smash_ep31248_100pct_3star.pt` | `100%` | `3★` | Resumed training (+5,000 ep from thrower_healer_totem_smash_ep26248_100pct_3star.pt) on TH18 Thrower + Healer + Totem Smash (Meta) |
 
 ---
 
@@ -147,8 +150,8 @@ $$R_t = 0.35 \cdot \Delta \%_{\text{destr}} + 15.0 \cdot \Delta \text{HP}_{\text
 
 | Attack Composition | **Central Box** | **Offset Diamond** | **Anti-Hydra Ring** | **Anti-Fireball** | **Compact Teaser** | **Avg Destruction** | **3★ Rate** |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **TH18 Thrower + Healer + Totem Smash** | `79% (2★)` | `71% (2★)` | `100% (3★)` | `100% (3★)` | `68% (2★)` | **83.6%** | **40.0%** |
-| **Base Defense Rate (Avg)** | **79.0% (2.0★)** | **71.0% (2.0★)** | **100.0% (3.0★)** | **100.0% (3.0★)** | **68.0% (2.0★)** | **Overall: 83.6%** | — |
+| **TH18 Thrower + Healer + Totem Smash** | `100% (3★)` | `100% (3★)` | `78% (2★)` | `100% (3★)` | `86% (2★)` | **92.8%** | **60.0%** |
+| **Base Defense Rate (Avg)** | **100.0% (3.0★)** | **100.0% (3.0★)** | **78.0% (2.0★)** | **100.0% (3.0★)** | **86.0% (2.0★)** | **Overall: 92.8%** | — |
 
 ---
 
@@ -179,4 +182,4 @@ See [[experiments/AI_Diagnostics_And_Training_Fixes|AI Training Diagnostics, Tel
 | **GAE ($\lambda$)** | `0.95` | Generalized Advantage Estimation smoothing |
 | **Clip Coefficient** | `0.2` | PPO surrogate objective clipping range |
 | **Entropy Coefficient** | `0.015` | Normalized per-head exploration policy entropy bonus |
-| **Total Training Episodes** | **`9,120`** | **Cumulative episodes across all resumed sessions** |
+| **Total Training Episodes** | **`31,248`** | **Cumulative episodes across all resumed sessions** |

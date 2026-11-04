@@ -1,7 +1,7 @@
 {
-  "last_synced_commit": "d567ba1f74e00cf55bb24ee760b42c9653de703a",
-  "last_synced_commit_short": "d567ba1",
-  "last_synced_at": "2026-11-02T15:00:22.758212+00:00",
-  "last_synced_subject": "chore(model-visualizer): reconcile live architecture diagrams and manifest with latest codebase",
+  "last_synced_commit": "f874543db33d8f0313c9eec83062043a2b8c0d54",
+  "last_synced_commit_short": "f874543",
+  "last_synced_at": "2026-11-04T14:45:49.872309+00:00",
+  "last_synced_subject": "feat(coc-rl): promote Gen 2 SegNeXt-MSCA-CompartmentNet as default baseline",
   "branch": "main"
 }

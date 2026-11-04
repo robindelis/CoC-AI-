@@ -161,15 +161,15 @@ The output space is factorized into **4 autoregressively conditioned discrete ac
 - **Evaluation Date**: 2026-11-02
 - **Telemetry Analyzed**:
   - Model: `v4.1-Gen1-CoordSE-ResCNN` (Gen 1)
-  - Mean Destruction: `67.8%` | 2-Star TH18: `75.7%` | 3-Star Triple: `7.0%`
-  - Spatial Deploy Spread: `2.90t std` (tightened from $>7.0\text{t}$ baseline)
-  - Worst Village: `TH18 Offset Diamond (Hot Candle + Longshot)` at `59.0%`
-- **Classical CoC Strategy Diagnosis**:
-  1. **Sparse Channel Contrast Collapse**: Key TH18 lethal defenses—notably `Hot Candle` (`Ch 54`, 10.5t range, up to 6 melt flames), `Monolith` (`Ch 50`), and `Spell Towers` (`Ch 49`)—occupy only 1–2 discrete tiles on the entire 50×50 board (<0.1% spatial activation). Under standard Squeeze-and-Excitation (`SE`), global average pooling dilutes these critical lethal spikes against the dense background of outer trash buildings (`Ch 57..58`) and walls (`Ch 3`), causing the policy to sleepwalk Hero Charges directly into unmitigated melt beams.
-  2. **Hero Charge / Warden Walk Splash Radius Deficit**: A Warden Walk and Hero Charge requires assessing incoming defense threat over a 7.0t–10.5t radius (Warden aura 7.0t, Hot Candle 10.5t, Fireball 4.0t, Monolith 11.0t). The shallow 3×3 residual convolutions in Gen 1 lack the receptive field to anticipate the lethal focus-fire zone before Healers and Heroes commit into the compartment.
-  3. **Spell vs Perimeter Spatial Action Entanglement**: Totem spells (`idx=0`) and Rage spells (`idx=1`) must be dropped inside the Hot Candle / core pocket ahead of the push, but the single spatial convolution head remains biased toward valid perimeter deployment tiles (`Ch 4 == 0`).
+  - Mean Destruction: `84.6%` | 2-Star TH18: `96.7%` | 3-Star Triple: `33.7%`
+  - Spatial Deploy Spread: `3.98t std` (tight, focused entry vector)
+  - Worst Village: `TH18 Offset Diamond (Hot Candle + Longshot)` at `77.0%`
+- **Classical CoC Strategy Diagnosis (Orthogonal Wall Compartment Corridors & Asymmetric Ring/Diamond Breaching)**:
+  1. **Asymmetric Diamond Splitting & Donut Flank Siphon**: In offset diamond layouts, the main entry breaches the Town Hall compartment with high fidelity (`P(2★) = 96.7%`), but the diagonal compartment boundaries channel surviving troops into split perimeter paths. Without an active orthogonal flank funnel, troops bypass the isolated back-end compartment housing the `Hot Candle` (`Ch 54`, 10.5t melting beam) and get picked off through unbroken wall layers (`Ch 3`).
+  2. **Monolithic LoS Ray Limitation**: The Log Launcher (`Ch 14`) punches a single linear breach along $(x_{\text{deploy}}, y_{\text{deploy}}) \to (x_{\text{TH}}, y_{\text{TH}})$, opening the central corridor but leaving the orthogonal diamond quadrants sealed behind intact high-HP walls, trapping the primary smash while back-end defenses focus-fire them down.
+  3. **Royal Champion Premature Commitment**: Deploying the Royal Champion (`Ch 20`) along the primary breach axis exposes her to the same core crossfire; classical pro meta demands holding her until `destr >= 45%` and deploying her on an **orthogonal tangent angle (85°–95° off primary vector)** to clear the back-end diamond corridor alongside delayed Totem tanking (`Ch 21`).
 - **Tactical I/O Recommendations for OpenCode Argon 4 Evolver (`Gen 2: v4.2-ConvNeXtV2-GRN`)**:
-  1. **Global Response Normalization (`GRN`)**: Introduce ConvNeXt V2 blocks with feature-contrast normalization ($L_2$ feature competition across channels) to prevent channel saturation and amplify sparse defense channel activations (`Ch 50`, `Ch 54`).
-  2. **7×7 Depthwise Receptive Field**: Upgrade the spatial backbone to 7×7 depthwise convolutions to naturally capture the full 7.0t–10.5t Warden Walk and Hot Candle threat radius without strided resolution loss.
-  3. **Dual-Branch Spatial Pointer Head**: Decouple exterior perimeter unit deployment from interior combat spell casting (`use_dual_spatial_head=True`) so Rage/Totem drops can precisely target core defense clusters.
+  1. **In-Network Spatial Synthesis**: Synthesize an **Orthogonal Compartment Corridor & Diamond Ray Map** ($\vec{v}_{\text{ortho}} \perp \vec{v}_{\text{TH}}$, masking intact wall segments `Ch 3` outside the main breach cone) and a **Back-End Threat Density Map** ($\text{Ch } 54_{\text{HotCandle}} + \text{Ch } 50_{\text{Mono}} + \text{Ch } 35..36$), providing the spatial backbone with explicit geometric awareness of isolated side pockets.
+  2. **Autoregressive Dual Spatial Head & Phase-Conditioned Pointer**: Decouple the deployment head into a **Perimeter Unit Branch** and an **Interior Spell/Totem Branch** (`use_dual_spatial_head=True`), while conditioning late hero deployment (`slot_idx=3` Royal Champion when `army_context[1] >= 0.45`) on orthogonal flank coordinates to sweep the remaining diamond defenses.
+
 

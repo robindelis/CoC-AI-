@@ -7,7 +7,7 @@ tags:
   - architecture
   - coc-rl
   - tensor-spec
-updated: 2026-10-31
+updated: 2026-11-04
 ---
 
 # 🧠 CoC TH18 Deep RL — Project Long-Term Memory & Source of Truth
@@ -620,3 +620,45 @@ Defined in `CoCActorCritic` (`python/coc_rl/networks.py`), the policy parameteri
   - Deterministic cycle isolation preventing state bleeding between training runs.
   - Production RL policies initialize by default with spatial coordinate features and SE channel attention.
   - Clean typing throughout Python runtime and modern idiom compliance across Rust simulation engine.
+
+### ADR-022: Computer Vision Replay Extraction Pipeline (`coc_cv`) for Pro Trajectory Demonstration & Imitation Learning
+- **Date**: 2026-11-04
+- **Status**: Accepted
+- **Context**:
+  1. Reinforcement learning from scratch on high-dimensional Town Hall 18 combat faces severe sample complexity before discovering foundational pro heuristics (surgical perimeter funneling, Warden Walk timing, breach-axis wall opening, late Royal Champion cleanup).
+  2. While simulation rollouts execute at high throughput, bootstrapping policies with expert human demonstrations via Behavior Cloning (BC) and Offline RL drastically accelerates policy convergence.
+  3. However, Clash of Clans game clients do not export raw action event streams—expert tournament and pro gameplay is available predominantly as MP4 video recordings and replay screen captures.
+- **Decision**:
+  - Implement a dedicated end-to-end Computer Vision replay extraction pipeline in `python/coc_cv/`:
+    1. **`video_fetcher.py`**: Automated acquisition, frame demuxing, and chunk extraction from video files (`samples/pro_attack.mp4`) and online video sources.
+    2. **`hud_detector.py` & `font_matcher.py`**: Precise detection of combat HUD telemetry across frames—tracking destruction percentage, star acquisition milestones, and the remaining 3-minute battle clock via normalized template and font matching.
+    3. **`dock_tracker.py`**: Real-time tracking of the bottom unit deployment tray/dock, detecting troop/hero/spell slot selection highlights, remaining unit count drops, and hero ability activation states.
+    4. **`drop_locator.py`**: High-contrast frame-differencing, particle burst analysis, and spawn animation tracking to pin down the exact screen coordinates $(x_{\text{screen}}, y_{\text{screen}})$ and timestamp `tick` of each unit deployment event.
+    5. **`isometric_mapper.py`**: Homographic perspective transformation mapping 2D screen coordinates into canonical 50×50 game board coordinates $(x, y) \in [0, 50]^2$ with boundary clamping and red-zone collision verification.
+    6. **`replay_builder.py`**: Synthesizes raw extracted detections into standardized JSON demonstration datasets (`datasets/replays/pro_attack_01.json`), perfectly matching the 5-head factorized RL action schema (`slot_type`, `slot_idx`, `deploy_fraction`, `tile_xy`, `tick`).
+    7. **Test suite**: `python/tests/test_coc_cv.py` validating end-to-end video extraction, dock identification, and coordinate warping.
+- **Consequences**:
+  - Unlocks automated mining of YouTube pro TH18 tournament attacks into structured offline RL / Imitation Learning trajectory datasets.
+  - Generates exact $(s_t, a_t)$ action pairs aligned with `CoCActorCritic` discrete action heads, paving the way for offline pre-training and hybrid BC-PPO fine-tuning.
+
+### ADR-023: Generation 2 Architecture Promotion (`v4-SegNeXt-MSCA-CompartmentNet`), Anisotropic Multi-Scale Strip Convolutions, and Gated Actor Heads
+- **Date**: 2026-11-04
+- **Status**: Accepted
+- **Context**:
+  1. In Cycle #3 evaluation of `v4.1-Gen1-CoordSE-ResCNN` (130,268 params), the agent achieved strong overall performance (mean destruction 89.68%, 2★ TH18 97.7%, 3★ 53.0%), but exhibited a persistent 13.0% cross-village performance gap on complex layouts—specifically `Offset Diamond (Hot Candle)` (83.5% vs 96.5% on `Anti-Hydra Air Ring`).
+  2. Analysis revealed that standard square 3×3 convolutions diluted long-range orthogonal wall compartments, causing attacking units to get siphoned along diagonal perimeter donut rings while the isolated Hot Candle melted core attackers through intact walls.
+  3. Tactical I/O research and Argon 4 model evolution indicated the need for anisotropic strip convolutions and dilated context to trace axis-aligned wall corridors and deep compartment breaches.
+- **Decision**:
+  - Promote Generation 2 architecture `v4-SegNeXt-MSCA-CompartmentNet` (254,882 parameters, `backbone_type="segnext_msca"`) as the new `DEFAULT_ARCH_CONFIG` in `python/coc_rl/networks.py`.
+  - Architecture specifications:
+    - **Backbone**: Multi-Scale Convolutional Attention (`use_segnext_msca=True`) featuring paired anisotropic strip convolutions ($1\times 7 + 7\times 1$ and $1\times 11 + 11\times 1$) with lightweight depthwise kernel decomposition, capturing elongated orthogonal wall corridors and Log Launcher breach lines without prohibitive parameter cost.
+    - **Dilated Spatial Context**: (`use_dilated_context=True`, dilation rates $d \in \{2, 4\}$) covering the 7.0t–10.5t defensive danger radius of Hot Candle and Monolith.
+    - **Channel Capacity Expansion**: `base_ch: 28` (up from 24), `spatial_dim: 28` (up from 24), `embed_dim: 128` (up from 96), `head_hidden_dim: 96` (up from 64).
+    - **Gated Actor Heads**: (`use_gated_heads=True`): Gated linear projection units filtering out noise before discrete categorical action projections.
+    - **Calibrated Priors & Regularization**: `tile_logit_scale: 2.8`, `th_threat_weight: 9.5`, `breach_prior_weight: 11.5`, `spell_combat_prior_weight: 10.1`, `film_cond_scale: 0.85`.
+    - **Weight Transfer**: Initialized via `warm_start` projection from Gen 1 weights.
+- **Consequences**:
+  - Provides the neural policy with inductive bias for axis-aligned wall corridors and deep compartment breaches.
+  - Expands spatial embedding capacity to 128 channels, maintaining fine-grained distinction between perimeter deployment and core spell target zones.
+  - Parameter footprint remains compact at 254K parameters, preserving sub-millisecond PyTorch GPU inference throughput.
+
