@@ -106,3 +106,6 @@ Thumbs.db
 .gemini/
 .logs/
 .aistudio/
+datasets/raw_videos/*.mp4
+datasets/raw_videos/*.mkv
+datasets/raw_videos/*.webm

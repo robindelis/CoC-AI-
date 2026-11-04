@@ -1,0 +1,2343 @@
+{
+  "schema_version": "1.0",
+  "match_id": "pro_attack_01",
+  "ticks_per_second": 30,
+  "source": {
+    "video_path": "samples/pro_attack.mp4",
+    "source_url": null,
+    "width": 1280,
+    "height": 720,
+    "fps": 30.0,
+    "frame_count": 60,
+    "duration_sec": 2.0,
+    "clip_start_sec": 0.0,
+    "clip_end_sec": null
+  },
+  "battle_segment": {
+    "start_frame": 4,
+    "end_frame": 57,
+    "start_sec": 0.13333333333333333,
+    "end_sec": 1.9,
+    "initial_timer_sec": 180,
+    "final_destruction_pct": 100,
+    "final_stars": 3
+  },
+  "layout": {
+    "name": "TH18 Central Box Legends (Cake-A-Pult + Smasher)",
+    "buildings": [
+      {
+        "instance_id": 1,
+        "building_id": "TownHall",
+        "tile_x": 23,
+        "tile_y": 23,
+        "mode": "GuardianSmasher",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 2,
+        "building_id": "Monolith",
+        "tile_x": 27,
+        "tile_y": 22,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 3,
+        "building_id": "RevengeTower",
+        "tile_x": 20,
+        "tile_y": 24,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 4,
+        "building_id": "MultiGearTower",
+        "tile_x": 22,
+        "tile_y": 20,
+        "mode": "MultiGearLongRange",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 5,
+        "building_id": "CraftingStation",
+        "tile_x": 25,
+        "tile_y": 27,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 6,
+        "building_id": "InfernoTower",
+        "tile_x": 20,
+        "tile_y": 22,
+        "mode": "InfernoMulti",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 7,
+        "building_id": "InfernoTower",
+        "tile_x": 26,
+        "tile_y": 20,
+        "mode": "InfernoMulti",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 8,
+        "building_id": "InfernoTower",
+        "tile_x": 22,
+        "tile_y": 27,
+        "mode": "InfernoMulti",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 9,
+        "building_id": "Scattershot",
+        "tile_x": 20,
+        "tile_y": 16,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 10,
+        "building_id": "Scattershot",
+        "tile_x": 31,
+        "tile_y": 24,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 11,
+        "building_id": "Firespitter",
+        "tile_x": 16,
+        "tile_y": 24,
+        "mode": "Default",
+        "direction_deg": 180.0
+      },
+      {
+        "instance_id": 12,
+        "building_id": "Firespitter",
+        "tile_x": 24,
+        "tile_y": 16,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 13,
+        "building_id": "SuperWizardTower",
+        "tile_x": 24,
+        "tile_y": 31,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 14,
+        "building_id": "SuperWizardTower",
+        "tile_x": 16,
+        "tile_y": 20,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 15,
+        "building_id": "XBow",
+        "tile_x": 31,
+        "tile_y": 21,
+        "mode": "XBowAirAndGround",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 16,
+        "building_id": "XBow",
+        "tile_x": 16,
+        "tile_y": 27,
+        "mode": "XBowAirAndGround",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 17,
+        "building_id": "XBow",
+        "tile_x": 23,
+        "tile_y": 13,
+        "mode": "XBowAirAndGround",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 18,
+        "building_id": "XBow",
+        "tile_x": 31,
+        "tile_y": 27,
+        "mode": "XBowGround",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 19,
+        "building_id": "MultiArcherTower",
+        "tile_x": 13,
+        "tile_y": 23,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 20,
+        "building_id": "MultiArcherTower",
+        "tile_x": 28,
+        "tile_y": 16,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 21,
+        "building_id": "MultiArcherTower",
+        "tile_x": 21,
+        "tile_y": 31,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 22,
+        "building_id": "RicochetCannon",
+        "tile_x": 17,
+        "tile_y": 15,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 23,
+        "building_id": "RicochetCannon",
+        "tile_x": 34,
+        "tile_y": 23,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 24,
+        "building_id": "RicochetCannon",
+        "tile_x": 15,
+        "tile_y": 30,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 25,
+        "building_id": "AirDefense",
+        "tile_x": 26,
+        "tile_y": 11,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 26,
+        "building_id": "AirDefense",
+        "tile_x": 27,
+        "tile_y": 31,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 27,
+        "building_id": "AirDefense",
+        "tile_x": 11,
+        "tile_y": 19,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 28,
+        "building_id": "AirDefense",
+        "tile_x": 31,
+        "tile_y": 18,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 29,
+        "building_id": "AirSweeper",
+        "tile_x": 19,
+        "tile_y": 31,
+        "mode": "Default",
+        "direction_deg": 180.0
+      },
+      {
+        "instance_id": 30,
+        "building_id": "AirSweeper",
+        "tile_x": 20,
+        "tile_y": 12,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 31,
+        "building_id": "SpellTower",
+        "tile_x": 31,
+        "tile_y": 30,
+        "mode": "SpellTowerRage",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 32,
+        "building_id": "SpellTower",
+        "tile_x": 12,
+        "tile_y": 26,
+        "mode": "SpellTowerPoison",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 33,
+        "building_id": "BombTower",
+        "tile_x": 31,
+        "tile_y": 15,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 34,
+        "building_id": "BombTower",
+        "tile_x": 23,
+        "tile_y": 34,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 35,
+        "building_id": "WizardTower",
+        "tile_x": 11,
+        "tile_y": 16,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 36,
+        "building_id": "WizardTower",
+        "tile_x": 36,
+        "tile_y": 20,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 37,
+        "building_id": "Mortar",
+        "tile_x": 11,
+        "tile_y": 32,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 38,
+        "building_id": "Mortar",
+        "tile_x": 22,
+        "tile_y": 9,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 39,
+        "building_id": "Mortar",
+        "tile_x": 31,
+        "tile_y": 32,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 40,
+        "building_id": "Mortar",
+        "tile_x": 9,
+        "tile_y": 22,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 41,
+        "building_id": "Cannon",
+        "tile_x": 36,
+        "tile_y": 14,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 42,
+        "building_id": "ArcherTower",
+        "tile_x": 20,
+        "tile_y": 36,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 43,
+        "building_id": "ArcherTower",
+        "tile_x": 15,
+        "tile_y": 10,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 44,
+        "building_id": "ArcherTower",
+        "tile_x": 36,
+        "tile_y": 26,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 45,
+        "building_id": "HiddenTesla",
+        "tile_x": 10,
+        "tile_y": 29,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 46,
+        "building_id": "HiddenTesla",
+        "tile_x": 29,
+        "tile_y": 10,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 47,
+        "building_id": "HiddenTesla",
+        "tile_x": 28,
+        "tile_y": 36,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 48,
+        "building_id": "HiddenTesla",
+        "tile_x": 10,
+        "tile_y": 14,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 49,
+        "building_id": "HiddenTesla",
+        "tile_x": 36,
+        "tile_y": 18,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 50,
+        "building_id": "BuildersHut",
+        "tile_x": 16,
+        "tile_y": 36,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 51,
+        "building_id": "BuildersHut",
+        "tile_x": 20,
+        "tile_y": 10,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 52,
+        "building_id": "BuildersHut",
+        "tile_x": 36,
+        "tile_y": 31,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 53,
+        "building_id": "BuildersHut",
+        "tile_x": 8,
+        "tile_y": 25,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 54,
+        "building_id": "BuildersHut",
+        "tile_x": 32,
+        "tile_y": 12,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 55,
+        "building_id": "GoldStorage",
+        "tile_x": 12,
+        "tile_y": 11,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 56,
+        "building_id": "GoldStorage",
+        "tile_x": 37,
+        "tile_y": 23,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 57,
+        "building_id": "GoldStorage",
+        "tile_x": 6,
+        "tile_y": 27,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 58,
+        "building_id": "GoldStorage",
+        "tile_x": 27,
+        "tile_y": 6,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 59,
+        "building_id": "ElixirStorage",
+        "tile_x": 25,
+        "tile_y": 37,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 60,
+        "building_id": "ElixirStorage",
+        "tile_x": 6,
+        "tile_y": 16,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 61,
+        "building_id": "ElixirStorage",
+        "tile_x": 41,
+        "tile_y": 19,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 62,
+        "building_id": "ElixirStorage",
+        "tile_x": 13,
+        "tile_y": 36,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 63,
+        "building_id": "DarkElixirStorage",
+        "tile_x": 20,
+        "tile_y": 6,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 64,
+        "building_id": "ClanCastle",
+        "tile_x": 36,
+        "tile_y": 33,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 65,
+        "building_id": "GoldMine",
+        "tile_x": 41,
+        "tile_y": 25,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 66,
+        "building_id": "GoldMine",
+        "tile_x": 10,
+        "tile_y": 35,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 67,
+        "building_id": "GoldMine",
+        "tile_x": 25,
+        "tile_y": 3,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 68,
+        "building_id": "GoldMine",
+        "tile_x": 31,
+        "tile_y": 36,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 69,
+        "building_id": "GoldMine",
+        "tile_x": 6,
+        "tile_y": 20,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 70,
+        "building_id": "GoldMine",
+        "tile_x": 35,
+        "tile_y": 11,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 71,
+        "building_id": "GoldMine",
+        "tile_x": 18,
+        "tile_y": 41,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 72,
+        "building_id": "ElixirCollector",
+        "tile_x": 15,
+        "tile_y": 6,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 73,
+        "building_id": "ElixirCollector",
+        "tile_x": 41,
+        "tile_y": 28,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 74,
+        "building_id": "ElixirCollector",
+        "tile_x": 6,
+        "tile_y": 30,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 75,
+        "building_id": "ElixirCollector",
+        "tile_x": 30,
+        "tile_y": 6,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 76,
+        "building_id": "ElixirCollector",
+        "tile_x": 27,
+        "tile_y": 41,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 77,
+        "building_id": "ElixirCollector",
+        "tile_x": 6,
+        "tile_y": 13,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 78,
+        "building_id": "ElixirCollector",
+        "tile_x": 41,
+        "tile_y": 16,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 79,
+        "building_id": "DarkElixirDrill",
+        "tile_x": 11,
+        "tile_y": 41,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 80,
+        "building_id": "DarkElixirDrill",
+        "tile_x": 20,
+        "tile_y": 3,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 81,
+        "building_id": "DarkElixirDrill",
+        "tile_x": 37,
+        "tile_y": 36,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 82,
+        "building_id": "ArmyCamp",
+        "tile_x": 32,
+        "tile_y": 41,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 83,
+        "building_id": "ArmyCamp",
+        "tile_x": 5,
+        "tile_y": 9,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 84,
+        "building_id": "ArmyCamp",
+        "tile_x": 41,
+        "tile_y": 12,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 85,
+        "building_id": "ArmyCamp",
+        "tile_x": 14,
+        "tile_y": 41,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 86,
+        "building_id": "Barracks",
+        "tile_x": 12,
+        "tile_y": 6,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 87,
+        "building_id": "DarkBarracks",
+        "tile_x": 41,
+        "tile_y": 31,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 88,
+        "building_id": "Laboratory",
+        "tile_x": 3,
+        "tile_y": 29,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 89,
+        "building_id": "SpellFactory",
+        "tile_x": 30,
+        "tile_y": 3,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 90,
+        "building_id": "DarkSpellFactory",
+        "tile_x": 28,
+        "tile_y": 44,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 91,
+        "building_id": "HeroHall",
+        "tile_x": 5,
+        "tile_y": 5,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 92,
+        "building_id": "Blacksmith",
+        "tile_x": 44,
+        "tile_y": 18,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 93,
+        "building_id": "Workshop",
+        "tile_x": 7,
+        "tile_y": 41,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 94,
+        "building_id": "PetHouse",
+        "tile_x": 17,
+        "tile_y": 3,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 95,
+        "building_id": "HelperHut",
+        "tile_x": 41,
+        "tile_y": 36,
+        "mode": "Default",
+        "direction_deg": 0.0
+      },
+      {
+        "instance_id": 96,
+        "building_id": "BobsHut",
+        "tile_x": 3,
+        "tile_y": 24,
+        "mode": "Default",
+        "direction_deg": 0.0
+      }
+    ],
+    "walls": [
+      [
+        19,
+        19
+      ],
+      [
+        19,
+        30
+      ],
+      [
+        20,
+        19
+      ],
+      [
+        20,
+        30
+      ],
+      [
+        21,
+        19
+      ],
+      [
+        21,
+        30
+      ],
+      [
+        22,
+        19
+      ],
+      [
+        22,
+        30
+      ],
+      [
+        23,
+        19
+      ],
+      [
+        23,
+        30
+      ],
+      [
+        25,
+        19
+      ],
+      [
+        25,
+        30
+      ],
+      [
+        26,
+        19
+      ],
+      [
+        26,
+        30
+      ],
+      [
+        27,
+        19
+      ],
+      [
+        27,
+        30
+      ],
+      [
+        28,
+        19
+      ],
+      [
+        28,
+        30
+      ],
+      [
+        29,
+        19
+      ],
+      [
+        29,
+        30
+      ],
+      [
+        30,
+        19
+      ],
+      [
+        30,
+        30
+      ],
+      [
+        19,
+        20
+      ],
+      [
+        30,
+        20
+      ],
+      [
+        19,
+        21
+      ],
+      [
+        30,
+        21
+      ],
+      [
+        19,
+        22
+      ],
+      [
+        30,
+        22
+      ],
+      [
+        19,
+        23
+      ],
+      [
+        30,
+        23
+      ],
+      [
+        19,
+        25
+      ],
+      [
+        30,
+        25
+      ],
+      [
+        19,
+        26
+      ],
+      [
+        30,
+        26
+      ],
+      [
+        19,
+        27
+      ],
+      [
+        30,
+        27
+      ],
+      [
+        19,
+        28
+      ],
+      [
+        30,
+        28
+      ],
+      [
+        19,
+        29
+      ],
+      [
+        30,
+        29
+      ],
+      [
+        14,
+        14
+      ],
+      [
+        14,
+        35
+      ],
+      [
+        15,
+        14
+      ],
+      [
+        15,
+        35
+      ],
+      [
+        16,
+        14
+      ],
+      [
+        16,
+        35
+      ],
+      [
+        17,
+        14
+      ],
+      [
+        17,
+        35
+      ],
+      [
+        18,
+        14
+      ],
+      [
+        18,
+        35
+      ],
+      [
+        19,
+        14
+      ],
+      [
+        19,
+        35
+      ],
+      [
+        20,
+        14
+      ],
+      [
+        20,
+        35
+      ],
+      [
+        21,
+        14
+      ],
+      [
+        21,
+        35
+      ],
+      [
+        22,
+        14
+      ],
+      [
+        22,
+        35
+      ],
+      [
+        26,
+        14
+      ],
+      [
+        26,
+        35
+      ],
+      [
+        27,
+        14
+      ],
+      [
+        27,
+        35
+      ],
+      [
+        28,
+        14
+      ],
+      [
+        28,
+        35
+      ],
+      [
+        29,
+        14
+      ],
+      [
+        29,
+        35
+      ],
+      [
+        30,
+        14
+      ],
+      [
+        30,
+        35
+      ],
+      [
+        31,
+        14
+      ],
+      [
+        31,
+        35
+      ],
+      [
+        32,
+        14
+      ],
+      [
+        32,
+        35
+      ],
+      [
+        33,
+        14
+      ],
+      [
+        33,
+        35
+      ],
+      [
+        34,
+        14
+      ],
+      [
+        34,
+        35
+      ],
+      [
+        35,
+        14
+      ],
+      [
+        35,
+        35
+      ],
+      [
+        14,
+        15
+      ],
+      [
+        35,
+        15
+      ],
+      [
+        14,
+        16
+      ],
+      [
+        35,
+        16
+      ],
+      [
+        14,
+        17
+      ],
+      [
+        35,
+        17
+      ],
+      [
+        14,
+        18
+      ],
+      [
+        35,
+        18
+      ],
+      [
+        14,
+        19
+      ],
+      [
+        35,
+        19
+      ],
+      [
+        14,
+        20
+      ],
+      [
+        35,
+        20
+      ],
+      [
+        14,
+        21
+      ],
+      [
+        35,
+        21
+      ],
+      [
+        14,
+        22
+      ],
+      [
+        35,
+        22
+      ],
+      [
+        14,
+        26
+      ],
+      [
+        35,
+        26
+      ],
+      [
+        14,
+        27
+      ],
+      [
+        35,
+        27
+      ],
+      [
+        14,
+        28
+      ],
+      [
+        35,
+        28
+      ],
+      [
+        14,
+        29
+      ],
+      [
+        35,
+        29
+      ],
+      [
+        14,
+        30
+      ],
+      [
+        35,
+        30
+      ],
+      [
+        14,
+        31
+      ],
+      [
+        35,
+        31
+      ],
+      [
+        14,
+        32
+      ],
+      [
+        35,
+        32
+      ],
+      [
+        14,
+        33
+      ],
+      [
+        35,
+        33
+      ],
+      [
+        14,
+        34
+      ],
+      [
+        35,
+        34
+      ],
+      [
+        9,
+        9
+      ],
+      [
+        9,
+        40
+      ],
+      [
+        10,
+        9
+      ],
+      [
+        10,
+        40
+      ],
+      [
+        11,
+        9
+      ],
+      [
+        11,
+        40
+      ],
+      [
+        12,
+        9
+      ],
+      [
+        12,
+        40
+      ],
+      [
+        13,
+        9
+      ],
+      [
+        13,
+        40
+      ],
+      [
+        14,
+        9
+      ],
+      [
+        14,
+        40
+      ],
+      [
+        15,
+        9
+      ],
+      [
+        15,
+        40
+      ],
+      [
+        16,
+        9
+      ],
+      [
+        16,
+        40
+      ],
+      [
+        17,
+        9
+      ],
+      [
+        17,
+        40
+      ],
+      [
+        18,
+        9
+      ],
+      [
+        18,
+        40
+      ],
+      [
+        19,
+        9
+      ],
+      [
+        19,
+        40
+      ],
+      [
+        20,
+        9
+      ],
+      [
+        20,
+        40
+      ],
+      [
+        21,
+        9
+      ],
+      [
+        21,
+        40
+      ],
+      [
+        27,
+        9
+      ],
+      [
+        27,
+        40
+      ],
+      [
+        28,
+        9
+      ],
+      [
+        28,
+        40
+      ],
+      [
+        29,
+        9
+      ],
+      [
+        29,
+        40
+      ],
+      [
+        30,
+        9
+      ],
+      [
+        30,
+        40
+      ],
+      [
+        31,
+        9
+      ],
+      [
+        31,
+        40
+      ],
+      [
+        32,
+        9
+      ],
+      [
+        32,
+        40
+      ],
+      [
+        33,
+        9
+      ],
+      [
+        33,
+        40
+      ],
+      [
+        34,
+        9
+      ],
+      [
+        34,
+        40
+      ],
+      [
+        35,
+        9
+      ],
+      [
+        35,
+        40
+      ],
+      [
+        36,
+        9
+      ],
+      [
+        36,
+        40
+      ],
+      [
+        37,
+        9
+      ],
+      [
+        37,
+        40
+      ],
+      [
+        38,
+        9
+      ],
+      [
+        38,
+        40
+      ],
+      [
+        39,
+        9
+      ],
+      [
+        39,
+        40
+      ],
+      [
+        40,
+        9
+      ],
+      [
+        40,
+        40
+      ],
+      [
+        9,
+        10
+      ],
+      [
+        40,
+        10
+      ],
+      [
+        9,
+        11
+      ],
+      [
+        40,
+        11
+      ],
+      [
+        9,
+        12
+      ],
+      [
+        40,
+        12
+      ],
+      [
+        9,
+        13
+      ],
+      [
+        40,
+        13
+      ],
+      [
+        9,
+        14
+      ],
+      [
+        40,
+        14
+      ],
+      [
+        9,
+        15
+      ],
+      [
+        40,
+        15
+      ],
+      [
+        9,
+        16
+      ],
+      [
+        40,
+        16
+      ],
+      [
+        9,
+        17
+      ],
+      [
+        40,
+        17
+      ],
+      [
+        9,
+        18
+      ],
+      [
+        40,
+        18
+      ],
+      [
+        9,
+        19
+      ],
+      [
+        40,
+        19
+      ],
+      [
+        9,
+        20
+      ],
+      [
+        40,
+        20
+      ],
+      [
+        9,
+        21
+      ],
+      [
+        40,
+        21
+      ],
+      [
+        9,
+        27
+      ],
+      [
+        40,
+        27
+      ],
+      [
+        9,
+        28
+      ],
+      [
+        40,
+        28
+      ],
+      [
+        9,
+        29
+      ],
+      [
+        40,
+        29
+      ],
+      [
+        9,
+        30
+      ],
+      [
+        40,
+        30
+      ],
+      [
+        9,
+        31
+      ],
+      [
+        40,
+        31
+      ],
+      [
+        9,
+        32
+      ],
+      [
+        40,
+        32
+      ],
+      [
+        9,
+        33
+      ],
+      [
+        40,
+        33
+      ],
+      [
+        9,
+        34
+      ],
+      [
+        40,
+        34
+      ],
+      [
+        9,
+        35
+      ],
+      [
+        40,
+        35
+      ],
+      [
+        9,
+        36
+      ],
+      [
+        40,
+        36
+      ],
+      [
+        9,
+        37
+      ],
+      [
+        40,
+        37
+      ],
+      [
+        9,
+        38
+      ],
+      [
+        40,
+        38
+      ],
+      [
+        9,
+        39
+      ],
+      [
+        40,
+        39
+      ],
+      [
+        5,
+        24
+      ],
+      [
+        44,
+        24
+      ],
+      [
+        24,
+        5
+      ],
+      [
+        24,
+        44
+      ],
+      [
+        6,
+        24
+      ],
+      [
+        43,
+        24
+      ],
+      [
+        24,
+        6
+      ],
+      [
+        24,
+        43
+      ],
+      [
+        7,
+        24
+      ],
+      [
+        42,
+        24
+      ],
+      [
+        24,
+        7
+      ],
+      [
+        24,
+        42
+      ],
+      [
+        8,
+        24
+      ],
+      [
+        41,
+        24
+      ],
+      [
+        24,
+        8
+      ],
+      [
+        24,
+        41
+      ],
+      [
+        16,
+        33
+      ],
+      [
+        23,
+        16
+      ],
+      [
+        27,
+        16
+      ],
+      [
+        30,
+        33
+      ],
+      [
+        16,
+        23
+      ],
+      [
+        28,
+        29
+      ],
+      [
+        29,
+        29
+      ]
+    ],
+    "traps": [
+      {
+        "instance_id": 1,
+        "trap_id": "Bomb",
+        "tile_x": 22,
+        "tile_y": 23,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 2,
+        "trap_id": "Bomb",
+        "tile_x": 25,
+        "tile_y": 22,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 3,
+        "trap_id": "Bomb",
+        "tile_x": 25,
+        "tile_y": 21,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 4,
+        "trap_id": "Bomb",
+        "tile_x": 26,
+        "tile_y": 22,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 5,
+        "trap_id": "Bomb",
+        "tile_x": 21,
+        "tile_y": 21,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 6,
+        "trap_id": "Bomb",
+        "tile_x": 24,
+        "tile_y": 27,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 7,
+        "trap_id": "Bomb",
+        "tile_x": 25,
+        "tile_y": 20,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 8,
+        "trap_id": "Bomb",
+        "tile_x": 27,
+        "tile_y": 25,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 9,
+        "trap_id": "SpringTrap",
+        "tile_x": 21,
+        "tile_y": 20,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 10,
+        "trap_id": "SpringTrap",
+        "tile_x": 20,
+        "tile_y": 21,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 11,
+        "trap_id": "SpringTrap",
+        "tile_x": 27,
+        "tile_y": 26,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 12,
+        "trap_id": "SpringTrap",
+        "tile_x": 21,
+        "tile_y": 27,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 13,
+        "trap_id": "SpringTrap",
+        "tile_x": 24,
+        "tile_y": 19,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 14,
+        "trap_id": "SpringTrap",
+        "tile_x": 19,
+        "tile_y": 24,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 15,
+        "trap_id": "SpringTrap",
+        "tile_x": 24,
+        "tile_y": 28,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 16,
+        "trap_id": "SpringTrap",
+        "tile_x": 28,
+        "tile_y": 25,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 17,
+        "trap_id": "SpringTrap",
+        "tile_x": 20,
+        "tile_y": 20,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 18,
+        "trap_id": "AirBomb",
+        "tile_x": 20,
+        "tile_y": 27,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 19,
+        "trap_id": "AirBomb",
+        "tile_x": 28,
+        "tile_y": 21,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 20,
+        "trap_id": "AirBomb",
+        "tile_x": 28,
+        "tile_y": 26,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 21,
+        "trap_id": "AirBomb",
+        "tile_x": 21,
+        "tile_y": 28,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 22,
+        "trap_id": "AirBomb",
+        "tile_x": 23,
+        "tile_y": 18,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 23,
+        "trap_id": "AirBomb",
+        "tile_x": 18,
+        "tile_y": 23,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 24,
+        "trap_id": "AirBomb",
+        "tile_x": 23,
+        "tile_y": 29,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 25,
+        "trap_id": "AirBomb",
+        "tile_x": 24,
+        "tile_y": 29,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 26,
+        "trap_id": "GiantBomb",
+        "tile_x": 28,
+        "tile_y": 27,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 27,
+        "trap_id": "GiantBomb",
+        "tile_x": 17,
+        "tile_y": 18,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 28,
+        "trap_id": "GiantBomb",
+        "tile_x": 15,
+        "tile_y": 18,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 29,
+        "trap_id": "GiantBomb",
+        "tile_x": 15,
+        "tile_y": 16,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 30,
+        "trap_id": "GiantBomb",
+        "tile_x": 19,
+        "tile_y": 33,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 31,
+        "trap_id": "GiantBomb",
+        "tile_x": 17,
+        "tile_y": 33,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 32,
+        "trap_id": "GiantBomb",
+        "tile_x": 18,
+        "tile_y": 12,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 33,
+        "trap_id": "GiantBomb",
+        "tile_x": 12,
+        "tile_y": 28,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 34,
+        "trap_id": "SeekingAirMine",
+        "tile_x": 28,
+        "tile_y": 20,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 35,
+        "trap_id": "SeekingAirMine",
+        "tile_x": 29,
+        "tile_y": 25,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 36,
+        "trap_id": "SeekingAirMine",
+        "tile_x": 20,
+        "tile_y": 28,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 37,
+        "trap_id": "SeekingAirMine",
+        "tile_x": 22,
+        "tile_y": 29,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 38,
+        "trap_id": "SeekingAirMine",
+        "tile_x": 29,
+        "tile_y": 21,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 39,
+        "trap_id": "SeekingAirMine",
+        "tile_x": 29,
+        "tile_y": 26,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 40,
+        "trap_id": "SeekingAirMine",
+        "tile_x": 21,
+        "tile_y": 29,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 41,
+        "trap_id": "SeekingAirMine",
+        "tile_x": 23,
+        "tile_y": 17,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 42,
+        "trap_id": "SeekingAirMine",
+        "tile_x": 27,
+        "tile_y": 18,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 43,
+        "trap_id": "SkeletonTrap",
+        "tile_x": 29,
+        "tile_y": 20,
+        "mode": "SkeletonGround"
+      },
+      {
+        "instance_id": 44,
+        "trap_id": "SkeletonTrap",
+        "tile_x": 17,
+        "tile_y": 23,
+        "mode": "SkeletonGround"
+      },
+      {
+        "instance_id": 45,
+        "trap_id": "SkeletonTrap",
+        "tile_x": 30,
+        "tile_y": 24,
+        "mode": "SkeletonGround"
+      },
+      {
+        "instance_id": 46,
+        "trap_id": "SkeletonTrap",
+        "tile_x": 20,
+        "tile_y": 29,
+        "mode": "SkeletonGround"
+      },
+      {
+        "instance_id": 47,
+        "trap_id": "TornadoTrap",
+        "tile_x": 24,
+        "tile_y": 30,
+        "mode": "Default"
+      },
+      {
+        "instance_id": 48,
+        "trap_id": "GigaBomb",
+        "tile_x": 33,
+        "tile_y": 30,
+        "mode": "Default"
+      }
+    ],
+    "defending_heroes": [
+      {
+        "hero_id": "BarbarianKing",
+        "tile_x": 20,
+        "tile_y": 27
+      },
+      {
+        "hero_id": "ArcherQueen",
+        "tile_x": 28,
+        "tile_y": 20
+      },
+      {
+        "hero_id": "GrandWarden",
+        "tile_x": 27,
+        "tile_y": 28
+      },
+      {
+        "hero_id": "DragonDuke",
+        "tile_x": 20,
+        "tile_y": 20
+      }
+    ],
+    "defending_cc_troops": [
+      [
+        "IceGolem",
+        2
+      ],
+      [
+        "Headhunter",
+        3
+      ],
+      [
+        "Archer",
+        7
+      ]
+    ]
+  },
+  "army": {
+    "name": "TH18 Thrower + Healer + Totem Smash (Meta)",
+    "troops": [
+      [
+        "Thrower",
+        12
+      ],
+      [
+        "Healer",
+        5
+      ],
+      [
+        "Furnace",
+        2
+      ],
+      [
+        "Druid",
+        1
+      ],
+      [
+        "IceGolem",
+        1
+      ],
+      [
+        "SuperWallBreaker",
+        1
+      ],
+      [
+        "Headhunter",
+        1
+      ],
+      [
+        "Balloon",
+        1
+      ],
+      [
+        "Archer",
+        4
+      ]
+    ],
+    "spells": [
+      [
+        "Totem",
+        7
+      ],
+      [
+        "Rage",
+        1
+      ],
+      [
+        "Poison",
+        1
+      ],
+      [
+        "SkeletonSpell",
+        1
+      ]
+    ],
+    "heroes": [
+      [
+        "BarbarianKing",
+        "Frosty"
+      ],
+      [
+        "ArcherQueen",
+        "Unicorn"
+      ],
+      [
+        "GrandWarden",
+        "AngryJelly"
+      ],
+      [
+        "RoyalChampion",
+        "Phoenix"
+      ]
+    ],
+    "hero_equipment": [
+      [
+        "BarbarianKing",
+        [
+          "SpikyBall",
+          "SnakeBracelet"
+        ]
+      ],
+      [
+        "ArcherQueen",
+        [
+          "MagicMirror",
+          "ActionFigure"
+        ]
+      ],
+      [
+        "GrandWarden",
+        [
+          "EternalTome",
+          "RageGem"
+        ]
+      ],
+      [
+        "RoyalChampion",
+        [
+          "RocketSpear",
+          "ElectroBoots"
+        ]
+      ]
+    ],
+    "siege_machine": "LogLauncher",
+    "cc_troops": [
+      [
+        "SuperYeti",
+        1
+      ],
+      [
+        "SuperValkyrie",
+        1
+      ]
+    ],
+    "cc_spells": [
+      [
+        "Rage",
+        1
+      ],
+      [
+        "Freeze",
+        1
+      ]
+    ]
+  },
+  "actions": [
+    {
+      "tick": 2,
+      "slot_type": "Troop",
+      "slot_idx": 0,
+      "unit_name": "IceGolem",
+      "tile_x": 1,
+      "tile_y": 24,
+      "fraction": 0.5
+    },
+    {
+      "tick": 8,
+      "slot_type": "Troop",
+      "slot_idx": 1,
+      "unit_name": "Thrower",
+      "tile_x": 12,
+      "tile_y": 48,
+      "fraction": 0.2
+    },
+    {
+      "tick": 14,
+      "slot_type": "Troop",
+      "slot_idx": 2,
+      "unit_name": "Healer",
+      "tile_x": 13,
+      "tile_y": 48,
+      "fraction": 0.4
+    },
+    {
+      "tick": 20,
+      "slot_type": "Siege",
+      "slot_idx": 4,
+      "unit_name": "LogLauncher",
+      "tile_x": 1,
+      "tile_y": 25,
+      "fraction": 1.0
+    },
+    {
+      "tick": 26,
+      "slot_type": "Hero",
+      "slot_idx": 5,
+      "unit_name": "BarbarianKing",
+      "tile_x": 1,
+      "tile_y": 26,
+      "fraction": 1.0
+    },
+    {
+      "tick": 32,
+      "slot_type": "Spell",
+      "slot_idx": 9,
+      "unit_name": "Rage",
+      "tile_x": 18,
+      "tile_y": 25,
+      "fraction": 0.3333
+    },
+    {
+      "tick": 38,
+      "slot_type": "HeroAbility",
+      "slot_idx": 5,
+      "unit_name": "BarbarianKing",
+      "tile_x": 0,
+      "tile_y": 0,
+      "fraction": 1.0
+    },
+    {
+      "tick": 44,
+      "slot_type": "Troop",
+      "slot_idx": 1,
+      "unit_name": "Thrower",
+      "tile_x": 14,
+      "tile_y": 48,
+      "fraction": 0.375
+    }
+  ],
+  "validation": {
+    "valid": true,
+    "layout_valid": true,
+    "roster_valid": true,
+    "actions_valid": true,
+    "errors": [],
+    "sim_dry_run_executed": true,
+    "sim_destruction_pct": 25,
+    "sim_stars": 0,
+    "sim_final_tick": 1800
+  }
+}
