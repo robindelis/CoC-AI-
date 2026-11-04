@@ -106,6 +106,7 @@ class ReplayExtractionPipeline:
             self.dock_tracker.reset()
 
         hud_states: list[HudFrameState] = []
+        hud_timeline: list[dict[str, Any]] = []
         localized_drops: list[LocalizedDrop] = []
         prev_frame: np.ndarray | None = None
 
@@ -121,8 +122,21 @@ class ReplayExtractionPipeline:
             hud_states.append(hud_st)
 
             candidates: list[DropCandidate]
-            candidates, _ = self.dock_tracker.update(
+            candidates, slot_states = self.dock_tracker.update(
                 frame_bgr, frame_idx=f_idx, video_sec=f_sec
+            )
+            hud_timeline.append(
+                {
+                    "frame_idx": f_idx,
+                    "video_sec": round(f_sec, 4),
+                    "in_battle": hud_st.in_battle,
+                    "time_remaining_sec": hud_st.time_remaining_sec,
+                    "destruction_pct": hud_st.destruction_pct,
+                    "stars": hud_st.stars,
+                    "slot_counts": [s.count for s in slot_states],
+                    "selected_slots": [s.slot_idx for s in slot_states if s.selected],
+                    "ability_slots": [s.slot_idx for s in slot_states if s.ability_active],
+                }
             )
 
             ref_prev = prev_frame if prev_frame is not None else frame_bgr
@@ -150,6 +164,95 @@ class ReplayExtractionPipeline:
             filtered_drops, battle_start_sec=battle_start_sec
         )
 
+        # Build enriched action dictionaries and CV telemetry for the Web Studio
+        dock_bboxes = self.dock_tracker.get_slot_bboxes(video_meta.width, video_meta.height)
+        dock_slots_meta: list[dict[str, Any]] = []
+        for idx, bbox in enumerate(dock_bboxes):
+            s_type, u_name = self.dock_tracker._slot_identities.get(idx, ("Troop", "Thrower"))
+            init_cnt = self.dock_tracker._initial_counts.get(idx, 1)
+            dock_slots_meta.append(
+                {
+                    "slot_idx": idx,
+                    "slot_type": s_type,
+                    "unit_name": u_name,
+                    "initial_count": init_cnt,
+                    "bbox": list(bbox),
+                }
+            )
+
+        # Ensure resolved_army has at least the observed initial counts from dock_slots_meta
+        troops_map = {t[0]: int(t[1]) for t in resolved_army.get("troops", [])}
+        spells_map = {s[0]: int(s[1]) for s in resolved_army.get("spells", [])}
+        for ds in dock_slots_meta:
+            st = ds["slot_type"]
+            un = ds["unit_name"]
+            ic = int(ds["initial_count"])
+            if st == "Troop":
+                troops_map[un] = max(troops_map.get(un, 0), ic)
+            elif st == "Spell":
+                spells_map[un] = max(spells_map.get(un, 0), ic)
+        resolved_army = dict(resolved_army)
+        resolved_army["troops"] = [[k, v] for k, v in troops_map.items()]
+        resolved_army["spells"] = [[k, v] for k, v in spells_map.items()]
+
+        drop_events_telemetry: list[dict[str, Any]] = []
+        enriched_actions: list[dict[str, Any]] = []
+        for step_i, (loc, act_entry) in enumerate(zip(filtered_drops, actions, strict=False)):
+            cand = loc.candidate
+            b_act = self.replay_builder.build_engine_battle_action(
+                slot_type=act_entry.slot_type,
+                unit_name=act_entry.unit_name,
+                tile_x=act_entry.tile_x,
+                tile_y=act_entry.tile_y,
+                dropped_count=cand.dropped_count,
+            )
+            act_dict = act_entry.to_dict()
+            act_dict["dropped_count"] = cand.dropped_count
+            act_dict["video_sec"] = cand.video_sec
+            act_dict["frame_idx"] = cand.frame_idx
+            act_dict["pixel_x"] = loc.pixel_x
+            act_dict["pixel_y"] = loc.pixel_y
+            act_dict["confidence"] = loc.confidence
+            act_dict["battle_action"] = b_act
+            enriched_actions.append(act_dict)
+
+            drop_events_telemetry.append(
+                {
+                    "step_idx": step_i,
+                    "frame_idx": cand.frame_idx,
+                    "video_sec": cand.video_sec,
+                    "tick": act_entry.tick,
+                    "slot_type": act_entry.slot_type,
+                    "slot_idx": act_entry.slot_idx,
+                    "unit_name": act_entry.unit_name,
+                    "count_before": cand.count_before,
+                    "count_after": cand.count_after,
+                    "dropped_count": cand.dropped_count,
+                    "fraction": act_entry.fraction,
+                    "pixel_x": loc.pixel_x,
+                    "pixel_y": loc.pixel_y,
+                    "exact_gx": loc.exact_gx,
+                    "exact_gy": loc.exact_gy,
+                    "tile_x": loc.tile_x,
+                    "tile_y": loc.tile_y,
+                    "confidence": loc.confidence,
+                    "battle_action": b_act,
+                }
+            )
+
+        roi_cfg = self.hud_detector.roi_config
+        cv_telemetry = {
+            "hud_rois": {
+                "timer": list(roi_cfg.timer_top_right),
+                "destruction": list(roi_cfg.destruction_top_left),
+                "stars": list(roi_cfg.stars_top_left),
+                "dock": list(roi_cfg.dock_bottom),
+            },
+            "dock_slots": dock_slots_meta,
+            "hud_timeline": hud_timeline,
+            "drop_events": drop_events_telemetry,
+        }
+
         source_meta = {
             "video_path": str(video_meta.video_path),
             "source_url": video_meta.source_url,
@@ -168,11 +271,12 @@ class ReplayExtractionPipeline:
 
         payload = self.replay_builder.build_replay_payload(
             match_id=match_id,
-            actions=actions,
+            actions=enriched_actions,
             segment=segment,
             layout=resolved_layout,
             army=resolved_army,
             source_meta=source_meta,
+            cv_telemetry=cv_telemetry,
             run_engine_dry_run=True,
         )
 

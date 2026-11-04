@@ -1460,5 +1460,127 @@ def get_vault_status() -> Dict[str, Any]:
         return {"error": str(e)}
 
 
+class CVParseRequest(BaseModel):
+    mode: str = "file"  # "sample" | "file" | "url"
+    url: Optional[str] = None
+    file_path: Optional[str] = "samples/pro_attack.mp4"
+    start: Optional[str] = None
+    end: Optional[str] = None
+    match_id: str = "pro_attack_01"
+    stride: int = 1
+
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_REPLAYS_DIR = os.path.join(_REPO_ROOT, "datasets", "replays")
+_RAW_VIDEOS_DIR = os.path.join(_REPO_ROOT, "datasets", "raw_videos")
+_SAMPLES_DIR = os.path.join(_REPO_ROOT, "samples")
+
+
+def _list_cv_replays_and_videos() -> Tuple[List[Dict[str, Any]], List[str]]:
+    os.makedirs(_REPLAYS_DIR, exist_ok=True)
+    os.makedirs(_RAW_VIDEOS_DIR, exist_ok=True)
+    os.makedirs(_SAMPLES_DIR, exist_ok=True)
+
+    replays: List[Dict[str, Any]] = []
+    for fname in sorted(os.listdir(_REPLAYS_DIR)):
+        if not fname.endswith(".json"):
+            continue
+        fpath = os.path.join(_REPLAYS_DIR, fname)
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            replays.append(
+                {
+                    "match_id": data.get("match_id", fname[:-5]),
+                    "filename": fname,
+                    "actions_count": len(data.get("actions", [])),
+                    "valid": bool((data.get("validation") or {}).get("valid", True)),
+                    "video_path": (data.get("source") or {}).get("video_path", "samples/pro_attack.mp4"),
+                    "final_destruction_pct": (data.get("battle_segment") or {}).get("final_destruction_pct", 100),
+                    "final_stars": (data.get("battle_segment") or {}).get("final_stars", 3),
+                }
+            )
+        except Exception:
+            continue
+
+    videos: List[str] = []
+    for rel_base, folder in (("samples", _SAMPLES_DIR), ("datasets/raw_videos", _RAW_VIDEOS_DIR)):
+        if os.path.isdir(folder):
+            for vname in sorted(os.listdir(folder)):
+                if vname.lower().endswith((".mp4", ".webm", ".mkv")):
+                    videos.append(f"{rel_base}/{vname}")
+    return replays, videos
+
+
+@app.get("/api/ai/cv/replays")
+def get_cv_replays(match_id: Optional[str] = None) -> Dict[str, Any]:
+    replays, videos = _list_cv_replays_and_videos()
+    target_id = match_id or (replays[0]["match_id"] if replays else "pro_attack_01")
+    target_path = os.path.join(_REPLAYS_DIR, f"{target_id}.json")
+    active_replay = None
+    if os.path.isfile(target_path):
+        with suppress(Exception):
+            with open(target_path, "r", encoding="utf-8") as f:
+                active_replay = json.load(f)
+    return {
+        "replays": replays,
+        "videos": videos,
+        "active_replay": active_replay,
+    }
+
+
+@app.get("/api/ai/cv/video")
+def stream_cv_video(path: str = "samples/pro_attack.mp4") -> FileResponse:
+    rel = path.lstrip("/").replace("..", "")
+    abs_path = os.path.abspath(os.path.join(_REPO_ROOT, rel))
+    if not abs_path.startswith(_REPO_ROOT) or not os.path.isfile(abs_path):
+        abs_path = os.path.join(_SAMPLES_DIR, "pro_attack.mp4")
+    return FileResponse(abs_path, media_type="video/mp4")
+
+
+@app.post("/api/ai/cv/parse")
+def run_cv_replay_parse(req: CVParseRequest) -> Dict[str, Any]:
+    try:
+        from coc_cv import ReplayExtractionPipeline, generate_synthetic_pro_attack_video
+
+        match_id = (req.match_id or "pro_attack_01").strip()
+        file_path = req.file_path
+        url = req.url
+
+        if req.mode == "sample":
+            sample_out = os.path.join(_SAMPLES_DIR, "pro_attack.mp4")
+            generate_synthetic_pro_attack_video(sample_out)
+            file_path = "samples/pro_attack.mp4"
+            url = None
+        elif req.mode == "file":
+            rel = (file_path or "samples/pro_attack.mp4").lstrip("/").replace("..", "")
+            abs_fp = os.path.join(_REPO_ROOT, rel)
+            if not os.path.isfile(abs_fp) and rel == "samples/pro_attack.mp4":
+                generate_synthetic_pro_attack_video(abs_fp)
+            file_path = abs_fp
+            url = None
+
+        pipeline = ReplayExtractionPipeline(output_dir=_REPLAYS_DIR)
+        payload, _ = pipeline.run(
+            match_id=match_id,
+            url=url,
+            file_path=file_path if not url else None,
+            start=req.start,
+            end=req.end,
+            stride=max(1, int(req.stride)),
+            save_to_disk=True,
+        )
+        replays, videos = _list_cv_replays_and_videos()
+        return {
+            "success": True,
+            "replay": payload,
+            "replays": replays,
+            "videos": videos,
+        }
+    except Exception as exc:
+        traceback.print_exc()
+        return {"success": False, "error": str(exc)}
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

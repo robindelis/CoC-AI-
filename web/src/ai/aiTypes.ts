@@ -818,3 +818,123 @@ export interface AIRecursiveLoopState {
   evolution_ledger_vault_path?: string;
   cycles: AIRecursiveLoopCycle[];
 }
+
+export interface CVReplayAction {
+  tick: number;
+  slot_type: string;
+  slot_idx: number;
+  unit_name: string;
+  tile_x: number;
+  tile_y: number;
+  fraction: number;
+  dropped_count?: number;
+  video_sec?: number;
+  frame_idx?: number;
+  pixel_x?: number;
+  pixel_y?: number;
+  confidence?: number;
+  battle_action?: Record<string, unknown> | string;
+}
+
+export interface CVDockSlotMeta {
+  slot_idx: number;
+  slot_type: string;
+  unit_name: string;
+  initial_count: number;
+  bbox: [number, number, number, number];
+}
+
+export interface CVHudTimelineFrame {
+  frame_idx: number;
+  video_sec: number;
+  in_battle: boolean;
+  time_remaining_sec: number | null;
+  destruction_pct: number;
+  stars: number;
+  slot_counts: number[];
+  selected_slots: number[];
+  ability_slots: number[];
+}
+
+export interface CVDropEventTelemetry {
+  step_idx: number;
+  frame_idx: number;
+  video_sec: number;
+  tick: number;
+  slot_type: string;
+  slot_idx: number;
+  unit_name: string;
+  count_before: number;
+  count_after: number;
+  dropped_count: number;
+  fraction: number;
+  pixel_x: number;
+  pixel_y: number;
+  exact_gx: number;
+  exact_gy: number;
+  tile_x: number;
+  tile_y: number;
+  confidence: number;
+  battle_action: Record<string, unknown> | string;
+}
+
+export interface CVReplayDossier {
+  schema_version: string;
+  match_id: string;
+  ticks_per_second: number;
+  source: {
+    video_path?: string;
+    source_url?: string | null;
+    width?: number;
+    height?: number;
+    fps?: number;
+    frame_count?: number;
+    duration_sec?: number;
+    clip_start_sec?: number;
+    clip_end_sec?: number | null;
+  };
+  battle_segment: {
+    start_frame: number;
+    end_frame: number;
+    start_sec: number;
+    end_sec: number;
+    initial_timer_sec: number;
+    final_destruction_pct: number;
+    final_stars: number;
+  };
+  layout: VillageLayout;
+  army: ArmyLoadout;
+  actions: CVReplayAction[];
+  cv_telemetry?: {
+    hud_rois: {
+      timer: [number, number, number, number];
+      destruction: [number, number, number, number];
+      stars: [number, number, number, number];
+      dock: [number, number, number, number];
+    };
+    dock_slots: CVDockSlotMeta[];
+    hud_timeline: CVHudTimelineFrame[];
+    drop_events: CVDropEventTelemetry[];
+  };
+  validation: {
+    valid: boolean;
+    layout_valid: boolean;
+    roster_valid: boolean;
+    actions_valid: boolean;
+    errors: string[];
+    sim_dry_run_executed: boolean;
+    sim_destruction_pct: number;
+    sim_stars: number;
+    sim_final_tick: number;
+  };
+}
+
+export interface CVReplaySummaryItem {
+  match_id: string;
+  filename: string;
+  actions_count: number;
+  valid: boolean;
+  video_path: string;
+  final_destruction_pct: number;
+  final_stars: number;
+}

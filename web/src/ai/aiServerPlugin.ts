@@ -4,6 +4,7 @@ import http from 'node:http';
 import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { FULL_CATALOG } from '../sim-ts/catalogData';
 import { WasmBattleSession } from '../sim-ts/coc_sim';
 import type { ArmyLoadout } from '../types';
@@ -1147,6 +1148,143 @@ export function createCocAiServerPlugin(rootDir: string): Plugin {
         latency_sec: 0,
         feedback: null,
       });
+      return true;
+    }
+
+    function listCvReplaysAndVideos() {
+      const replaysDir = path.join(rootDir, 'datasets', 'replays');
+      const rawVideosDir = path.join(rootDir, 'datasets', 'raw_videos');
+      const samplesDir = path.join(rootDir, 'samples');
+      const replays: Array<Record<string, unknown>> = [];
+      if (fs.existsSync(replaysDir)) {
+        for (const fname of fs.readdirSync(replaysDir).sort()) {
+          if (!fname.endsWith('.json')) continue;
+          try {
+            const data = JSON.parse(fs.readFileSync(path.join(replaysDir, fname), 'utf-8'));
+            replays.push({
+              match_id: data.match_id ?? fname.slice(0, -5),
+              filename: fname,
+              actions_count: Array.isArray(data.actions) ? data.actions.length : 0,
+              valid: Boolean(data.validation?.valid ?? true),
+              video_path: data.source?.video_path ?? 'samples/pro_attack.mp4',
+              final_destruction_pct: data.battle_segment?.final_destruction_pct ?? 100,
+              final_stars: data.battle_segment?.final_stars ?? 3,
+            });
+          } catch {
+            // ignore
+          }
+        }
+      }
+      const videos: string[] = [];
+      for (const [relBase, folder] of [
+        ['samples', samplesDir],
+        ['datasets/raw_videos', rawVideosDir],
+      ] as const) {
+        if (fs.existsSync(folder)) {
+          for (const vname of fs.readdirSync(folder).sort()) {
+            if (/\.(mp4|webm|mkv)$/i.test(vname)) {
+              videos.push(`${relBase}/${vname}`);
+            }
+          }
+        }
+      }
+      return { replays, videos };
+    }
+
+    if (req.method === 'GET' && pathname === '/api/ai/cv/replays') {
+      const { replays, videos } = listCvReplaysAndVideos();
+      const matchId =
+        urlObj.searchParams.get('match_id') ??
+        (replays[0]?.match_id as string | undefined) ??
+        'pro_attack_01';
+      const targetPath = path.join(rootDir, 'datasets', 'replays', `${matchId}.json`);
+      let activeReplay: unknown = null;
+      if (fs.existsSync(targetPath)) {
+        try {
+          activeReplay = JSON.parse(fs.readFileSync(targetPath, 'utf-8'));
+        } catch {
+          // ignore
+        }
+      }
+      sendJson(res, 200, { replays, videos, active_replay: activeReplay });
+      return true;
+    }
+
+    if (req.method === 'GET' && pathname === '/api/ai/cv/video') {
+      const rel = (urlObj.searchParams.get('path') ?? 'samples/pro_attack.mp4')
+        .replace(/^\/+/, '')
+        .replace(/\.\./g, '');
+      let absPath = path.resolve(rootDir, rel);
+      if (!absPath.startsWith(rootDir) || !fs.existsSync(absPath)) {
+        absPath = path.join(rootDir, 'samples', 'pro_attack.mp4');
+      }
+      if (!fs.existsSync(absPath)) {
+        sendJson(res, 404, { error: 'Video file not found' });
+        return true;
+      }
+      const stat = fs.statSync(absPath);
+      const fileSize = stat.size;
+      const range = req.headers.range;
+      if (range) {
+        const parts = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+        const chunkSize = end - start + 1;
+        res.writeHead(206, {
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunkSize,
+          'Content-Type': 'video/mp4',
+        });
+        fs.createReadStream(absPath, { start, end }).pipe(res);
+      } else {
+        res.writeHead(200, {
+          'Content-Length': fileSize,
+          'Content-Type': 'video/mp4',
+          'Accept-Ranges': 'bytes',
+        });
+        fs.createReadStream(absPath).pipe(res);
+      }
+      return true;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/ai/cv/parse') {
+      const body = await readJsonBody(req);
+      const mode = String(body.mode ?? 'file');
+      const matchId = String(body.match_id ?? 'pro_attack_01').trim() || 'pro_attack_01';
+      const filePath = String(body.file_path ?? 'samples/pro_attack.mp4');
+      const urlStr = typeof body.url === 'string' ? body.url.trim() : '';
+      const startStr = typeof body.start === 'string' ? body.start.trim() : '';
+      const endStr = typeof body.end === 'string' ? body.end.trim() : '';
+
+      try {
+        if (fs.existsSync(venvPython)) {
+          if (mode === 'sample') {
+            execFileSync(venvPython, ['-m', 'coc_cv', 'synthesize-sample', '--output', 'samples/pro_attack.mp4'], {
+              cwd: rootDir,
+              timeout: 60000,
+            });
+          }
+          const args = ['-m', 'coc_cv', 'parse', '--match-id', matchId];
+          if (mode === 'url' && urlStr) {
+            args.push('--url', urlStr);
+            if (startStr) args.push('--start', startStr);
+            if (endStr) args.push('--end', endStr);
+          } else {
+            args.push('--file', mode === 'sample' ? 'samples/pro_attack.mp4' : filePath);
+          }
+          execFileSync(venvPython, args, { cwd: rootDir, timeout: 120000 });
+        }
+        const { replays, videos } = listCvReplaysAndVideos();
+        const replayFile = path.join(rootDir, 'datasets', 'replays', `${matchId}.json`);
+        const replay = fs.existsSync(replayFile)
+          ? JSON.parse(fs.readFileSync(replayFile, 'utf-8'))
+          : null;
+        sendJson(res, 200, { success: Boolean(replay), replay, replays, videos });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        sendJson(res, 500, { success: false, error: message });
+      }
       return true;
     }
 

@@ -106,6 +106,41 @@ class ReplayBuilder:
             raise RuntimeError("No preset_armies found in coc_py catalog")
         return dict(armies[0])
 
+    @staticmethod
+    def build_engine_battle_action(
+        slot_type: str,
+        unit_name: str,
+        tile_x: int,
+        tile_y: int,
+        dropped_count: int = 1,
+    ) -> dict[str, Any] | str:
+        """Construct the exact `coc-engine` serde `BattleAction` payload for WASM & Rust playback."""
+        x = float(tile_x) + 0.5
+        y = float(tile_y) + 0.5
+        cnt = max(1, int(dropped_count))
+        if slot_type == "Troop":
+            if cnt > 1:
+                return {
+                    "DeployTroopBatch": {
+                        "troop_id": unit_name,
+                        "x": x,
+                        "y": y,
+                        "count": cnt,
+                    }
+                }
+            return {"DeployTroop": {"troop_id": unit_name, "x": x, "y": y}}
+        if slot_type == "Hero":
+            return {"DeployHero": {"hero_id": unit_name, "x": x, "y": y}}
+        if slot_type == "HeroAbility":
+            return {"ActivateHeroAbility": {"hero_id": unit_name}}
+        if slot_type == "Siege":
+            return {"DeploySiege": {"x": x, "y": y}}
+        if slot_type == "PopSiege":
+            return "PopSiege"
+        if slot_type == "Spell":
+            return {"CastSpell": {"spell_id": unit_name, "x": x, "y": y}}
+        return "NoOp"
+
     def build_actions(
         self,
         localized_drops: Sequence[LocalizedDrop],
@@ -150,16 +185,25 @@ class ReplayBuilder:
         layout: dict[str, Any] | None = None,
         army: dict[str, Any] | None = None,
         source_meta: dict[str, Any] | None = None,
+        cv_telemetry: dict[str, Any] | None = None,
         run_engine_dry_run: bool = True,
     ) -> dict[str, Any]:
         """Assemble a complete replay dossier dictionary and validate it against `coc-engine`."""
         layout_dict = layout if layout is not None else self.default_layout()
         army_dict = army if army is not None else self.default_army()
 
-        action_dicts: list[dict[str, Any]] = [
-            a.to_dict() if isinstance(a, ReplayActionEntry) else dict(a)
-            for a in actions
-        ]
+        action_dicts: list[dict[str, Any]] = []
+        for a in actions:
+            d = a.to_dict() if isinstance(a, ReplayActionEntry) else dict(a)
+            if "battle_action" not in d:
+                d["battle_action"] = self.build_engine_battle_action(
+                    slot_type=str(d.get("slot_type", "Troop")),
+                    unit_name=str(d.get("unit_name", "Thrower")),
+                    tile_x=int(d.get("tile_x", 1)),
+                    tile_y=int(d.get("tile_y", 24)),
+                    dropped_count=int(d.get("dropped_count", 1)),
+                )
+            action_dicts.append(d)
 
         payload: dict[str, Any] = {
             "schema_version": "1.0",
@@ -179,6 +223,8 @@ class ReplayBuilder:
             "army": army_dict,
             "actions": action_dicts,
         }
+        if cv_telemetry is not None:
+            payload["cv_telemetry"] = cv_telemetry
 
         report = self.validate_replay_payload(
             payload, run_engine_dry_run=run_engine_dry_run

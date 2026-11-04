@@ -8,6 +8,8 @@ import {
   AIRolloutResponse,
   AIServerStatus,
   AITrainingFeedbackResponse,
+  CVReplayDossier,
+  CVReplaySummaryItem,
   MatchupMode,
   SavedModelMeta,
 } from './aiTypes';
@@ -416,5 +418,65 @@ export async function resetRecursiveLoop(): Promise<AIRecursiveLoopState | null>
     return (await res.json()) as AIRecursiveLoopState;
   } catch {
     return null;
+  }
+}
+
+export function getCVVideoStreamUrl(videoPath = 'samples/pro_attack.mp4', cacheBuster?: number): string {
+  const cb = cacheBuster ?? 1;
+  return `${AI_API_BASE}/cv/video?path=${encodeURIComponent(videoPath)}&v=${cb}`;
+}
+
+export async function fetchCVReplays(matchId?: string): Promise<{
+  replays: CVReplaySummaryItem[];
+  videos: string[];
+  active_replay: CVReplayDossier | null;
+} | null> {
+  try {
+    const q = matchId ? `?match_id=${encodeURIComponent(matchId)}&t=${Date.now()}` : `?t=${Date.now()}`;
+    const res = await fetch(`${AI_API_BASE}/cv/replays${q}`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    return (await res.json()) as {
+      replays: CVReplaySummaryItem[];
+      videos: string[];
+      active_replay: CVReplayDossier | null;
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function parseCVReplay(params: {
+  mode: 'sample' | 'file' | 'url';
+  match_id: string;
+  file_path?: string;
+  url?: string;
+  start?: string;
+  end?: string;
+  stride?: number;
+}): Promise<{
+  success: boolean;
+  replay?: CVReplayDossier | null;
+  replays?: CVReplaySummaryItem[];
+  videos?: string[];
+  error?: string;
+} | null> {
+  try {
+    const res = await fetch(`${AI_API_BASE}/cv/parse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    });
+    return (await res.json()) as {
+      success: boolean;
+      replay?: CVReplayDossier | null;
+      replays?: CVReplaySummaryItem[];
+      videos?: string[];
+      error?: string;
+    };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }

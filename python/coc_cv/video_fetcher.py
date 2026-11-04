@@ -261,7 +261,7 @@ def generate_synthetic_pro_attack_video(
     width: int = 1280,
     height: int = 720,
     fps: float = 30.0,
-    total_frames: int = 60,
+    total_frames: int = 180,
     roster: Sequence[tuple[str, str, int]] | None = None,
     drops: Sequence[SyntheticDropSpec] | None = None,
 ) -> tuple[VideoMetadata, list[SyntheticDropSpec]]:
@@ -288,18 +288,32 @@ def generate_synthetic_pro_attack_video(
         ]
 
     if drops is None:
-        drops = [
-            SyntheticDropSpec(frame_idx=6, slot_idx=0, tile_x=1, tile_y=24, count_delta=1),
-            SyntheticDropSpec(frame_idx=12, slot_idx=1, tile_x=12, tile_y=48, count_delta=2),
-            SyntheticDropSpec(frame_idx=18, slot_idx=2, tile_x=13, tile_y=48, count_delta=2),
-            SyntheticDropSpec(frame_idx=24, slot_idx=4, tile_x=1, tile_y=25, count_delta=1),
-            SyntheticDropSpec(frame_idx=30, slot_idx=5, tile_x=1, tile_y=26, count_delta=1),
-            SyntheticDropSpec(frame_idx=36, slot_idx=9, tile_x=18, tile_y=25, count_delta=1),
-            SyntheticDropSpec(
-                frame_idx=42, slot_idx=5, tile_x=0, tile_y=0, count_delta=0, is_ability=True
-            ),
-            SyntheticDropSpec(frame_idx=48, slot_idx=1, tile_x=14, tile_y=48, count_delta=3),
-        ]
+        if total_frames >= 150:
+            drops = [
+                SyntheticDropSpec(frame_idx=15, slot_idx=0, tile_x=1, tile_y=24, count_delta=1),
+                SyntheticDropSpec(frame_idx=35, slot_idx=1, tile_x=12, tile_y=48, count_delta=2),
+                SyntheticDropSpec(frame_idx=55, slot_idx=2, tile_x=13, tile_y=48, count_delta=2),
+                SyntheticDropSpec(frame_idx=75, slot_idx=4, tile_x=1, tile_y=25, count_delta=1),
+                SyntheticDropSpec(frame_idx=95, slot_idx=5, tile_x=1, tile_y=26, count_delta=1),
+                SyntheticDropSpec(frame_idx=115, slot_idx=9, tile_x=18, tile_y=25, count_delta=1),
+                SyntheticDropSpec(
+                    frame_idx=135, slot_idx=5, tile_x=0, tile_y=0, count_delta=0, is_ability=True
+                ),
+                SyntheticDropSpec(frame_idx=155, slot_idx=1, tile_x=14, tile_y=48, count_delta=3),
+            ]
+        else:
+            drops = [
+                SyntheticDropSpec(frame_idx=6, slot_idx=0, tile_x=1, tile_y=24, count_delta=1),
+                SyntheticDropSpec(frame_idx=12, slot_idx=1, tile_x=12, tile_y=48, count_delta=2),
+                SyntheticDropSpec(frame_idx=18, slot_idx=2, tile_x=13, tile_y=48, count_delta=2),
+                SyntheticDropSpec(frame_idx=24, slot_idx=4, tile_x=1, tile_y=25, count_delta=1),
+                SyntheticDropSpec(frame_idx=30, slot_idx=5, tile_x=1, tile_y=26, count_delta=1),
+                SyntheticDropSpec(frame_idx=36, slot_idx=9, tile_x=18, tile_y=25, count_delta=1),
+                SyntheticDropSpec(
+                    frame_idx=42, slot_idx=5, tile_x=0, tile_y=0, count_delta=0, is_ability=True
+                ),
+                SyntheticDropSpec(frame_idx=48, slot_idx=1, tile_x=14, tile_y=48, count_delta=3),
+            ]
 
     fm = FontMatcher()
     mapper = IsometricMapper(viewport_w=width, viewport_h=height)
@@ -455,6 +469,33 @@ def generate_synthetic_pro_attack_video(
             writer.write(frame)
     finally:
         writer.release()
+
+    # Transcode to H.264 (avc1) via ffmpeg if available so HTML5 <video> plays natively
+    ffmpeg_bin = shutil.which("ffmpeg")
+    if ffmpeg_bin:
+        tmp_h264 = out_p.with_suffix(".h264_tmp.mp4")
+        res = subprocess.run(
+            [
+                ffmpeg_bin,
+                "-y",
+                "-loglevel",
+                "error",
+                "-i",
+                str(out_p),
+                "-c:v",
+                "libx264",
+                "-crf",
+                "14",
+                "-pix_fmt",
+                "yuv420p",
+                "-movflags",
+                "+faststart",
+                str(tmp_h264),
+            ],
+            check=False,
+        )
+        if res.returncode == 0 and tmp_h264.exists():
+            tmp_h264.replace(out_p)
 
     meta = VideoFetcher.inspect_video(out_p)
     return meta, list(drops)

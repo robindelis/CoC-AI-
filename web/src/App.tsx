@@ -15,10 +15,11 @@ import { OverlayOptions } from './canvas/BattlefieldCanvas';
 import { GameArmyBuilder } from './game/GameArmyBuilder';
 import { GameTacticalDrawer } from './game/GameTacticalDrawer';
 import { AIStudioView } from './ai/AIStudioView';
+import { CVReplayStudioView } from './ai/CVReplayStudioView';
 import { RLAcademyView } from './ai/RLAcademyView';
 import { AIRolloutStep } from './ai/aiTypes';
 
-type ActiveTab = 'armory' | 'ai_train' | 'ai_test' | 'rl_academy';
+type ActiveTab = 'armory' | 'ai_train' | 'ai_test' | 'cv_replay' | 'rl_academy';
 
 let wasmInitPromise: Promise<unknown> | null = null;
 function ensureWasmInitialized() {
@@ -273,6 +274,15 @@ export const App: React.FC = () => {
             🧪 AI Model Tester
           </button>
           <button
+            className={`tab-btn ai-tab-btn ${activeTab === 'cv_replay' ? 'active' : ''}`}
+            onClick={() => {
+              setIsAiPlaying(false);
+              setActiveTab('cv_replay');
+            }}
+          >
+            🎥 CV Replay Extractor
+          </button>
+          <button
             className={`tab-btn ai-tab-btn ${activeTab === 'rl_academy' ? 'active' : ''}`}
             onClick={() => {
               setIsAiPlaying(false);
@@ -285,7 +295,7 @@ export const App: React.FC = () => {
 
         <div className="header-right-controls">
           <span className="badge-gold">⚔️ {army.name}</span>
-          {activeTab === 'ai_test' && (
+          {(activeTab === 'ai_test' || activeTab === 'cv_replay') && (
             <button
               className={`clash-btn ${showTacticalDrawer ? 'gold' : ''}`}
               onClick={() => setShowTacticalDrawer(!showTacticalDrawer)}
@@ -305,6 +315,25 @@ export const App: React.FC = () => {
         />
       ) : activeTab === 'rl_academy' ? (
         <RLAcademyView onJumpToTab={(t) => setActiveTab(t)} />
+      ) : activeTab === 'cv_replay' ? (
+        <div className="battlefield-viewport">
+          <CVReplayStudioView
+            catalog={catalog}
+            overlays={overlays}
+            onToggleOverlay={(key) =>
+              setOverlays((prev) => ({ ...prev, [key]: !prev[key] }))
+            }
+          />
+          {showTacticalDrawer && (
+            <GameTacticalDrawer
+              overlays={overlays}
+              battleState={battleState}
+              selectedBattleEntity={selectedBattleEntity}
+              onSetOverlays={setOverlays}
+              onClose={() => setShowTacticalDrawer(false)}
+            />
+          )}
+        </div>
       ) : (
         <div className="battlefield-viewport">
           <AIStudioView
