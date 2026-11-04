@@ -662,3 +662,30 @@ Defined in `CoCActorCritic` (`python/coc_rl/networks.py`), the policy parameteri
   - Expands spatial embedding capacity to 128 channels, maintaining fine-grained distinction between perimeter deployment and core spell target zones.
   - Parameter footprint remains compact at 254K parameters, preserving sub-millisecond PyTorch GPU inference throughput.
 
+### ADR-024: Interactive Split-Pane CV Replay Extractor Studio & Dual-Stream WASM-Video Synchronized Verification
+- **Date**: 2026-11-04
+- **Status**: Accepted
+- **Context**:
+  1. **Trajectory Verification Bottleneck**: Automated CV extraction from tournament videos (ADR-022) produces trajectory demonstration datasets (`datasets/replays/*.json`), but computer vision detection is prone to occlusion, particle bursts, camera drift, and perspective distortion.
+  2. **Ground Truth Validation**: Before using extracted demonstrations for offline reinforcement learning (Behavior Cloning / Offline RL pre-training), human experts and reinforcement learning engineers must visually inspect detected actions against the raw gameplay video alongside the deterministic game engine simulation.
+  3. **Lack of Integrated Inspection Tooling**: Debugging isometric perspective warping discrepancies, active dock slot highlights, and action timestamp offsets previously required offline terminal logs and separate manual playback.
+- **Decision**:
+  1. **Interactive Split-Pane CV Replay Extractor Studio (`web/src/ai/CVReplayStudioView.tsx`)**:
+     - **Left Pane (Video & CV Detections)**: Integrated HTML5 video player with synchronized dynamic canvas overlays displaying detected HUD bounding boxes (destruction %, stars, 3-minute battle clock), unit dock bounding boxes, active slot deployment highlights, and unit spawn particle bursts.
+     - **Right Pane (Deterministic WASM Simulation)**: Embedded `WasmBattleSession` compiled from `crates/coc-engine` executing the extracted base layout and attacker army composition.
+  2. **Dual-Stream Lock-Step Synchronization**:
+     - Playback scrubber binds video time $t_{\text{sec}}$ to deterministic battle ticks $t_{\text{tick}} = \lfloor (t_{\text{sec}} - t_{\text{start}}) \times 30 \rfloor$.
+     - When seeking or playing, the WASM battle session injects the extracted actions (`slot_type`, `slot_idx`, `deploy_fraction`, `tile_xy`) precisely at their scheduled timestamps.
+     - Real-time side-by-side battle telemetry compares video CV ground truth (clock, destruction %, stars) with WASM simulation metrics, surfacing any divergence.
+  3. **FastAPI Endpoints & Video Streaming Proxy (`python/ai_server.py`, `web/src/ai/aiServerPlugin.ts`)**:
+     - `/api/ai/cv/replays`: Catalogs extracted replay dossiers and raw videos from `datasets/replays/` and `datasets/raw_videos/`.
+     - `/api/ai/cv/video`: Streams MP4 replay videos supporting HTTP 206 Partial Content range requests for smooth scrubbing.
+     - `/api/ai/cv/parse`: Triggers extraction runs for local video files or external URLs.
+  4. **First-Class Web UI Navigation (`web/src/App.tsx`, `web/src/ai/aiTypes.ts`, `web/src/ai/aiClient.ts`)**:
+     - Added dedicated "CV Replay" navigation tab (`tab === 'cv-replay'`) in the Web Sandbox top-level shell.
+- **Consequences**:
+  - Provides a complete visual verification studio for offline imitation learning trajectories.
+  - Enables instant identification of coordinate warping errors, slot misidentifications, and deployment timing offsets.
+  - Ensures all demonstrations fed into the RL offline pre-training buffer are verified against the deterministic simulation core.
+
+

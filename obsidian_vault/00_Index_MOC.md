@@ -6,15 +6,15 @@ tags:
   - ppo
   - architecture
 updated: 2026-11-04
-last_synced_commit: "f874543"
-last_synced_at: "2026-11-04 14:45:49"
+last_synced_commit: "14b41bf"
+last_synced_at: "2026-11-04 15:00:18"
 ---
 
 # 🏰 CoC TH18 Deep RL — Architecture & Training Vault
 
 > [!NOTE] 🔄 Codebase Synchronization Status
-> **Synchronized Commit**: [`f874543`](file:///home/robin/Projects/CoC) &mdash; *feat(coc-rl): promote Gen 2 SegNeXt-MSCA-CompartmentNet as default baseline*
-> **Synced At**: `2026-11-04 14:45:49 UTC` • **Full SHA**: `f874543db33d8f0313c9eec83062043a2b8c0d54`
+> **Synchronized Commit**: [`14b41bf`](file:///home/robin/Projects/CoC) &mdash; *feat(web): add interactive split-pane CV Replay Extractor Studio tab*
+> **Synced At**: `2026-11-04 15:00:18 UTC` • **Full SHA**: `14b41bf49acfced992bf62a8c0396822e3dca9b7`
 
 Welcome to the central research vault tracking our **v3.0 59-Channel Dedicated Spatial CNN & Single-Army Specialist Actor-Critic** architecture, input/output tensor specifications, per-troop, per-hero, per-spell, and per-defense spatial encodings, and empirical training benchmarks for Clash of Clans Town Hall 18.
 

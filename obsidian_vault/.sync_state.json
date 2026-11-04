@@ -1,7 +1,7 @@
 {
-  "last_synced_commit": "f874543db33d8f0313c9eec83062043a2b8c0d54",
-  "last_synced_commit_short": "f874543",
-  "last_synced_at": "2026-11-04T14:45:49.872309+00:00",
-  "last_synced_subject": "feat(coc-rl): promote Gen 2 SegNeXt-MSCA-CompartmentNet as default baseline",
+  "last_synced_commit": "14b41bf49acfced992bf62a8c0396822e3dca9b7",
+  "last_synced_commit_short": "14b41bf",
+  "last_synced_at": "2026-11-04T15:00:18.667080+00:00",
+  "last_synced_subject": "feat(web): add interactive split-pane CV Replay Extractor Studio tab",
   "branch": "main"
 }
