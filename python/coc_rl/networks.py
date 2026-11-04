@@ -656,7 +656,42 @@ GEN1_COORDSE_ARCH_CONFIG: Dict[str, Any] = {
     "total_params": 130268,
 }
 
-DEFAULT_ARCH_CONFIG: Dict[str, Any] = dict(GEN1_COORDSE_ARCH_CONFIG)
+GEN2_SEGNEXT_MSCA_ARCH_CONFIG: Dict[str, Any] = {
+    "arch_version": "v4-SegNeXt-MSCA-CompartmentNet",
+    "generation": 2,
+    "backbone_type": "segnext_msca",
+    "weight_transfer_mode": "warm_start",
+    "in_channels": 59,
+    "base_ch": 28,
+    "spatial_dim": 28,
+    "embed_dim": 128,
+    "head_hidden_dim": 96,
+    "use_coord_features": True,
+    "use_dilated_context": True,
+    "use_se_attention": True,
+    "use_convnext_grn": False,
+    "use_segnext_msca": True,
+    "use_unet_decoder": False,
+    "use_dual_spatial_head": False,
+    "use_gated_heads": True,
+    "critic_depth": 2,
+    "logit_temp_type": 1.4,
+    "logit_temp_idx": 1.6,
+    "logit_temp_frac": 1.4,
+    "tile_logit_scale": 2.8,
+    "th_threat_weight": 9.5,
+    "defense_threat_weight": 2.2,
+    "breach_prior_weight": 11.5,
+    "spell_combat_prior_weight": 10.1,
+    "film_cond_scale": 0.85,
+    "reg_ent_type_weight": 2.4,
+    "reg_ent_idx_weight": 2.0,
+    "reg_ent_frac_weight": 2.0,
+    "reg_ent_tile_weight": 0.1,
+    "total_params": 254882,
+}
+
+DEFAULT_ARCH_CONFIG: Dict[str, Any] = dict(GEN2_SEGNEXT_MSCA_ARCH_CONFIG)
 
 
 def fraction_bin_to_value(bin_idx: int) -> float:
@@ -776,27 +811,27 @@ class CoCActorCritic(nn.Module):
         self.army_context_dim = army_context_dim
         self.num_fraction_bins = num_fraction_bins
 
-        base_ch = int(cfg.get("base_ch", 24))
-        spatial_dim_cfg = int(cfg.get("spatial_dim", 24))
-        embed_dim_cfg = int(cfg.get("embed_dim", 96))
-        head_hidden_dim = int(cfg.get("head_hidden_dim", 64))
+        base_ch = int(cfg.get("base_ch", 28))
+        spatial_dim_cfg = int(cfg.get("spatial_dim", 28))
+        embed_dim_cfg = int(cfg.get("embed_dim", 128))
+        head_hidden_dim = int(cfg.get("head_hidden_dim", 96))
         self.head_hidden_dim = head_hidden_dim
-        self.arch_version: str = str(cfg.get("arch_version", "v4.1-Gen1-CoordSE-ResCNN"))
-        self.generation: int = int(cfg.get("generation", 1))
-        self.backbone_type: str = str(cfg.get("backbone_type", "coord_se_res"))
+        self.arch_version: str = str(cfg.get("arch_version", "v4-SegNeXt-MSCA-CompartmentNet"))
+        self.generation: int = int(cfg.get("generation", 2))
+        self.backbone_type: str = str(cfg.get("backbone_type", "segnext_msca"))
         self.weight_transfer_mode: str = str(
             cfg.get("weight_transfer_mode", "warm_start")
         )
         self.use_coord_features: bool = bool(cfg.get("use_coord_features", True))
-        self.use_dilated_context: bool = bool(cfg.get("use_dilated_context", False))
+        self.use_dilated_context: bool = bool(cfg.get("use_dilated_context", True))
         self.use_se_attention: bool = bool(cfg.get("use_se_attention", True))
         self.use_convnext_grn: bool = bool(cfg.get("use_convnext_grn", False))
-        self.use_segnext_msca: bool = bool(cfg.get("use_segnext_msca", False))
+        self.use_segnext_msca: bool = bool(cfg.get("use_segnext_msca", True))
         self.use_unet_decoder: bool = bool(
             cfg.get("use_unet_decoder", self.backbone_type == "unet")
         )
         self.use_dual_spatial_head: bool = bool(cfg.get("use_dual_spatial_head", False))
-        self.use_gated_heads: bool = bool(cfg.get("use_gated_heads", False))
+        self.use_gated_heads: bool = bool(cfg.get("use_gated_heads", True))
         self.critic_depth: int = int(cfg.get("critic_depth", 2))
 
         # Dynamic architectural conditioning & regularization coefficients
@@ -941,9 +976,9 @@ class CoCActorCritic(nn.Module):
 
     def get_arch_config(self) -> Dict[str, Any]:
         return {
-            "arch_version": str(getattr(self, "arch_version", "v4.1-Gen1-CoordSE-ResCNN")),
-            "generation": int(getattr(self, "generation", 1)),
-            "backbone_type": str(getattr(self, "backbone_type", "coord_se_res")),
+            "arch_version": str(getattr(self, "arch_version", "v4-SegNeXt-MSCA-CompartmentNet")),
+            "generation": int(getattr(self, "generation", 2)),
+            "backbone_type": str(getattr(self, "backbone_type", "segnext_msca")),
             "weight_transfer_mode": str(
                 getattr(self, "weight_transfer_mode", "warm_start")
             ),
@@ -951,15 +986,15 @@ class CoCActorCritic(nn.Module):
             "base_ch": int(self.encoder.base_ch),
             "spatial_dim": int(self.encoder.spatial_dim),
             "embed_dim": int(self.encoder.embed_dim),
-            "head_hidden_dim": int(getattr(self, "head_hidden_dim", 64)),
+            "head_hidden_dim": int(getattr(self, "head_hidden_dim", 96)),
             "use_coord_features": bool(getattr(self, "use_coord_features", True)),
-            "use_dilated_context": bool(getattr(self, "use_dilated_context", False)),
+            "use_dilated_context": bool(getattr(self, "use_dilated_context", True)),
             "use_se_attention": bool(getattr(self, "use_se_attention", True)),
             "use_convnext_grn": bool(getattr(self, "use_convnext_grn", False)),
-            "use_segnext_msca": bool(getattr(self, "use_segnext_msca", False)),
+            "use_segnext_msca": bool(getattr(self, "use_segnext_msca", True)),
             "use_unet_decoder": bool(getattr(self, "use_unet_decoder", False)),
             "use_dual_spatial_head": bool(getattr(self, "use_dual_spatial_head", False)),
-            "use_gated_heads": bool(getattr(self, "use_gated_heads", False)),
+            "use_gated_heads": bool(getattr(self, "use_gated_heads", True)),
             "critic_depth": int(getattr(self, "critic_depth", 2)),
             "total_params": int(sum(p.numel() for p in self.parameters())),
             "logit_temp_type": round(float(self.logit_temp_type), 4),
